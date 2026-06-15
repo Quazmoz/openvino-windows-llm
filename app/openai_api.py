@@ -1,0 +1,137 @@
+"""OpenAI-compatible request/response models (Pydantic v2).
+
+These mirror the subset of the OpenAI API the server implements: chat
+completions (with streaming + tool calling) and the Responses API used by tools
+like n8n. They are plain data models with no OpenVINO dependency.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from pydantic import BaseModel
+
+# --- Chat messages ---------------------------------------------------------
+
+
+class ChatMessage(BaseModel):
+    role: str
+    content: str | None = None
+    tool_calls: list[dict[str, Any]] | None = None
+    tool_call_id: str | None = None
+
+
+# --- Tool / function calling ----------------------------------------------
+
+
+class FunctionDefinition(BaseModel):
+    name: str
+    description: str | None = None
+    parameters: dict[str, Any] | None = None
+
+
+class ToolDefinition(BaseModel):
+    type: str = "function"
+    function: FunctionDefinition
+
+
+class FunctionCall(BaseModel):
+    name: str
+    arguments: str
+
+
+class ToolCall(BaseModel):
+    id: str
+    type: str = "function"
+    function: FunctionCall
+
+
+# --- Chat completions ------------------------------------------------------
+
+
+class StreamOptions(BaseModel):
+    include_usage: bool | None = None
+
+
+class ChatCompletionRequest(BaseModel):
+    model: str
+    messages: list[ChatMessage]
+    max_tokens: int | None = 512
+    temperature: float | None = 0.7
+    top_p: float | None = 1.0
+    stream: bool | None = False
+    stream_options: StreamOptions | None = None
+    tools: list[ToolDefinition] | None = None
+    tool_choice: Any | None = None  # "auto" | "none" | "required" | {type, function}
+
+
+class ChatCompletionMessage(BaseModel):
+    role: str
+    content: str | None = None
+    tool_calls: list[ToolCall] | None = None
+
+
+class ChatCompletionResponseChoice(BaseModel):
+    index: int
+    message: ChatCompletionMessage
+    finish_reason: str
+
+
+class UsageInfo(BaseModel):
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+
+
+class ChatCompletionResponse(BaseModel):
+    id: str
+    object: str = "chat.completion"
+    created: int
+    model: str
+    choices: list[ChatCompletionResponseChoice]
+    usage: UsageInfo | None = None
+
+
+# --- Responses API (n8n compatibility) ------------------------------------
+
+
+class ResponseRequest(BaseModel):
+    model: str
+    input: Any  # string or list of {role, content} messages
+    instructions: str | None = None
+    max_output_tokens: int | None = 512
+    temperature: float | None = 0.7
+    stream: bool | None = False
+
+
+class ResponseOutputMessage(BaseModel):
+    type: str = "message"
+    id: str
+    status: str = "completed"
+    role: str = "assistant"
+    content: list[dict[str, Any]]
+
+
+class ResponseObject(BaseModel):
+    id: str
+    object: str = "response"
+    created_at: int
+    model: str
+    output: list[ResponseOutputMessage]
+    status: str = "completed"
+
+
+# --- Model lifecycle requests ---------------------------------------------
+
+
+class ModelLoadRequest(BaseModel):
+    model: str
+    device: str | None = None  # override the server default device for this load
+
+
+class ModelUnloadRequest(BaseModel):
+    model: str
+
+
+class ModelDeleteRequest(BaseModel):
+    model: str

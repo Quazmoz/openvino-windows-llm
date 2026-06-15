@@ -1,0 +1,23 @@
+# Runtime dependencies for the OpenVINO Windows LLM server.
+#   pip install -r requirements.txt
+#
+# Unlike the legacy IPEX repo, normal runtime inference does NOT require pinning
+# torch / transformers / neural-compressor. OpenVINO GenAI ships its own runtime.
+
+# --- Inference backend ---
+# openvino-genai pulls in a matching openvino runtime as a dependency.
+openvino-genai>=2025.0.0
+
+# --- Web server stack ---
+fastapi>=0.110.0
+uvicorn[standard]>=0.27.0
+pydantic>=2.6.0
+
+# --- Utilities ---
+python-dotenv>=1.0.0
+psutil>=5.9.0
+
+# --- Windows enterprise TLS trust (no-op / not installed elsewhere) ---
+# Merges the Windows OS trust store into certifi so Hugging Face conversions
+# work on managed machines. Safe to omit on non-Windows hosts.
+python-certifi-win32>=1.6.1; platform_system == "Windows"

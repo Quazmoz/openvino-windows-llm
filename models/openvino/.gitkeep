@@ -1,0 +1,12 @@
+# Converted OpenVINO IR models live here (one directory per model).
+# This directory is intentionally tracked but its model contents are git-ignored.
+#
+# Example layout after conversion:
+#   models/openvino/tinyllama-1.1b-chat-int4/
+#     openvino_model.xml
+#     openvino_model.bin
+#     openvino_tokenizer.xml
+#     openvino_detokenizer.xml
+#     config.json
+#     tokenizer_config.json
+#     ...

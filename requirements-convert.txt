@@ -1,0 +1,14 @@
+# Model-conversion dependencies (optional, only needed to export models to
+# OpenVINO IR from Hugging Face).
+#   pip install -r requirements-convert.txt
+#
+# Conversion is a separate, heavier step than runtime inference. Install these
+# only on the machine where you convert models; the server itself only needs
+# requirements.txt to run pre-converted IR models.
+
+optimum-intel[openvino]>=1.21.0
+nncf>=2.14.0
+huggingface_hub>=0.25.0
+
+# Optional faster Hugging Face downloads (Xet protocol).
+hf_xet>=0.1.0

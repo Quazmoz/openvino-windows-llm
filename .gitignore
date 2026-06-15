@@ -1,0 +1,53 @@
+# --- Local models (large, never commit) ---
+# Ignore converted-model contents but keep the directory placeholder tracked.
+models/openvino/*
+!models/openvino/.gitkeep
+
+# --- OpenVINO / model caches ---
+.ov_cache/
+ov_cache/
+*.blob
+
+# --- Hugging Face cache ---
+.cache/
+cache/
+
+# --- Environment files (secrets) ---
+.env
+*.env
+!.env.example
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+*.egg
+.venv/
+venv/
+env/
+.python-version
+
+# --- Tooling caches ---
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# --- Logs / scratch ---
+*.log
+diagnostics-*.json
+
+# --- IDE ---
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+
+# --- Dependency install marker (auto-created by start_server.bat) ---
+.deps_installed
