@@ -6,8 +6,8 @@ REM Creates a Python venv, installs OpenVINO GenAI + server deps, and (optionall
 REM the model-conversion deps. Runs the PowerShell setup with execution-policy
 REM bypass so no manual policy change is needed.
 REM
-REM   .\setup.bat                 Install runtime deps only
-REM   .\setup.bat -WithConvert    Also install model-conversion deps
+REM   .\setup.bat                 Install runtime & model-conversion deps
+REM   .\setup.bat -Minimal        Install runtime deps only (skip conversion tools)
 REM   .\setup.bat -SkipHardwareCheck
 
 echo ==========================================

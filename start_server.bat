@@ -8,8 +8,8 @@ REM straight through to the Python CLI.
 REM
 REM Usage:
 REM   start_server.bat                              Auto-load OV_LLM_MODEL (or none)
-REM   start_server.bat --model tinyllama-1.1b-chat --device CPU
-REM   start_server.bat --model qwen2.5-1.5b --device NPU
+REM   start_server.bat --model tinyllama-1.1b-chat-fp16 --device NPU
+REM   start_server.bat --model qwen2.5-1.5b-fp16 --device NPU
 REM   start_server.bat --list                       List catalog models and exit
 REM   start_server.bat --check-devices              Show OpenVINO devices and exit
 REM   start_server.bat --port 8001

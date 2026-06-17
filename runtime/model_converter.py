@@ -6,19 +6,26 @@ Conversion is a separate, heavier step than serving and requires the extra
 ``models.json`` id so paths/weights stay consistent with the server.
 
 Usage:
-    python -m runtime.model_converter --id tinyllama-1.1b-chat
-    python -m runtime.model_converter --model Qwen/Qwen2.5-1.5B-Instruct \\
-        --output models/openvino/qwen2.5-1.5b-instruct-int4 --weight-format int4
+    python -m runtime.model_converter --id tinyllama-1.1b-chat-fp16
+    python -m runtime.model_converter --model Qwen/Qwen2.5-1.5B-Instruct \
+        --output models/openvino/qwen2.5-1.5b-instruct-fp16 --weight-format fp16
 """
 
 from __future__ import annotations
 
 import argparse
 import logging
+import os
 import shutil
 import subprocess
 import sys
 from pathlib import Path
+
+# Ensure the virtual environment's Scripts/bin directory is on PATH so that
+# optimum-cli can be found when running within the venv.
+_venv_bin = str(Path(sys.executable).parent)
+if _venv_bin not in os.environ.get("PATH", ""):
+    os.environ["PATH"] = _venv_bin + os.pathsep + os.environ.get("PATH", "")
 
 logger = logging.getLogger("ov-llm.convert")
 
@@ -104,7 +111,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--id", help="Model id from models.json (resolves source/output/weights)")
     parser.add_argument("--model", help="Hugging Face source model id")
     parser.add_argument("--output", help="Output directory for the OpenVINO IR model")
-    parser.add_argument("--weight-format", default="int4", help="int4 | int8 | fp16 (default: int4)")
+    parser.add_argument(
+        "--weight-format",
+        choices=("int4", "int8", "fp16"),
+        default=None,
+        help="Override output weights. With --id, defaults to the catalog value; otherwise int4.",
+    )
     parser.add_argument("--task", default=None, help="Optional optimum task override")
     parser.add_argument("--no-trust-remote-code", action="store_true")
     args = parser.parse_args(argv)
@@ -115,7 +127,9 @@ def main(argv: list[str] | None = None) -> int:
     else:
         if not args.model or not args.output:
             parser.error("Provide either --id, or both --model and --output")
-        source_model, output_dir, weight_format = args.model, Path(args.output), args.weight_format
+        source_model = args.model
+        output_dir = Path(args.output)
+        weight_format = args.weight_format or "int4"
 
     try:
         export_model(

@@ -31,6 +31,7 @@ from app.openai_api import (
     ChatCompletionResponse,
     ChatCompletionResponseChoice,
     ChatMessage,
+    ModelConvertRequest,
     ModelDeleteRequest,
     ModelLoadRequest,
     ModelUnloadRequest,
@@ -186,6 +187,26 @@ def create_app(settings: Settings) -> FastAPI:
             "model": entry,
         }
 
+    @app.post("/v1/models/convert", dependencies=auth)
+    async def convert_model(req: ModelConvertRequest):
+        if req.model not in manager.catalog:
+            raise HTTPException(status_code=404, detail=f"Unknown model '{req.model}'")
+        if req.device and device_check.normalize_device(req.device) not in VALID_DEVICES:
+            raise HTTPException(status_code=400, detail=f"Invalid device '{req.device}'")
+        cfg = manager.catalog[req.model]
+        if not cfg.source_model:
+            raise HTTPException(status_code=400, detail=f"Model '{req.model}' has no source model configured")
+
+        task = manager.schedule_convert(req.model, req.device, load_after=req.load_after)
+        entry = manager.catalog_entry(req.model)
+        if task is None and entry["is_downloaded"]:
+            return {"status": entry["status"], "message": f"{entry['name']} is already converted.", "model": entry}
+        return {
+            "status": entry["status"],
+            "message": f"Converting {entry['name']}. This may take several minutes.",
+            "model": entry,
+        }
+
     @app.post("/v1/models/unload", dependencies=auth)
     async def unload_model(req: ModelUnloadRequest):
         if req.model not in manager.catalog:
@@ -261,7 +282,10 @@ def create_app(settings: Settings) -> FastAPI:
                 "loading_count": manager.loading_count(),
                 "available": entries,
             },
-            "disk": disk_stats(settings.models_dir),
+            "disk": {
+                "models_dir": str(settings.models_dir.resolve()),
+                **disk_stats(settings.models_dir),
+            },
         }
 
     # --- chat completions --------------------------------------------------

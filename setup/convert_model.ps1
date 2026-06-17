@@ -17,13 +17,14 @@
     Output directory for the OpenVINO IR model (use with -Model).
 
 .PARAMETER WeightFormat
-    Quantization: int4 (default), int8, or fp16.
+    Optional output weight format override: int4, int8, or fp16. By id, omit this
+    to use the format from models.json.
 
 .EXAMPLE
-    .\setup\convert_model.ps1 -Id tinyllama-1.1b-chat
+    .\setup\convert_model.ps1 -Id tinyllama-1.1b-chat-fp16
 
 .EXAMPLE
-    .\setup\convert_model.ps1 -Model Qwen/Qwen2.5-1.5B-Instruct -Output models\openvino\qwen2.5-1.5b-instruct-int4
+    .\setup\convert_model.ps1 -Model Qwen/Qwen2.5-1.5B-Instruct -Output models\openvino\qwen2.5-1.5b-instruct-fp16 -WeightFormat fp16
 #>
 [CmdletBinding(DefaultParameterSetName = "ById")]
 param(
@@ -36,7 +37,8 @@ param(
     [Parameter(ParameterSetName = "ByModel", Mandatory = $true)]
     [string]$Output,
 
-    [string]$WeightFormat = "int4"
+    [ValidateSet("int4", "int8", "fp16")]
+    [string]$WeightFormat
 )
 
 $ErrorActionPreference = "Stop"
@@ -51,10 +53,14 @@ if (-not (Test-Path $venvPython)) {
 Push-Location $RepoRoot
 try {
     if ($PSCmdlet.ParameterSetName -eq "ById") {
-        & $venvPython -m runtime.model_converter --id $Id --weight-format $WeightFormat
+        $arguments = @("-m", "runtime.model_converter", "--id", $Id)
     } else {
-        & $venvPython -m runtime.model_converter --model $Model --output $Output --weight-format $WeightFormat
+        $arguments = @("-m", "runtime.model_converter", "--model", $Model, "--output", $Output)
     }
+    if ($WeightFormat) {
+        $arguments += @("--weight-format", $WeightFormat)
+    }
+    & $venvPython @arguments
 } finally {
     Pop-Location
 }

@@ -10,6 +10,7 @@ _ENV_VARS = [
     "OV_LLM_DEVICE",
     "OV_LLM_MODELS_FILE",
     "OV_LLM_MODELS_DIR",
+    "OV_LLM_CACHE_DIR",
     "OV_LLM_MODEL",
     "OV_LLM_API_KEY",
     "OV_LLM_MOCK",
@@ -27,9 +28,10 @@ def test_from_env_defaults(clean_env):
     s = Settings.from_env()
     assert s.host == "127.0.0.1"
     assert s.port == 8000
-    assert s.device == "CPU"
+    assert s.device == "NPU"
     assert s.models_file == BASE_DIR / "models.json"
     assert s.models_dir == BASE_DIR / "models" / "openvino"
+    assert s.cache_dir == BASE_DIR / "models" / "cache"
     assert s.default_model is None
     assert s.api_key is None
     assert s.force_mock is False
@@ -39,7 +41,8 @@ def test_from_env_parses_overrides(clean_env):
     clean_env.setenv("OV_LLM_HOST", "0.0.0.0")
     clean_env.setenv("OV_LLM_PORT", "9001")
     clean_env.setenv("OV_LLM_DEVICE", "npu")  # lower-cased input
-    clean_env.setenv("OV_LLM_MODEL", "  tinyllama-1.1b-chat  ")  # trimmed
+    clean_env.setenv("OV_LLM_CACHE_DIR", "custom_cache")
+    clean_env.setenv("OV_LLM_MODEL", "  tinyllama-1.1b-chat-fp16  ")  # trimmed
     clean_env.setenv("OV_LLM_API_KEY", " sk-secret ")
     clean_env.setenv("OV_LLM_MOCK", "yes")
 
@@ -47,7 +50,8 @@ def test_from_env_parses_overrides(clean_env):
     assert s.host == "0.0.0.0"
     assert s.port == 9001
     assert s.device == "NPU"
-    assert s.default_model == "tinyllama-1.1b-chat"
+    assert s.cache_dir == BASE_DIR / "custom_cache"
+    assert s.default_model == "tinyllama-1.1b-chat-fp16"
     assert s.api_key == "sk-secret"
     assert s.force_mock is True
 

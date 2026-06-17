@@ -14,6 +14,7 @@ import contextlib
 import gc
 import logging
 import shutil
+import sys
 import time
 from pathlib import Path
 
@@ -60,8 +61,10 @@ class ModelManager:
         self.locks: dict[str, asyncio.Lock] = {}
         self.devices: dict[str, str] = {}
         self.load_tasks: dict[str, asyncio.Task] = {}
+        self.convert_tasks: dict[str, asyncio.Task] = {}
         self.status_overrides: dict[str, dict] = {}
         self._load_lock = asyncio.Lock()
+        self._convert_lock = asyncio.Lock()
 
     # --- status helpers ----------------------------------------------------
 
@@ -90,7 +93,7 @@ class ModelManager:
         return sum(
             1
             for ov in self.status_overrides.values()
-            if ov.get("status") in {"queued", "loading"}
+            if ov.get("status") in {"queued", "loading", "queued_convert", "converting"}
         )
 
     def resolve_engine(self, model_id: str) -> BaseEngine:
@@ -103,7 +106,7 @@ class ModelManager:
 
         if model_id in self.catalog:
             override = self.status_overrides.get(model_id, {})
-            if override.get("status") in {"queued", "loading"}:
+            if override.get("status") in {"queued", "loading", "queued_convert", "converting"}:
                 raise ModelLoading(f"Model '{model_id}' is still loading")
             raise ModelNotLoaded(f"Model '{model_id}' is not loaded")
 
@@ -127,6 +130,7 @@ class ModelManager:
         status = override.get("status")
         queued = status == "queued"
         loading = status == "loading"
+        converting = status in {"queued_convert", "converting"}
         error = override.get("error") if status == "error" else None
         downloaded = self.force_mock or registry.is_downloaded(cfg, BASE_DIR)
         lock = self.locks.get(model_id)
@@ -136,6 +140,7 @@ class ModelManager:
             loaded=loaded,
             queued=queued,
             loading=loading,
+            converting=converting,
             downloaded=downloaded,
             device=self.devices.get(model_id),
             busy=busy,
@@ -155,6 +160,7 @@ class ModelManager:
             device=device,
             max_prompt_len=cfg.max_prompt_len,
             force_mock=self.force_mock,
+            cache_dir=self.settings.cache_dir,
         )
 
     async def _load_task(self, model_id: str, device: str) -> None:
@@ -213,6 +219,83 @@ class ModelManager:
         self.load_tasks[model_id] = task
         return task
 
+    # --- conversion --------------------------------------------------------
+
+    async def _convert_task(self, model_id: str, device: str, load_after: bool) -> None:
+        cfg = self.catalog[model_id]
+        proc: asyncio.subprocess.Process | None = None
+        try:
+            async with self._convert_lock:
+                if registry.is_downloaded(cfg, BASE_DIR):
+                    self._clear_status(model_id)
+                    if load_after:
+                        self.schedule_load(model_id, device)
+                    return
+
+                if not cfg.source_model:
+                    raise RuntimeError(f"{cfg.name} has no Hugging Face source model configured.")
+
+                self._set_status(model_id, "converting")
+                proc = await asyncio.create_subprocess_exec(
+                    sys.executable,
+                    "-m",
+                    "runtime.model_converter",
+                    "--id",
+                    model_id,
+                    cwd=str(BASE_DIR),
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                stdout, stderr = await proc.communicate()
+                if proc.returncode != 0:
+                    output = (stderr or stdout).decode(errors="replace").strip()
+                    raise RuntimeError(output or f"Conversion exited with code {proc.returncode}")
+
+                self._clear_status(model_id)
+                logger.info("Converted '%s' to %s", model_id, cfg.abs_path(BASE_DIR))
+                if load_after:
+                    self.schedule_load(model_id, device)
+        except asyncio.CancelledError:
+            if proc and proc.returncode is None:
+                proc.kill()
+                with contextlib.suppress(Exception):
+                    await proc.wait()
+            raise
+        except Exception as exc:  # noqa: BLE001 - surfaced to the UI as a status
+            message = f"Conversion failed: {exc}"
+            self._set_status(model_id, "error", error=message)
+            logger.exception("Failed to convert '%s': %s", model_id, message)
+
+    def schedule_convert(
+        self,
+        model_id: str,
+        device: str | None = None,
+        *,
+        load_after: bool = True,
+    ) -> asyncio.Task | None:
+        if model_id not in self.catalog:
+            logger.warning("Refusing to convert unknown model '%s'", model_id)
+            return None
+        if model_id in self.engines:
+            self._clear_status(model_id)
+            return None
+
+        existing = self.convert_tasks.get(model_id)
+        if existing and not existing.done():
+            return existing
+
+        cfg = self.catalog[model_id]
+        if registry.is_downloaded(cfg, BASE_DIR):
+            if load_after:
+                return self.schedule_load(model_id, device)
+            return None
+
+        device = device_check.normalize_device(device or self.settings.device)
+        self._set_status(model_id, "queued_convert")
+        task = asyncio.create_task(self._convert_task(model_id, device, load_after))
+        self.convert_tasks[model_id] = task
+        return task
+
     # --- unload / delete ---------------------------------------------------
 
     def unload(self, model_id: str) -> bool:
@@ -244,6 +327,7 @@ class ModelManager:
 
         self._clear_status(model_id)
         self.load_tasks.pop(model_id, None)
+        self.convert_tasks.pop(model_id, None)
         return {"deleted": deleted, "freed_bytes": freed}
 
     def _ensure_within_models_dir(self, path: Path) -> None:
@@ -273,9 +357,15 @@ class ModelManager:
                 task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await task
+        for task in list(self.convert_tasks.values()):
+            if task and not task.done():
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
         for model_id in list(self.engines):
             self.unload(model_id)
         self.load_tasks.clear()
+        self.convert_tasks.clear()
         self.status_overrides.clear()
 
     # --- generation bridges (sync engine -> asyncio) -----------------------

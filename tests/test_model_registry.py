@@ -1,5 +1,6 @@
 import json
 
+from app.config import BASE_DIR
 from app.model_registry import (
     is_downloaded,
     load_catalog,
@@ -31,6 +32,14 @@ def test_load_catalog_parses_entries(tmp_path):
     cfg = catalog["m1"]
     assert cfg.name == "Model One"
     assert cfg.max_prompt_len == 4096 - 1024
+    assert cfg.recommended_device == "NPU"
+
+
+def test_shipped_catalog_is_npu_fp16_only():
+    catalog = load_catalog(BASE_DIR / "models.json")
+    assert catalog
+    assert all(cfg.weight_format == "fp16" for cfg in catalog.values())
+    assert all(cfg.recommended_device == "NPU" for cfg in catalog.values())
 
 
 def test_load_catalog_missing_file_returns_empty(tmp_path):
@@ -56,7 +65,7 @@ def test_is_downloaded_detects_ir_markers(tmp_path):
 
 
 def test_make_catalog_entry_status_precedence(tmp_path):
-    path = _write_catalog(tmp_path, {"m1": {"name": "M1"}})
+    path = _write_catalog(tmp_path, {"m1": {"name": "M1", "source_model": "org/model-one"}})
     cfg = load_catalog(path)["m1"]
 
     loaded = make_catalog_entry(cfg, loaded=True, queued=False, loading=False, downloaded=True)
@@ -66,12 +75,31 @@ def test_make_catalog_entry_status_precedence(tmp_path):
 
     error = make_catalog_entry(cfg, loaded=False, queued=False, loading=False, downloaded=True, error="boom")
     assert error["status"] == "error"
+    assert error["status_label"] == "Load failed"
     assert error["error"] == "boom"
+
+    conversion_error = make_catalog_entry(cfg, loaded=False, queued=False, loading=False, downloaded=False, error="boom")
+    assert conversion_error["status"] == "error"
+    assert conversion_error["status_label"] == "Conversion failed"
 
     ready = make_catalog_entry(cfg, loaded=False, queued=False, loading=False, downloaded=True)
     assert ready["status"] == "ready_to_load"
+    assert ready["can_load"] is True
+    assert ready["can_convert"] is False
     assert ready["can_delete"] is True
 
     missing = make_catalog_entry(cfg, loaded=False, queued=False, loading=False, downloaded=False)
     assert missing["status"] == "not_downloaded"
+    assert missing["can_load"] is False
+    assert missing["can_convert"] is True
     assert missing["can_delete"] is False
+
+    converting = make_catalog_entry(cfg, loaded=False, queued=False, loading=False, converting=True, downloaded=False)
+    assert converting["status"] == "converting"
+    assert converting["can_load"] is False
+    assert converting["can_convert"] is False
+
+    no_source_path = _write_catalog(tmp_path, {"m2": {"name": "M2"}})
+    no_source_cfg = load_catalog(no_source_path)["m2"]
+    no_source = make_catalog_entry(no_source_cfg, loaded=False, queued=False, loading=False, downloaded=False)
+    assert no_source["can_convert"] is False

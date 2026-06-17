@@ -45,6 +45,10 @@ diagnostics-*.json
 *.swp
 *.swo
 
+# --- Temp / local run artifacts ---
+.codex-run/
+.tmp/
+
 # --- OS ---
 .DS_Store
 Thumbs.db

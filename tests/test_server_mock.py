@@ -15,7 +15,7 @@ from app.model_manager import ModelManager
 from app.server import create_app
 from runtime.openvino_engine import GenParams, MockEngine
 
-MODEL_ID = "tinyllama-1.1b-chat"
+MODEL_ID = "tinyllama-1.1b-chat-fp16"
 
 
 @pytest.fixture()
@@ -23,7 +23,7 @@ def client():
     settings = Settings(
         host="127.0.0.1",
         port=8000,
-        device="CPU",
+        device="NPU",
         models_file=BASE_DIR / "models.json",
         models_dir=BASE_DIR / "models" / "openvino",
         default_model=None,  # load explicitly in the tests
@@ -59,10 +59,63 @@ def test_list_models_includes_catalog(client):
     assert MODEL_ID in ids
 
 
+def test_index_includes_device_selector(client):
+    body = client.get("/").text
+    assert 'id="device-select"' in body
+    assert '<option value="NPU">NPU</option>' in body
+    assert "/v1/models/convert" in body
+    assert "Convert & load selected model" in body or "Convert and load selected model" in body
+
+
+def test_index_constrains_long_model_status(client):
+    body = client.get("/").text
+    assert "#model-status" in body
+    assert "text-overflow: ellipsis" in body
+    assert "function setModelStatus" in body
+
+
 def test_devices_endpoint(client):
     body = client.get("/v1/devices").json()
     assert body["mock"] is True
+    assert body["default_device"] == "NPU"
     assert "devices" in body
+
+
+def test_load_model_uses_requested_device(client):
+    resp = client.post("/v1/models/load", json={"model": MODEL_ID, "device": "GPU"})
+    assert resp.status_code == 200, resp.text
+
+    deadline = time.time() + 10
+    while time.time() < deadline:
+        body = client.get("/v1/system/status").json()
+        entry = next(m for m in body["models"]["available"] if m["id"] == MODEL_ID)
+        if entry["is_loaded"]:
+            assert entry["device"] == "GPU"
+            return
+        time.sleep(0.05)
+    raise AssertionError("model did not load in time")
+
+
+def test_convert_model_endpoint_schedules_background_task(client):
+    manager = client.app.state.manager
+    calls = []
+
+    def fake_schedule_convert(model_id, device=None, *, load_after=True):
+        calls.append((model_id, device, load_after))
+        manager._set_status(model_id, "queued_convert")
+        return object()
+
+    manager.schedule_convert = fake_schedule_convert
+    resp = client.post(
+        "/v1/models/convert",
+        json={"model": "qwen2.5-1.5b-fp16", "device": "NPU", "load_after": True},
+    )
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["status"] == "converting"
+    assert body["model"]["is_loading"] is True
+    assert calls == [("qwen2.5-1.5b-fp16", "NPU", True)]
 
 
 def test_load_then_chat_completion(client):

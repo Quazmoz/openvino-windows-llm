@@ -23,6 +23,8 @@ _STATUS_LABELS = {
     "loaded": "Loaded",
     "queued": "Queued…",
     "loading": "Loading…",
+    "queued_convert": "Queued conversion…",
+    "converting": "Converting…",
     "ready_to_load": "Ready to load",
     "not_downloaded": "Not converted",
     "error": "Load failed",
@@ -64,7 +66,7 @@ def _coerce_entry(model_id: str, raw: dict) -> ModelConfig:
         model_path=raw.get("model_path", f"models/openvino/{model_id}"),
         source_model=raw.get("source_model", ""),
         weight_format=raw.get("weight_format", "int4"),
-        recommended_device=raw.get("recommended_device", "CPU"),
+        recommended_device=raw.get("recommended_device", "NPU"),
         max_context_len=int(raw.get("max_context_len", 2048)),
         max_output_tokens=int(raw.get("max_output_tokens", 512)),
     )
@@ -120,6 +122,7 @@ def make_catalog_entry(
     queued: bool,
     loading: bool,
     downloaded: bool,
+    converting: bool = False,
     device: str | None = None,
     busy: bool = False,
     error: str | None = None,
@@ -129,6 +132,8 @@ def make_catalog_entry(
         status = "loaded"
     elif error:
         status = "error"
+    elif converting:
+        status = "converting"
     elif queued:
         status = "queued"
     elif loading:
@@ -138,13 +143,14 @@ def make_catalog_entry(
     else:
         status = "not_downloaded"
 
-    is_busy_state = status in {"queued", "loading"}
+    is_busy_state = status in {"queued", "loading", "queued_convert", "converting"}
+    label = "Conversion failed" if status == "error" and not downloaded else status_label(status)
     return {
         "id": cfg.id,
         "name": cfg.name,
         "description": cfg.description,
         "status": status,
-        "status_label": status_label(status),
+        "status_label": label,
         "is_loaded": loaded,
         "is_loading": is_busy_state,
         "is_downloaded": downloaded,
@@ -154,7 +160,8 @@ def make_catalog_entry(
         "source_model": cfg.source_model,
         "max_context_len": cfg.max_context_len,
         "max_output_tokens": cfg.max_output_tokens,
-        "can_load": (not loaded) and not is_busy_state,
+        "can_load": (not loaded) and downloaded and not is_busy_state,
+        "can_convert": (not loaded) and (not downloaded) and bool(cfg.source_model) and not is_busy_state,
         "can_unload": loaded and not busy,
         "can_delete": (not loaded) and downloaded and not is_busy_state,
         "error": error,

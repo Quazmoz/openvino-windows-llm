@@ -19,6 +19,7 @@ import re
 import threading
 import time
 from dataclasses import dataclass
+from pathlib import Path
 
 from app import chat_format
 from runtime.device_check import is_openvino_available, normalize_device
@@ -256,7 +257,11 @@ def _result_text(result) -> str:
 # --- Factory ---------------------------------------------------------------
 
 
-def build_plugin_config(device: str, max_prompt_len: int | None) -> dict:
+def build_plugin_config(
+    device: str,
+    max_prompt_len: int | None,
+    cache_dir: str | Path | None = None,
+) -> dict:
     """Device-specific OpenVINO plugin config.
 
     The NPU plugin compiles to static shapes and benefits from an explicit prompt
@@ -266,6 +271,15 @@ def build_plugin_config(device: str, max_prompt_len: int | None) -> dict:
     config: dict = {}
     if device == "NPU" and max_prompt_len:
         config["MAX_PROMPT_LEN"] = int(max_prompt_len)
+
+    if cache_dir:
+        try:
+            cache_path = Path(cache_dir)
+            cache_path.mkdir(parents=True, exist_ok=True)
+            config["CACHE_DIR"] = str(cache_path)
+        except Exception as exc:
+            logger.warning("Failed to create cache directory '%s': %s", cache_dir, exc)
+
     return config
 
 
@@ -276,6 +290,7 @@ def create_engine(
     device: str,
     max_prompt_len: int | None = None,
     force_mock: bool = False,
+    cache_dir: str | Path | None = None,
 ) -> BaseEngine:
     """Create the appropriate engine for the current environment.
 
@@ -288,5 +303,5 @@ def create_engine(
         logger.info("Using MOCK engine for '%s' (%s)", model_id, reason)
         return MockEngine(model_id, model_path, device if force_mock else "MOCK")
 
-    plugin_config = build_plugin_config(device, max_prompt_len)
+    plugin_config = build_plugin_config(device, max_prompt_len, cache_dir)
     return OpenVINOEngine(model_id, model_path, device, plugin_config)
