@@ -11,6 +11,16 @@ and your own agents just work) plus a built-in browser chat UI — targeting Int
 > built-in mock engine, so the stack runs end-to-end on any OS. Real OpenVINO
 > inference runs on Windows/Intel hardware once you've converted a model.
 
+---
+
+## Visual Preview
+
+![OpenVINO Windows LLM Chat Interface](screenshots/chat_preview.png)
+
+*A sleek, modern web interface featuring real-time NPU, RAM, and Disk telemetry, alongside an integrated Model Manager and Generation Settings sidebar.*
+
+---
+
 For the shortest setup path, see [QUICKSTART.md](QUICKSTART.md).
 
 This is the successor to the older [`npu-windows`](https://github.com/Quazmoz/npu-windows)

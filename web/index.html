@@ -59,7 +59,7 @@
 
         #app {
             display: grid;
-            grid-template-rows: 56px 1fr auto;
+            grid-template-rows: auto 1fr auto;
             height: 100vh;
         }
 
@@ -67,7 +67,8 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
-            padding: 0 20px;
+            min-height: 56px;
+            padding: 10px 20px;
             background: var(--surface-1);
             border-bottom: 1px solid var(--border);
             backdrop-filter: blur(12px);
@@ -96,6 +97,8 @@
             font-weight: 600;
             letter-spacing: -0.3px;
             color: var(--text-1);
+            margin: 0;
+            display: inline-block;
         }
 
         .logo-sub {
@@ -184,7 +187,7 @@
             border-radius: 20px;
             cursor: pointer;
             outline: none;
-            transition: border-color 0.2s;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
             max-width: 280px;
         }
 
@@ -193,8 +196,11 @@
         }
 
         #model-select:hover,
-        #device-select:hover {
-            border-color: var(--border-hover);
+        #device-select:hover,
+        #model-select:focus,
+        #device-select:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px var(--primary-glow);
         }
 
         #device-select:disabled {
@@ -243,6 +249,30 @@
         .icon-btn:disabled {
             opacity: 0.45;
             cursor: not-allowed;
+        }
+
+        .btn-group {
+            display: inline-flex;
+            align-items: center;
+            flex-shrink: 0;
+        }
+
+        .btn-group .icon-btn {
+            border-radius: 0;
+        }
+
+        .btn-group .icon-btn:first-child {
+            border-top-left-radius: var(--radius-sm);
+            border-bottom-left-radius: var(--radius-sm);
+        }
+
+        .btn-group .icon-btn:last-child {
+            border-top-right-radius: var(--radius-sm);
+            border-bottom-right-radius: var(--radius-sm);
+        }
+
+        .btn-group .icon-btn:not(:last-child) {
+            border-right: none;
         }
 
         .main-body {
@@ -999,6 +1029,35 @@
         #jump-btn:hover {
             border-color: var(--primary);
         }
+
+        @media (max-width: 950px) {
+            header {
+                flex-direction: column;
+                align-items: stretch;
+                padding: 12px 16px;
+                gap: 12px;
+            }
+            .header-right {
+                flex-wrap: wrap;
+                width: 100%;
+                justify-content: flex-start;
+                gap: 8px;
+            }
+            #disk-chip,
+            #mem-chip {
+                display: none !important;
+            }
+            .model-select-wrap {
+                flex-grow: 1;
+            }
+            #model-select {
+                max-width: 100%;
+                width: 100%;
+            }
+            .device-select-wrap {
+                flex-shrink: 0;
+            }
+        }
     </style>
 </head>
 
@@ -1014,7 +1073,7 @@
                     </svg>
                 </div>
                 <div>
-                    <div class="logo-text">OpenVINO LLM</div>
+                    <h1 class="logo-text">OpenVINO LLM</h1>
                     <div class="logo-sub">Local &bull; Private &bull; Intel</div>
                 </div>
             </div>
@@ -1052,32 +1111,34 @@
                     </select>
                     <span class="device-arrow">▾</span>
                 </div>
-                <button class="icon-btn" id="load-model-btn" title="Load selected model"
-                    aria-label="Load selected model">
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M12 3v12" />
-                        <path d="m7 10 5 5 5-5" />
-                        <path d="M5 21h14" />
-                    </svg>
-                </button>
-                <button class="icon-btn" id="unload-model-btn" title="Unload selected model from memory"
-                    aria-label="Unload selected model from memory">
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M12 21V9" />
-                        <path d="m7 14 5-5 5 5" />
-                        <path d="M5 3h14" />
-                    </svg>
-                </button>
-                <button class="icon-btn danger" id="delete-model-btn" title="Delete selected model from disk"
-                    aria-label="Delete selected model from disk">
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M3 6h18" />
-                        <path d="M8 6V4h8v2" />
-                        <path d="M19 6l-1 14H6L5 6" />
-                        <path d="M10 11v6" />
-                        <path d="M14 11v6" />
-                    </svg>
-                </button>
+                <div class="btn-group">
+                    <button class="icon-btn" id="load-model-btn" title="Load selected model"
+                        aria-label="Load selected model">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 3v12" />
+                            <path d="m7 10 5 5 5-5" />
+                            <path d="M5 21h14" />
+                        </svg>
+                    </button>
+                    <button class="icon-btn" id="unload-model-btn" title="Unload selected model from memory"
+                        aria-label="Unload selected model from memory">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 21V9" />
+                            <path d="m7 14 5-5 5 5" />
+                            <path d="M5 3h14" />
+                        </svg>
+                    </button>
+                    <button class="icon-btn danger" id="delete-model-btn" title="Delete selected model from disk"
+                        aria-label="Delete selected model from disk">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M3 6h18" />
+                            <path d="M8 6V4h8v2" />
+                            <path d="M19 6l-1 14H6L5 6" />
+                            <path d="M10 11v6" />
+                            <path d="M14 11v6" />
+                        </svg>
+                    </button>
+                </div>
                 <button class="icon-btn" id="new-chat-btn" title="Start new chat (Ctrl+L)" aria-label="Start new chat">
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M12 5v14" />
@@ -1621,7 +1682,12 @@
         }
         newChatBtn.addEventListener('click', clearConversation);
 
-        function fillInput(el) { userInput.value = el.textContent; autoResize(); userInput.focus(); }
+        function fillInput(el) {
+            userInput.value = el.textContent;
+            autoResize();
+            userInput.focus();
+            sendMessage();
+        }
 
         function showToast(msg) {
             const toast = document.getElementById('toast');
