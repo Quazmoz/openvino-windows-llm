@@ -276,7 +276,10 @@ def create_app(settings: Settings) -> FastAPI:
                 "loading_count": manager.loading_count(),
                 "available": entries,
             },
-            "disk": disk_stats(settings.models_dir),
+            "disk": {
+                "models_dir": str(settings.models_dir.resolve()),
+                **disk_stats(settings.models_dir),
+            },
         }
 
     # --- chat completions --------------------------------------------------

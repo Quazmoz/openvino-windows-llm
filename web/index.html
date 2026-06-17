@@ -1,12 +1,15 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>OpenVINO LLM</title>
     <meta name="description" content="Local AI chat powered by OpenVINO GenAI with an OpenAI-compatible API.">
     <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11/styles/github-dark.min.css">
     <script src="https://cdn.jsdelivr.net/npm/marked@9/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
@@ -15,861 +18,1865 @@
         if (window.marked) marked.setOptions({ breaks: true, gfm: true, mangle: false, headerIds: false });
     </script>
     <style>
-        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-        :root {
-            --bg:          #081016;
-            --surface-1:   #0d1620;
-            --surface-2:   #131f2c;
-            --surface-3:   #1c2c3d;
-            --border:      rgba(96,165,250,0.15);
-            --border-hover:rgba(96,165,250,0.35);
-            --text-1:      #eaf2ff;
-            --text-2:      #88a0bb;
-            --text-3:      #536580;
-            --primary:     #0ea5e9;
-            --primary-glow:rgba(14,165,233,0.25);
-            --green:       #22c55e;
-            --green-glow:  rgba(34,197,94,0.2);
-            --amber:       #f59e0b;
-            --amber-glow:  rgba(245,158,11,0.2);
-            --red:         #ef4444;
-            --radius:      12px;
-            --radius-sm:   8px;
-            --shadow:      0 4px 24px rgba(0,0,0,0.4);
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
         }
 
-        html, body { height: 100%; font-family: 'Inter', system-ui, sans-serif; background: var(--bg); color: var(--text-1); overflow: hidden; }
+        :root {
+            --bg: #081016;
+            --surface-1: #0d1620;
+            --surface-2: #131f2c;
+            --surface-3: #1c2c3d;
+            --border: rgba(96, 165, 250, 0.15);
+            --border-hover: rgba(96, 165, 250, 0.35);
+            --text-1: #eaf2ff;
+            --text-2: #88a0bb;
+            --text-3: #536580;
+            --primary: #0ea5e9;
+            --primary-glow: rgba(14, 165, 233, 0.25);
+            --green: #22c55e;
+            --green-glow: rgba(34, 197, 94, 0.2);
+            --amber: #f59e0b;
+            --amber-glow: rgba(245, 158, 11, 0.2);
+            --red: #ef4444;
+            --radius: 12px;
+            --radius-sm: 8px;
+            --shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+        }
 
-        #app { display: grid; grid-template-rows: 56px 1fr auto; height: 100vh; }
+        html,
+        body {
+            height: 100%;
+            font-family: 'Inter', system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--text-1);
+            overflow: hidden;
+        }
+
+        #app {
+            display: grid;
+            grid-template-rows: 56px 1fr auto;
+            height: 100vh;
+        }
 
         header {
-            display: flex; align-items: center; justify-content: space-between;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
             padding: 0 20px;
             background: var(--surface-1);
             border-bottom: 1px solid var(--border);
             backdrop-filter: blur(12px);
             z-index: 10;
         }
-        .logo { display: flex; align-items: center; gap: 10px; }
-        .logo-icon {
-            width: 28px; height: 28px; border-radius: 6px;
-            background: linear-gradient(135deg, #0ea5e9, #6366f1);
-            display: flex; align-items: center; justify-content: center; font-size: 14px;
-        }
-        .logo-text { font-size: 15px; font-weight: 600; letter-spacing: -0.3px; color: var(--text-1); }
-        .logo-sub  { font-size: 11px; font-weight: 400; color: var(--text-3); margin-top: 1px; }
 
-        .header-right { display: flex; align-items: center; gap: 10px; }
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .logo-icon {
+            width: 28px;
+            height: 28px;
+            border-radius: 6px;
+            background: linear-gradient(135deg, #0ea5e9, #6366f1);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+        }
+
+        .logo-text {
+            font-size: 15px;
+            font-weight: 600;
+            letter-spacing: -0.3px;
+            color: var(--text-1);
+        }
+
+        .logo-sub {
+            font-size: 11px;
+            font-weight: 400;
+            color: var(--text-3);
+            margin-top: 1px;
+        }
+
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
 
         .stat-chip {
-            display: flex; align-items: center; gap: 6px;
-            padding: 4px 10px; border-radius: 20px;
-            background: var(--surface-2); border: 1px solid var(--border);
-            font-size: 12px; font-weight: 500; color: var(--text-2);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            border-radius: 20px;
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--text-2);
             transition: all 0.3s;
         }
-        .stat-chip .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-3); }
-        .stat-chip.online .dot { background: var(--green); box-shadow: 0 0 6px var(--green-glow); }
-        .stat-chip.busy   .dot { background: var(--amber); box-shadow: 0 0 6px var(--amber-glow); animation: dot-pulse 1.4s ease infinite; }
-        .stat-chip.offline .dot { background: var(--red); }
-        .stat-chip.mock { border-color: rgba(245,158,11,0.4); color: var(--amber); }
+
+        .stat-chip .dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--text-3);
+        }
+
+        .stat-chip.online .dot {
+            background: var(--green);
+            box-shadow: 0 0 6px var(--green-glow);
+        }
+
+        .stat-chip.busy .dot {
+            background: var(--amber);
+            box-shadow: 0 0 6px var(--amber-glow);
+            animation: dot-pulse 1.4s ease infinite;
+        }
+
+        .stat-chip.offline .dot {
+            background: var(--red);
+        }
+
+        .stat-chip.mock {
+            border-color: rgba(245, 158, 11, 0.4);
+            color: var(--amber);
+        }
 
         @keyframes dot-pulse {
-            0%, 100% { opacity: 1; transform: scale(1); }
-            50%       { opacity: 0.6; transform: scale(1.3); }
+
+            0%,
+            100% {
+                opacity: 1;
+                transform: scale(1);
+            }
+
+            50% {
+                opacity: 0.6;
+                transform: scale(1.3);
+            }
         }
 
-        .model-select-wrap, .device-select-wrap { position: relative; }
-        #model-select, #device-select {
-            appearance: none;
-            background: var(--surface-2); border: 1px solid var(--border);
-            color: var(--text-1); font-family: inherit; font-size: 12px; font-weight: 500;
-            padding: 5px 28px 5px 10px; border-radius: 20px; cursor: pointer; outline: none;
-            transition: border-color 0.2s; max-width: 280px;
+        .model-select-wrap,
+        .device-select-wrap {
+            position: relative;
         }
-        #device-select { width: 76px; }
-        #model-select:hover, #device-select:hover { border-color: var(--border-hover); }
-        #device-select:disabled { opacity: 0.55; cursor: not-allowed; }
-        .model-arrow, .device-arrow { position: absolute; right: 9px; top: 50%; transform: translateY(-50%); pointer-events: none; color: var(--text-3); font-size: 10px; }
+
+        #model-select,
+        #device-select {
+            appearance: none;
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            color: var(--text-1);
+            font-family: inherit;
+            font-size: 12px;
+            font-weight: 500;
+            padding: 5px 28px 5px 10px;
+            border-radius: 20px;
+            cursor: pointer;
+            outline: none;
+            transition: border-color 0.2s;
+            max-width: 280px;
+        }
+
+        #device-select {
+            width: 76px;
+        }
+
+        #model-select:hover,
+        #device-select:hover {
+            border-color: var(--border-hover);
+        }
+
+        #device-select:disabled {
+            opacity: 0.55;
+            cursor: not-allowed;
+        }
+
+        .model-arrow,
+        .device-arrow {
+            position: absolute;
+            right: 9px;
+            top: 50%;
+            transform: translateY(-50%);
+            pointer-events: none;
+            color: var(--text-3);
+            font-size: 10px;
+        }
 
         .icon-btn {
-            width: 32px; height: 32px; border-radius: var(--radius-sm);
-            background: var(--surface-2); border: 1px solid var(--border);
-            color: var(--text-2); cursor: pointer;
-            display: flex; align-items: center; justify-content: center;
-            font-size: 15px; transition: all 0.2s; flex-shrink: 0;
+            width: 32px;
+            height: 32px;
+            border-radius: var(--radius-sm);
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            color: var(--text-2);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 15px;
+            transition: all 0.2s;
+            flex-shrink: 0;
         }
-        .icon-btn:hover { background: var(--surface-3); border-color: var(--border-hover); color: var(--text-1); }
-        .icon-btn.danger:hover:not(:disabled) { color: #fecaca; border-color: rgba(239,68,68,0.45); }
-        .icon-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 
-        #chat-area { overflow-y: auto; padding: 24px 0; display: flex; flex-direction: column; scroll-behavior: smooth; }
-        #chat-area::-webkit-scrollbar { width: 5px; }
-        #chat-area::-webkit-scrollbar-track { background: transparent; }
-        #chat-area::-webkit-scrollbar-thumb { background: var(--surface-3); border-radius: 3px; }
+        .icon-btn:hover {
+            background: var(--surface-3);
+            border-color: var(--border-hover);
+            color: var(--text-1);
+        }
 
-        .chat-inner { max-width: 820px; width: 100%; margin: 0 auto; padding: 0 20px; display: flex; flex-direction: column; gap: 20px; }
+        .icon-btn.danger:hover:not(:disabled) {
+            color: #fecaca;
+            border-color: rgba(239, 68, 68, 0.45);
+        }
 
-        .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 80px 20px; text-align: center; animation: fade-in 0.5s ease; }
-        .empty-icon { font-size: 48px; background: linear-gradient(135deg, #0ea5e9, #6366f1); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
-        .empty-state h2 { font-size: 22px; font-weight: 600; color: var(--text-1); }
-        .empty-state p  { font-size: 14px; color: var(--text-2); max-width: 420px; line-height: 1.6; }
-        .suggestion-chips { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 8px; }
-        .chip { padding: 7px 14px; border-radius: 20px; font-size: 13px; background: var(--surface-2); border: 1px solid var(--border); color: var(--text-2); cursor: pointer; transition: all 0.2s; }
-        .chip:hover { background: var(--surface-3); border-color: var(--border-hover); color: var(--text-1); }
+        .icon-btn:disabled {
+            opacity: 0.45;
+            cursor: not-allowed;
+        }
 
-        .msg-row { display: flex; gap: 12px; animation: msg-in 0.2s ease; }
-        .msg-row.user { flex-direction: row-reverse; }
-        @keyframes msg-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+        .main-body {
+            display: flex;
+            flex: 1;
+            min-height: 0;
+            position: relative;
+            overflow: hidden;
+        }
 
-        .avatar { width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 14px; margin-top: 2px; }
-        .avatar.ai   { background: linear-gradient(135deg, #0ea5e9, #6366f1); }
-        .avatar.user { background: linear-gradient(135deg, #10b981, #0ea5e9); }
+        #chat-area {
+            flex: 1;
+            overflow-y: auto;
+            padding: 24px 0;
+            display: flex;
+            flex-direction: column;
+            scroll-behavior: smooth;
+            position: relative;
+        }
 
-        .bubble { max-width: 75%; padding: 12px 16px; border-radius: var(--radius); line-height: 1.65; font-size: 14px; word-break: break-word; }
-        .msg-row.ai   .bubble { background: var(--surface-2); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
-        .msg-row.user .bubble { background: var(--primary); color: #fff; border-bottom-right-radius: 4px; }
+        #chat-area::-webkit-scrollbar {
+            width: 5px;
+        }
 
-        .bubble p  { margin: 0 0 8px; }
-        .bubble p:last-child { margin-bottom: 0; }
-        .bubble code { font-family: 'JetBrains Mono', monospace; font-size: 12.5px; background: rgba(0,0,0,0.3); padding: 2px 5px; border-radius: 4px; }
-        .msg-row.user .bubble code { background: rgba(255,255,255,0.2); }
-        .bubble pre { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px; margin: 8px 0; overflow-x: auto; font-size: 12.5px; font-family: 'JetBrains Mono', monospace; }
-        .bubble pre code { background: none; padding: 0; }
-        .bubble ul, .bubble ol { margin: 6px 0; padding-left: 20px; }
-        .bubble li { margin: 2px 0; }
-        .bubble strong { font-weight: 600; }
-        .bubble h1, .bubble h2, .bubble h3 { margin: 10px 0 4px; font-size: 15px; }
+        #chat-area::-webkit-scrollbar-track {
+            background: transparent;
+        }
 
-        .tool-call-card { margin: 8px 0; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-1); overflow: hidden; font-size: 13px; }
-        .tool-call-header { display: flex; align-items: center; gap: 8px; padding: 7px 12px; background: var(--surface-2); border-bottom: 1px solid var(--border); }
-        .tool-call-icon { font-size: 12px; color: var(--amber); }
-        .tool-call-name { font-weight: 600; color: var(--text-1); flex: 1; }
-        .tool-call-badge { font-size: 10px; font-weight: 500; letter-spacing: 0.5px; padding: 2px 7px; border-radius: 20px; text-transform: uppercase; background: rgba(245,158,11,0.15); color: var(--amber); border: 1px solid rgba(245,158,11,0.3); }
-        .tool-call-args { margin: 0; padding: 10px 12px; font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--text-2); overflow-x: auto; background: transparent; border: none; }
+        #chat-area::-webkit-scrollbar-thumb {
+            background: var(--surface-3);
+            border-radius: 3px;
+        }
 
-        .typing-indicator { display: flex; gap: 5px; align-items: center; padding: 4px 0; }
-        .typing-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-3); animation: bounce 1.2s ease infinite; }
-        .typing-dot:nth-child(2) { animation-delay: 0.2s; }
-        .typing-dot:nth-child(3) { animation-delay: 0.4s; }
-        @keyframes bounce { 0%,60%,100% { transform: translateY(0); } 30% { transform: translateY(-6px); } }
+        #chat-area::-webkit-scrollbar-thumb:hover {
+            background: var(--text-3);
+        }
 
-        .msg-time { font-size: 10px; color: var(--text-3); margin-top: 4px; padding: 0 4px; align-self: flex-end; }
+        /* Settings Sidebar */
+        #settings-sidebar {
+            width: 280px;
+            background: var(--surface-1);
+            border-left: 1px solid var(--border);
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            transition: margin-right 0.3s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.3s;
+            overflow-y: auto;
+            flex-shrink: 0;
+            z-index: 4;
+        }
 
-        .copy-btn { align-self: flex-start; margin-top: 4px; padding: 4px 8px; border-radius: var(--radius-sm); background: var(--surface-2); border: 1px solid var(--border); color: var(--text-3); font-size: 11px; cursor: pointer; opacity: 0; transition: opacity 0.2s, color 0.2s; display: flex; align-items: center; gap: 4px; }
-        .msg-row.ai:hover .copy-btn { opacity: 1; }
-        .copy-btn:hover { color: var(--text-1); }
+        #settings-sidebar.hidden {
+            margin-right: -280px;
+            border-left-color: transparent;
+        }
 
-        #input-area { position: relative; padding: 16px 20px; background: var(--surface-1); border-top: 1px solid var(--border); }
-        .input-row { max-width: 820px; margin: 0 auto; display: flex; gap: 8px; align-items: flex-end; }
-        #user-input { flex: 1; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text-1); font-family: inherit; font-size: 14px; padding: 12px 16px; outline: none; resize: none; transition: border-color 0.2s, box-shadow 0.2s; line-height: 1.5; max-height: 160px; min-height: 46px; }
-        #user-input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-glow); }
-        #user-input::placeholder { color: var(--text-3); }
+        #settings-sidebar::-webkit-scrollbar {
+            width: 4px;
+        }
 
-        #send-btn { width: 46px; height: 46px; border-radius: var(--radius); background: var(--primary); border: none; color: #fff; font-size: 18px; cursor: pointer; flex-shrink: 0; display: flex; align-items: center; justify-content: center; transition: all 0.2s; box-shadow: 0 2px 12px var(--primary-glow); }
-        #send-btn:hover:not(:disabled) { background: #0284c7; transform: scale(1.04); }
-        #send-btn:disabled { background: var(--surface-3); box-shadow: none; cursor: not-allowed; color: var(--text-3); }
+        #settings-sidebar::-webkit-scrollbar-thumb {
+            background: var(--surface-3);
+            border-radius: 2px;
+        }
 
-        .footer-meta { max-width: 820px; margin: 8px auto 0; display: flex; justify-content: space-between; gap: 12px; font-size: 11px; color: var(--text-3); min-width: 0; }
-        .footer-meta > span:first-child { flex: 0 1 auto; min-width: 0; }
-        .footer-right { display: flex; align-items: center; justify-content: flex-end; gap: 12px; min-width: 0; flex: 1 1 55%; }
-        #model-status { color: var(--text-2); transition: color 0.2s; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        #model-status.loading { color: var(--amber); }
-        #model-status.ready { color: var(--green); }
-        #model-status.error { color: var(--red); }
-        #token-counter { flex-shrink: 0; white-space: nowrap; }
+        #settings-sidebar::-webkit-scrollbar-thumb:hover {
+            background: var(--text-3);
+        }
 
-        #toast { position: fixed; bottom: 90px; left: 50%; transform: translateX(-50%) translateY(20px); background: var(--surface-3); border: 1px solid var(--border); color: var(--text-1); font-size: 13px; padding: 8px 16px; border-radius: 20px; opacity: 0; transition: all 0.3s; pointer-events: none; white-space: nowrap; }
-        #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+        .sidebar-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
 
-        @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
-        .hidden { display: none !important; }
+        .sidebar-header h3 {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-1);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .close-btn {
+            background: none;
+            border: none;
+            color: var(--text-3);
+            font-size: 20px;
+            cursor: pointer;
+            transition: color 0.2s;
+            line-height: 1;
+        }
+
+        .close-btn:hover {
+            color: var(--text-1);
+        }
+
+        .setting-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .setting-group label {
+            font-size: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-2);
+        }
+
+        .setting-group textarea {
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            color: var(--text-1);
+            font-family: inherit;
+            font-size: 12.5px;
+            padding: 10px;
+            border-radius: var(--radius-sm);
+            outline: none;
+            resize: none;
+            transition: border-color 0.2s;
+            line-height: 1.5;
+        }
+
+        .setting-group textarea:focus {
+            border-color: var(--primary);
+        }
+
+        .setting-label-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .setting-label-row span {
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--primary);
+        }
+
+        .setting-group input[type="range"] {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 100%;
+            height: 6px;
+            border-radius: 3px;
+            background: var(--surface-3);
+            outline: none;
+        }
+
+        .setting-group input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: var(--primary);
+            cursor: pointer;
+            transition: transform 0.1s;
+        }
+
+        .setting-group input[type="range"]::-webkit-slider-thumb:hover {
+            transform: scale(1.2);
+        }
+
+        .sidebar-divider {
+            height: 1px;
+            background: var(--border);
+        }
+
+        .stats-section h4 {
+            font-size: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-2);
+            margin-bottom: 2px;
+        }
+
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            font-size: 12px;
+            color: var(--text-2);
+            margin-top: 6px;
+            gap: 10px;
+        }
+
+        .info-row span:first-child {
+            flex-shrink: 0;
+        }
+
+        .info-row span:last-child {
+            color: var(--text-1);
+            font-weight: 500;
+            text-align: right;
+        }
+
+        .icon-btn.active {
+            background: var(--primary);
+            border-color: var(--primary);
+            color: #fff;
+        }
+
+        .chat-inner {
+            max-width: 820px;
+            width: 100%;
+            margin: 0 auto;
+            padding: 0 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .empty-state {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 16px;
+            padding: 80px 20px;
+            text-align: center;
+            animation: fade-in 0.5s ease;
+        }
+
+        .empty-icon {
+            font-size: 48px;
+            background: linear-gradient(135deg, #0ea5e9, #6366f1);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .empty-state h2 {
+            font-size: 22px;
+            font-weight: 600;
+            color: var(--text-1);
+        }
+
+        .empty-state p {
+            font-size: 14px;
+            color: var(--text-2);
+            max-width: 420px;
+            line-height: 1.6;
+        }
+
+        .suggestion-chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            justify-content: center;
+            margin-top: 8px;
+        }
+
+        .chip {
+            padding: 7px 14px;
+            border-radius: 20px;
+            font-size: 13px;
+            background: rgba(19, 31, 44, 0.5);
+            border: 1px solid var(--border);
+            color: var(--text-2);
+            cursor: pointer;
+            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .chip:hover {
+            background: var(--surface-3);
+            border-color: var(--primary);
+            color: var(--text-1);
+            transform: translateY(-1px);
+            box-shadow: 0 0 10px var(--primary-glow);
+        }
+
+        .msg-row {
+            display: flex;
+            gap: 12px;
+            animation: msg-in 0.2s ease;
+        }
+
+        .msg-row.user {
+            flex-direction: row-reverse;
+        }
+
+        @keyframes msg-in {
+            from {
+                opacity: 0;
+                transform: translateY(8px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            margin-top: 2px;
+        }
+
+        .avatar.ai {
+            background: linear-gradient(135deg, #0ea5e9, #6366f1);
+        }
+
+        .avatar.user {
+            background: linear-gradient(135deg, #10b981, #0ea5e9);
+        }
+
+        .bubble {
+            max-width: 75%;
+            padding: 12px 16px;
+            border-radius: var(--radius);
+            line-height: 1.65;
+            font-size: 14px;
+            word-break: break-word;
+        }
+
+        .msg-row.ai .bubble {
+            background: rgba(19, 31, 44, 0.45);
+            border: 1px solid var(--border);
+            border-bottom-left-radius: 4px;
+            backdrop-filter: blur(8px);
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+        }
+
+        .msg-row.user .bubble {
+            background: linear-gradient(135deg, #0ea5e9, #2563eb);
+            color: #fff;
+            border-bottom-right-radius: 4px;
+            box-shadow: 0 4px 16px rgba(14, 165, 233, 0.15);
+        }
+
+        .bubble p {
+            margin: 0 0 8px;
+        }
+
+        .bubble p:last-child {
+            margin-bottom: 0;
+        }
+
+        .bubble code {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12.5px;
+            background: rgba(0, 0, 0, 0.3);
+            padding: 2px 5px;
+            border-radius: 4px;
+        }
+
+        .msg-row.user .bubble code {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .bubble pre {
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            padding: 12px;
+            margin: 8px 0;
+            overflow-x: auto;
+            font-size: 12.5px;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .bubble pre code {
+            background: none;
+            padding: 0;
+        }
+
+        .bubble ul,
+        .bubble ol {
+            margin: 6px 0;
+            padding-left: 20px;
+        }
+
+        .bubble li {
+            margin: 2px 0;
+        }
+
+        .bubble strong {
+            font-weight: 600;
+        }
+
+        .bubble h1,
+        .bubble h2,
+        .bubble h3 {
+            margin: 10px 0 4px;
+            font-size: 15px;
+        }
+
+        .tool-call-card {
+            margin: 8px 0;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            background: var(--surface-1);
+            overflow: hidden;
+            font-size: 13px;
+        }
+
+        .tool-call-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 7px 12px;
+            background: var(--surface-2);
+            border-bottom: 1px solid var(--border);
+        }
+
+        .tool-call-icon {
+            font-size: 12px;
+            color: var(--amber);
+        }
+
+        .tool-call-name {
+            font-weight: 600;
+            color: var(--text-1);
+            flex: 1;
+        }
+
+        .tool-call-badge {
+            font-size: 10px;
+            font-weight: 500;
+            letter-spacing: 0.5px;
+            padding: 2px 7px;
+            border-radius: 20px;
+            text-transform: uppercase;
+            background: rgba(245, 158, 11, 0.15);
+            color: var(--amber);
+            border: 1px solid rgba(245, 158, 11, 0.3);
+        }
+
+        .tool-call-args {
+            margin: 0;
+            padding: 10px 12px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            color: var(--text-2);
+            overflow-x: auto;
+            background: transparent;
+            border: none;
+        }
+
+        .typing-indicator {
+            display: flex;
+            gap: 5px;
+            align-items: center;
+            padding: 4px 0;
+        }
+
+        .typing-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: var(--text-3);
+            animation: bounce 1.2s ease infinite;
+        }
+
+        .typing-dot:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+
+        .typing-dot:nth-child(3) {
+            animation-delay: 0.4s;
+        }
+
+        @keyframes bounce {
+
+            0%,
+            60%,
+            100% {
+                transform: translateY(0);
+            }
+
+            30% {
+                transform: translateY(-6px);
+            }
+        }
+
+        .msg-time {
+            font-size: 10px;
+            color: var(--text-3);
+            margin-top: 4px;
+            padding: 0 4px;
+            align-self: flex-end;
+        }
+
+        .copy-btn {
+            align-self: flex-start;
+            margin-top: 4px;
+            padding: 4px 8px;
+            border-radius: var(--radius-sm);
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            color: var(--text-3);
+            font-size: 11px;
+            cursor: pointer;
+            opacity: 0;
+            transition: opacity 0.2s, color 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .msg-row.ai:hover .copy-btn {
+            opacity: 1;
+        }
+
+        .copy-btn:hover {
+            color: var(--text-1);
+        }
+
+        #input-area {
+            position: relative;
+            padding: 16px 20px;
+            background: var(--surface-1);
+            border-top: 1px solid var(--border);
+        }
+
+        .input-row {
+            max-width: 820px;
+            margin: 0 auto;
+            display: flex;
+            gap: 8px;
+            align-items: flex-end;
+        }
+
+        #user-input {
+            flex: 1;
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            color: var(--text-1);
+            font-family: inherit;
+            font-size: 14px;
+            padding: 12px 16px;
+            outline: none;
+            resize: none;
+            transition: border-color 0.2s, box-shadow 0.2s;
+            line-height: 1.5;
+            max-height: 160px;
+            min-height: 46px;
+        }
+
+        #user-input:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px var(--primary-glow);
+        }
+
+        #user-input::placeholder {
+            color: var(--text-3);
+        }
+
+        #send-btn {
+            width: 46px;
+            height: 46px;
+            border-radius: var(--radius);
+            background: var(--primary);
+            border: none;
+            color: #fff;
+            font-size: 18px;
+            cursor: pointer;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+            box-shadow: 0 2px 12px var(--primary-glow);
+        }
+
+        #send-btn:hover:not(:disabled) {
+            background: #0284c7;
+            transform: scale(1.04);
+        }
+
+        #send-btn:disabled {
+            background: var(--surface-3);
+            box-shadow: none;
+            cursor: not-allowed;
+            color: var(--text-3);
+        }
+
+        .footer-meta {
+            max-width: 820px;
+            margin: 8px auto 0;
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            font-size: 11px;
+            color: var(--text-3);
+            min-width: 0;
+        }
+
+        .footer-meta>span:first-child {
+            flex: 0 1 auto;
+            min-width: 0;
+        }
+
+        .footer-right {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 12px;
+            min-width: 0;
+            flex: 1 1 55%;
+        }
+
+        #model-status {
+            color: var(--text-2);
+            transition: color 0.2s;
+            min-width: 0;
+            max-width: 100%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        #model-status.loading {
+            color: var(--amber);
+        }
+
+        #model-status.ready {
+            color: var(--green);
+        }
+
+        #model-status.error {
+            color: var(--red);
+        }
+
+        #token-counter {
+            flex-shrink: 0;
+            white-space: nowrap;
+        }
+
+        #toast {
+            position: fixed;
+            bottom: 90px;
+            left: 50%;
+            transform: translateX(-50%) translateY(20px);
+            background: var(--surface-3);
+            border: 1px solid var(--border);
+            color: var(--text-1);
+            font-size: 13px;
+            padding: 8px 16px;
+            border-radius: 20px;
+            opacity: 0;
+            transition: all 0.3s;
+            pointer-events: none;
+            white-space: nowrap;
+        }
+
+        #toast.show {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
+        }
+
+        @keyframes fade-in {
+            from {
+                opacity: 0;
+            }
+
+            to {
+                opacity: 1;
+            }
+        }
+
+        .hidden {
+            display: none !important;
+        }
 
         /* Send button doubles as a Stop control while generating. */
-        #send-btn.stop { background: var(--red); box-shadow: 0 2px 12px rgba(239,68,68,0.3); }
-        #send-btn.stop:hover:not(:disabled) { background: #dc2626; }
+        #send-btn.stop {
+            background: var(--red);
+            box-shadow: 0 2px 12px rgba(239, 68, 68, 0.3);
+        }
+
+        #send-btn.stop:hover:not(:disabled) {
+            background: #dc2626;
+        }
 
         /* Per-code-block copy button + highlight.js surface. */
-        .bubble pre { position: relative; }
-        .bubble pre code.hljs { background: transparent; padding: 0; }
-        .code-copy {
-            position: absolute; top: 6px; right: 6px;
-            padding: 3px 8px; font-size: 11px; font-family: 'Inter', sans-serif;
-            background: var(--surface-3); border: 1px solid var(--border);
-            color: var(--text-2); border-radius: 6px; cursor: pointer;
-            opacity: 0; transition: opacity 0.2s, color 0.2s;
+        .bubble pre {
+            position: relative;
         }
-        .bubble pre:hover .code-copy { opacity: 1; }
-        .code-copy:hover { color: var(--text-1); border-color: var(--border-hover); }
+
+        .bubble pre code.hljs {
+            background: transparent;
+            padding: 0;
+        }
+
+        .code-copy {
+            position: absolute;
+            top: 6px;
+            right: 6px;
+            padding: 3px 8px;
+            font-size: 11px;
+            font-family: 'Inter', sans-serif;
+            background: var(--surface-3);
+            border: 1px solid var(--border);
+            color: var(--text-2);
+            border-radius: 6px;
+            cursor: pointer;
+            opacity: 0;
+            transition: opacity 0.2s, color 0.2s;
+        }
+
+        .bubble pre:hover .code-copy {
+            opacity: 1;
+        }
+
+        .code-copy:hover {
+            color: var(--text-1);
+            border-color: var(--border-hover);
+        }
 
         /* Floating "jump to latest" affordance when scrolled up mid-conversation. */
         #jump-btn {
-            position: absolute; left: 50%; top: -48px; transform: translateX(-50%) translateY(8px);
-            display: flex; align-items: center; gap: 6px;
-            padding: 7px 14px; border-radius: 20px;
-            background: var(--surface-3); border: 1px solid var(--border-hover);
-            color: var(--text-1); font-size: 12px; font-weight: 500; cursor: pointer;
-            box-shadow: var(--shadow); opacity: 0; pointer-events: none; transition: all 0.25s; z-index: 5;
+            position: absolute;
+            left: 50%;
+            top: -48px;
+            transform: translateX(-50%) translateY(8px);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 7px 14px;
+            border-radius: 20px;
+            background: var(--surface-3);
+            border: 1px solid var(--border-hover);
+            color: var(--text-1);
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            box-shadow: var(--shadow);
+            opacity: 0;
+            pointer-events: none;
+            transition: all 0.25s;
+            z-index: 5;
         }
-        #jump-btn.show { opacity: 1; pointer-events: auto; transform: translateX(-50%) translateY(0); }
-        #jump-btn:hover { border-color: var(--primary); }
+
+        #jump-btn.show {
+            opacity: 1;
+            pointer-events: auto;
+            transform: translateX(-50%) translateY(0);
+        }
+
+        #jump-btn:hover {
+            border-color: var(--primary);
+        }
     </style>
 </head>
-<body>
-<div id="app">
-    <header>
-        <div class="logo">
-            <div class="logo-icon">◇</div>
-            <div>
-                <div class="logo-text">OpenVINO LLM</div>
-                <div class="logo-sub">Local &bull; Private &bull; Intel</div>
-            </div>
-        </div>
-        <div class="header-right">
-            <div class="stat-chip offline" id="device-chip">
-                <div class="dot"></div>
-                <span id="device-label">Connecting…</span>
-            </div>
-            <div class="stat-chip" id="disk-chip" title="Converted model footprint on disk">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5"/><path d="M3 12c0 1.66 4.03 3 9 3s9-1.34 9-3"/></svg>
-                <span id="disk-label">-- GB</span>
-            </div>
-            <div class="stat-chip" id="mem-chip" title="System memory usage">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
-                <span id="mem-label">--</span>
-            </div>
-            <div class="model-select-wrap">
-                <select id="model-select"><option value="">Loading models…</option></select>
-                <span class="model-arrow">▾</span>
-            </div>
-            <div class="device-select-wrap">
-                <select id="device-select" title="Load selected model on this device" aria-label="Inference device">
-                    <option value="NPU">NPU</option>
-                    <option value="GPU">GPU</option>
-                    <option value="CPU">CPU</option>
-                </select>
-                <span class="device-arrow">▾</span>
-            </div>
-            <button class="icon-btn" id="load-model-btn" title="Load selected model" aria-label="Load selected model">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
-            </button>
-            <button class="icon-btn" id="unload-model-btn" title="Unload selected model from memory" aria-label="Unload selected model from memory">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21V9"/><path d="m7 14 5-5 5 5"/><path d="M5 3h14"/></svg>
-            </button>
-            <button class="icon-btn danger" id="delete-model-btn" title="Delete selected model from disk" aria-label="Delete selected model from disk">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
-            </button>
-            <button class="icon-btn" id="new-chat-btn" title="Start new chat (Ctrl+L)" aria-label="Start new chat">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
-            </button>
-        </div>
-    </header>
 
-    <div id="chat-area">
-        <div class="chat-inner" id="chat-inner">
-            <div class="empty-state" id="empty-state">
-                <div class="empty-icon">◇</div>
-                <h2>Running locally with OpenVINO</h2>
-                <p>Inference runs on your Intel CPU, GPU, or NPU through OpenVINO GenAI. Nothing leaves your machine.</p>
-                <div class="suggestion-chips">
-                    <div class="chip" onclick="fillInput(this)">Explain what OpenVINO is in one sentence</div>
-                    <div class="chip" onclick="fillInput(this)">Write a Python hello world script</div>
-                    <div class="chip" onclick="fillInput(this)">What are you capable of?</div>
-                    <div class="chip" onclick="fillInput(this)">Summarize the benefits of local inference</div>
+<body>
+    <div id="app">
+        <header>
+            <div class="logo">
+                <div class="logo-icon">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                        stroke-linecap="round" stroke-linejoin="round" style="color: white;">
+                        <path
+                            d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z" />
+                    </svg>
+                </div>
+                <div>
+                    <div class="logo-text">OpenVINO LLM</div>
+                    <div class="logo-sub">Local &bull; Private &bull; Intel</div>
+                </div>
+            </div>
+            <div class="header-right">
+                <div class="stat-chip offline" id="device-chip">
+                    <div class="dot"></div>
+                    <span id="device-label">Connecting…</span>
+                </div>
+                <div class="stat-chip" id="disk-chip" title="Converted model footprint on disk">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <ellipse cx="12" cy="5" rx="9" ry="3" />
+                        <path d="M3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5" />
+                        <path d="M3 12c0 1.66 4.03 3 9 3s9-1.34 9-3" />
+                    </svg>
+                    <span id="disk-label">-- GB</span>
+                </div>
+                <div class="stat-chip" id="mem-chip" title="System memory usage">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="2" y="3" width="20" height="14" rx="2" />
+                        <path d="M8 21h8M12 17v4" />
+                    </svg>
+                    <span id="mem-label">--</span>
+                </div>
+                <div class="model-select-wrap">
+                    <select id="model-select">
+                        <option value="">Loading models…</option>
+                    </select>
+                    <span class="model-arrow">▾</span>
+                </div>
+                <div class="device-select-wrap">
+                    <select id="device-select" title="Load selected model on this device" aria-label="Inference device">
+                        <option value="NPU">NPU</option>
+                        <option value="GPU">GPU</option>
+                        <option value="CPU">CPU</option>
+                    </select>
+                    <span class="device-arrow">▾</span>
+                </div>
+                <button class="icon-btn" id="load-model-btn" title="Load selected model"
+                    aria-label="Load selected model">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 3v12" />
+                        <path d="m7 10 5 5 5-5" />
+                        <path d="M5 21h14" />
+                    </svg>
+                </button>
+                <button class="icon-btn" id="unload-model-btn" title="Unload selected model from memory"
+                    aria-label="Unload selected model from memory">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 21V9" />
+                        <path d="m7 14 5-5 5 5" />
+                        <path d="M5 3h14" />
+                    </svg>
+                </button>
+                <button class="icon-btn danger" id="delete-model-btn" title="Delete selected model from disk"
+                    aria-label="Delete selected model from disk">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M3 6h18" />
+                        <path d="M8 6V4h8v2" />
+                        <path d="M19 6l-1 14H6L5 6" />
+                        <path d="M10 11v6" />
+                        <path d="M14 11v6" />
+                    </svg>
+                </button>
+                <button class="icon-btn" id="new-chat-btn" title="Start new chat (Ctrl+L)" aria-label="Start new chat">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 5v14" />
+                        <path d="M5 12h14" />
+                    </svg>
+                </button>
+                <button class="icon-btn" id="settings-toggle-btn" title="Toggle Settings" aria-label="Toggle Settings">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="3" />
+                        <path
+                            d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                    </svg>
+                </button>
+            </div>
+        </header>
+
+        <div class="main-body">
+            <div id="chat-area">
+                <div class="chat-inner" id="chat-inner">
+                    <div class="empty-state" id="empty-state">
+                        <div class="empty-icon">
+                            <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="url(#logoGrad)"
+                                stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                                <defs>
+                                    <linearGradient id="logoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                                        <stop offset="0%" stop-color="#0ea5e9" />
+                                        <stop offset="100%" stop-color="#6366f1" />
+                                    </linearGradient>
+                                </defs>
+                                <path
+                                    d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z" />
+                            </svg>
+                        </div>
+                        <h2>Running locally with OpenVINO</h2>
+                        <p>Inference runs on your Intel CPU, GPU, or NPU through OpenVINO GenAI. Nothing leaves your
+                            machine.</p>
+                        <div class="suggestion-chips">
+                            <div class="chip" onclick="fillInput(this)">Explain what OpenVINO is in one sentence</div>
+                            <div class="chip" onclick="fillInput(this)">Write a Python hello world script</div>
+                            <div class="chip" onclick="fillInput(this)">What are you capable of?</div>
+                            <div class="chip" onclick="fillInput(this)">Summarize the benefits of local inference</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div id="settings-sidebar" class="hidden">
+                <div class="sidebar-header">
+                    <h3>Generation Settings</h3>
+                    <button id="close-sidebar-btn" class="close-btn" title="Close settings"
+                        aria-label="Close settings">&times;</button>
+                </div>
+
+                <div class="setting-group">
+                    <label for="settings-system-prompt">System Prompt</label>
+                    <textarea id="settings-system-prompt" placeholder="Optional system instructions..."
+                        rows="4"></textarea>
+                </div>
+
+                <div class="setting-group">
+                    <div class="setting-label-row">
+                        <label for="settings-temperature">Temperature</label>
+                        <span id="settings-temperature-val">0.7</span>
+                    </div>
+                    <input type="range" id="settings-temperature" min="0" max="1.5" step="0.1" value="0.7">
+                </div>
+
+                <div class="setting-group">
+                    <div class="setting-label-row">
+                        <label for="settings-max-tokens">Max Output Tokens</label>
+                        <span id="settings-max-tokens-val">512</span>
+                    </div>
+                    <input type="range" id="settings-max-tokens" min="64" max="2048" step="64" value="512">
+                </div>
+
+                <div class="sidebar-divider"></div>
+
+                <div class="setting-group stats-section">
+                    <h4>System Info</h4>
+                    <div class="info-row">
+                        <span>Engine:</span>
+                        <span id="info-engine-type">Connecting…</span>
+                    </div>
+                    <div class="info-row">
+                        <span>Loaded on:</span>
+                        <span id="info-loaded-device">-</span>
+                    </div>
+                    <div class="info-row">
+                        <span>Model Directory:</span>
+                        <span id="info-models-dir"
+                            style="word-break: break-all; text-align: right; font-size: 10px; color: var(--text-3); font-family: monospace;">-</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="input-area">
+            <button id="jump-btn" title="Scroll to latest message">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 5v14" />
+                    <path d="m19 12-7 7-7-7" />
+                </svg>
+                Latest
+            </button>
+            <form id="chat-form" class="input-row" onsubmit="return false;">
+                <textarea id="user-input" placeholder="Message the model… (Enter to send, Shift+Enter for newline)"
+                    rows="1" autocomplete="off"></textarea>
+                <button type="submit" id="send-btn" title="Send (Enter)">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M22 2L11 13" />
+                        <path d="M22 2L15 22 11 13 2 9l20-7z" />
+                    </svg>
+                </button>
+            </form>
+            <div class="footer-meta">
+                <span>Enter to send &middot; Shift+Enter for newline &middot; Ctrl+L to clear</span>
+                <div class="footer-right">
+                    <span id="model-status">Loading model catalog…</span>
+                    <span id="token-counter">0 tokens</span>
                 </div>
             </div>
         </div>
     </div>
 
-    <div id="input-area">
-        <button id="jump-btn" title="Scroll to latest message">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></svg>
-            Latest
-        </button>
-        <form id="chat-form" class="input-row" onsubmit="return false;">
-            <textarea id="user-input" placeholder="Message the model… (Enter to send, Shift+Enter for newline)" rows="1" autocomplete="off"></textarea>
-            <button type="submit" id="send-btn" title="Send (Enter)">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13"/><path d="M22 2L15 22 11 13 2 9l20-7z"/></svg>
-            </button>
-        </form>
-        <div class="footer-meta">
-            <span>Enter to send &middot; Shift+Enter for newline &middot; Ctrl+L to clear</span>
-            <div class="footer-right">
-                <span id="model-status">Loading model catalog…</span>
-                <span id="token-counter">0 tokens</span>
-            </div>
-        </div>
-    </div>
-</div>
+    <div id="toast"></div>
 
-<div id="toast"></div>
+    <script>
+        // ── State ─────────────────────────────────────────────
+        let conversation = [];
+        let isGenerating = false;
+        let statusInterval = null;
+        let currentStatusPollMs = 3000;
+        let waitingForModelId = null;
+        let isMock = false;
+        let defaultDevice = 'NPU';
+        let selectedDevice = localStorage.getItem('ovllm.device.v1') || 'NPU';
+        let currentAbort = null;       // AbortController for the in-flight generation
+        let autoScroll = true;         // follow new tokens only when the user is at the bottom
+        const availableModels = new Map();
+        const STORAGE_KEY = 'ovllm.chat.v1';
 
-<script>
-    // ── State ─────────────────────────────────────────────
-    let conversation = [];
-    let isGenerating = false;
-    let statusInterval = null;
-    let currentStatusPollMs = 3000;
-    let waitingForModelId = null;
-    let isMock = false;
-    let defaultDevice = 'NPU';
-    let selectedDevice = localStorage.getItem('ovllm.device.v1') || 'NPU';
-    let currentAbort = null;       // AbortController for the in-flight generation
-    let autoScroll = true;         // follow new tokens only when the user is at the bottom
-    const availableModels = new Map();
-    const STORAGE_KEY = 'ovllm.chat.v1';
+        const SEND_ICON = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13"/><path d="M22 2L15 22 11 13 2 9l20-7z"/></svg>';
+        const STOP_ICON = '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>';
+        const LOAD_ICON = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 5v14l11-7z"/></svg>';
+        const CONVERT_ICON = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>';
 
-    const SEND_ICON = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13"/><path d="M22 2L15 22 11 13 2 9l20-7z"/></svg>';
-    const STOP_ICON = '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>';
-    const LOAD_ICON = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 5v14l11-7z"/></svg>';
-    const CONVERT_ICON = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>';
+        // ── DOM Refs ──────────────────────────────────────────
+        const chatInner = document.getElementById('chat-inner');
+        const emptyState = document.getElementById('empty-state');
+        const chatArea = document.getElementById('chat-area');
+        const userInput = document.getElementById('user-input');
+        const sendBtn = document.getElementById('send-btn');
+        const modelSelect = document.getElementById('model-select');
+        const deviceSelect = document.getElementById('device-select');
+        const loadModelBtn = document.getElementById('load-model-btn');
+        const unloadModelBtn = document.getElementById('unload-model-btn');
+        const deleteModelBtn = document.getElementById('delete-model-btn');
+        const deviceChip = document.getElementById('device-chip');
+        const deviceLabel = document.getElementById('device-label');
+        const memChip = document.getElementById('mem-chip');
+        const memLabel = document.getElementById('mem-label');
+        const diskChip = document.getElementById('disk-chip');
+        const diskLabel = document.getElementById('disk-label');
+        const newChatBtn = document.getElementById('new-chat-btn');
+        const modelStatus = document.getElementById('model-status');
+        const tokenCounter = document.getElementById('token-counter');
+        const jumpBtn = document.getElementById('jump-btn');
+        sendBtn.disabled = true;
 
-    // ── DOM Refs ──────────────────────────────────────────
-    const chatInner    = document.getElementById('chat-inner');
-    const emptyState   = document.getElementById('empty-state');
-    const chatArea     = document.getElementById('chat-area');
-    const userInput    = document.getElementById('user-input');
-    const sendBtn      = document.getElementById('send-btn');
-    const modelSelect  = document.getElementById('model-select');
-    const deviceSelect = document.getElementById('device-select');
-    const loadModelBtn = document.getElementById('load-model-btn');
-    const unloadModelBtn = document.getElementById('unload-model-btn');
-    const deleteModelBtn = document.getElementById('delete-model-btn');
-    const deviceChip   = document.getElementById('device-chip');
-    const deviceLabel  = document.getElementById('device-label');
-    const memChip      = document.getElementById('mem-chip');
-    const memLabel     = document.getElementById('mem-label');
-    const diskChip     = document.getElementById('disk-chip');
-    const diskLabel    = document.getElementById('disk-label');
-    const newChatBtn   = document.getElementById('new-chat-btn');
-    const modelStatus  = document.getElementById('model-status');
-    const tokenCounter = document.getElementById('token-counter');
-    const jumpBtn      = document.getElementById('jump-btn');
-    sendBtn.disabled = true;
+        // Settings panel DOM refs
+        const settingsToggleBtn = document.getElementById('settings-toggle-btn');
+        const settingsSidebar = document.getElementById('settings-sidebar');
+        const closeSidebarBtn = document.getElementById('close-sidebar-btn');
+        const settingsSystemPrompt = document.getElementById('settings-system-prompt');
+        const settingsTemperature = document.getElementById('settings-temperature');
+        const settingsTemperatureVal = document.getElementById('settings-temperature-val');
+        const settingsMaxTokens = document.getElementById('settings-max-tokens');
+        const settingsMaxTokensVal = document.getElementById('settings-max-tokens-val');
+        const infoEngineType = document.getElementById('info-engine-type');
+        const infoLoadedDevice = document.getElementById('info-loaded-device');
+        const infoModelsDir = document.getElementById('info-models-dir');
 
-    // ── Helpers ───────────────────────────────────────────
-    // Render model output as markdown, then sanitize the HTML before insertion.
-    // (Degrades gracefully if the marked / DOMPurify CDNs are unavailable.)
-    function renderMarkdown(text) {
-        const raw = window.marked ? marked.parse(text || '') : escapeHtml(text || '');
-        return window.DOMPurify ? DOMPurify.sanitize(raw) : raw;
-    }
-    function escapeHtml(text) { return String(text).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-
-    // Syntax-highlight code blocks and add a per-block copy button (once each).
-    function enhanceCodeBlocks(container) {
-        container.querySelectorAll('pre:not(.tool-call-args)').forEach(pre => {
-            if (pre.dataset.enhanced) return;
-            pre.dataset.enhanced = '1';
-            const code = pre.querySelector('code');
-            if (code && window.hljs) { try { hljs.highlightElement(code); } catch {} }
-            const btn = document.createElement('button');
-            btn.className = 'code-copy';
-            btn.type = 'button';
-            btn.textContent = 'Copy';
-            btn.addEventListener('click', () => {
-                navigator.clipboard.writeText(code ? code.innerText : pre.innerText).then(() => {
-                    btn.textContent = 'Copied';
-                    setTimeout(() => { btn.textContent = 'Copy'; }, 1500);
+        // ── Helpers ───────────────────────────────────────────
+        // Render model output as markdown, then sanitize the HTML before insertion.
+        // (Degrades gracefully if the marked / DOMPurify CDNs are unavailable.)
+        function renderMarkdown(text) {
+            const raw = window.marked ? marked.parse(text || '') : escapeHtml(text || '');
+            return window.DOMPurify ? DOMPurify.sanitize(raw) : raw;
+        }
+        function escapeHtml(text) { return String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+        // Syntax-highlight code blocks and add a per-block copy button (once each).
+        function enhanceCodeBlocks(container) {
+            container.querySelectorAll('pre:not(.tool-call-args)').forEach(pre => {
+                if (pre.dataset.enhanced) return;
+                pre.dataset.enhanced = '1';
+                const code = pre.querySelector('code');
+                if (code && window.hljs) { try { hljs.highlightElement(code); } catch { } }
+                const btn = document.createElement('button');
+                btn.className = 'code-copy';
+                btn.type = 'button';
+                btn.textContent = 'Copy';
+                btn.addEventListener('click', () => {
+                    navigator.clipboard.writeText(code ? code.innerText : pre.innerText).then(() => {
+                        btn.textContent = 'Copied';
+                        setTimeout(() => { btn.textContent = 'Copy'; }, 1500);
+                    });
                 });
+                pre.appendChild(btn);
             });
-            pre.appendChild(btn);
-        });
-    }
-
-    function setStatusPolling(ms) {
-        if (currentStatusPollMs === ms) return;
-        clearInterval(statusInterval);
-        statusInterval = setInterval(updateStatus, ms);
-        currentStatusPollMs = ms;
-    }
-
-    function getSelectedModelMeta() { return availableModels.get(modelSelect.value) || null; }
-    function formatModelOptionLabel(model) { return `${model.name} · ${model.status_label}`; }
-    function normalizeUiDevice(device) { return ['CPU', 'GPU', 'NPU'].includes(device) ? device : 'NPU'; }
-    function modelLoadDevice() { return normalizeUiDevice(selectedDevice || defaultDevice); }
-
-    function renderModelOptions(models) {
-        const previousValue = modelSelect.value;
-        availableModels.clear();
-        models.forEach(model => availableModels.set(model.id, model));
-        modelSelect.innerHTML = '';
-        models.forEach(model => {
-            const opt = document.createElement('option');
-            opt.value = model.id;
-            opt.textContent = formatModelOptionLabel(model);
-            opt.title = model.description || model.status_label;
-            modelSelect.appendChild(opt);
-        });
-        const nextValue =
-            (previousValue && availableModels.has(previousValue) && previousValue) ||
-            (waitingForModelId && availableModels.has(waitingForModelId) && waitingForModelId) ||
-            models.find(model => model.is_loaded)?.id ||
-            models[0]?.id || '';
-        modelSelect.value = nextValue;
-    }
-
-    function setModelStatus(text, className = '', title = text) {
-        modelStatus.textContent = text;
-        modelStatus.className = className;
-        modelStatus.title = title || text;
-    }
-
-    function updateModelUi() {
-        const model = getSelectedModelMeta();
-        if (!model) {
-            setModelStatus('Loading model catalog…');
-            sendBtn.disabled = !isGenerating; loadModelBtn.disabled = true;
-            unloadModelBtn.disabled = true; deleteModelBtn.disabled = true; deviceSelect.disabled = true;
-            return;
-        }
-        const deviceSuffix = model.device ? ` on ${model.device}` : '';
-        const loadDevice = modelLoadDevice();
-        if (model.is_loaded) {
-            setModelStatus(`${model.name} is ready${deviceSuffix}`, 'ready');
-            userInput.placeholder = 'Message the model… (Enter to send, Shift+Enter for newline)';
-        } else if (model.is_loading) {
-            setModelStatus(`${model.name}: ${model.status_label}`, 'loading');
-            userInput.placeholder = model.status === 'converting'
-                ? `Converting ${model.name} to OpenVINO IR…`
-                : `Loading ${model.name}…`;
-        } else if (model.status === 'error') {
-            const isConvertRetry = !!model.can_convert;
-            const actionLabel = isConvertRetry ? 'Conversion failed' : 'Load failed';
-            const fullError = `${model.name}: ${model.error || actionLabel}`;
-            setModelStatus(`${model.name}: ${actionLabel}`, 'error', fullError);
-            userInput.placeholder = isConvertRetry
-                ? `Click convert to retry ${model.name}`
-                : `Click load to retry ${model.name}`;
-        } else if (model.status === 'ready_to_load') {
-            setModelStatus(`${model.name} is converted and ready to load`);
-            userInput.placeholder = `Click load to bring ${model.name} into ${loadDevice}`;
-        } else {
-            setModelStatus(`${model.name} is ready to convert`);
-            userInput.placeholder = isMock
-                ? `Mock mode — click load to test ${model.name}`
-                : `Click convert to prepare ${model.name} for ${loadDevice}`;
         }
 
-        sendBtn.disabled = isGenerating ? false : !model.is_loaded;  // acts as Stop while generating
-        const canPrimaryAction = model.can_load || model.can_convert;
-        loadModelBtn.disabled = isGenerating || !canPrimaryAction;
-        unloadModelBtn.disabled = isGenerating || !model.can_unload;
-        deleteModelBtn.disabled = isGenerating || !model.can_delete;
-        deviceSelect.disabled = isGenerating || model.is_loaded || model.is_loading;
-        loadModelBtn.innerHTML = model.can_convert ? CONVERT_ICON : LOAD_ICON;
-        loadModelBtn.title = model.can_convert
-            ? `Convert ${model.name}, then load it on ${loadDevice}`
-            : (model.is_loaded ? `${model.name} is already loaded` : `Load ${model.name} on ${loadDevice}`);
-        loadModelBtn.setAttribute('aria-label', model.can_convert ? 'Convert and load selected model' : 'Load selected model');
-        unloadModelBtn.title = model.can_unload ? `Unload ${model.name} from memory` : `${model.name} is not loaded`;
-        deleteModelBtn.title = model.can_delete ? `Delete ${model.name} from disk` : `No local files to delete for ${model.name}`;
-    }
+        function setStatusPolling(ms) {
+            if (currentStatusPollMs === ms) return;
+            clearInterval(statusInterval);
+            statusInterval = setInterval(updateStatus, ms);
+            currentStatusPollMs = ms;
+        }
 
-    async function requestModelLoad(modelId, suppressToast = false) {
-        const model = availableModels.get(modelId);
-        if (!model || model.is_loaded || !model.can_load) { updateModelUi(); return; }
-        waitingForModelId = modelId;
-        updateModelUi();
-        try {
-            const res = await fetch('/v1/models/load', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ model: modelId, device: modelLoadDevice() })
+        function getSelectedModelMeta() { return availableModels.get(modelSelect.value) || null; }
+        function formatModelOptionLabel(model) {
+            if (model.is_loaded && model.device) return `${model.name} · ${model.status_label} (${model.device})`;
+            return `${model.name} · ${model.status_label}`;
+        }
+        function normalizeUiDevice(device) { return ['CPU', 'GPU', 'NPU'].includes(device) ? device : 'NPU'; }
+        function modelLoadDevice() { return normalizeUiDevice(selectedDevice || defaultDevice); }
+
+        function renderModelOptions(models) {
+            const previousValue = modelSelect.value;
+            availableModels.clear();
+            models.forEach(model => availableModels.set(model.id, model));
+            modelSelect.innerHTML = '';
+            models.forEach(model => {
+                const opt = document.createElement('option');
+                opt.value = model.id;
+                opt.textContent = formatModelOptionLabel(model);
+                opt.title = model.description || model.status_label;
+                modelSelect.appendChild(opt);
             });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
-            if (!suppressToast) showToast(data.message || `Loading ${model.name}…`);
-            setStatusPolling(1000);
-            await updateStatus();
-        } catch (err) {
-            waitingForModelId = null;
-            setModelStatus(`${model.name}: Load failed`, 'error', `${model.name}: ${err.message}`);
-            showToast(`Failed to start ${model.name}`);
+            const nextValue =
+                (previousValue && availableModels.has(previousValue) && previousValue) ||
+                (waitingForModelId && availableModels.has(waitingForModelId) && waitingForModelId) ||
+                models.find(model => model.is_loaded)?.id ||
+                models[0]?.id || '';
+            modelSelect.value = nextValue;
         }
-    }
 
-    async function requestModelConvert(modelId, suppressToast = false) {
-        const model = availableModels.get(modelId);
-        if (!model || model.is_loaded || !model.can_convert) { updateModelUi(); return; }
-        waitingForModelId = modelId;
-        updateModelUi();
-        try {
-            const res = await fetch('/v1/models/convert', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ model: modelId, device: modelLoadDevice(), load_after: true })
-            });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
-            if (!suppressToast) showToast(data.message || `Converting ${model.name}…`);
-            setStatusPolling(1000);
-            await updateStatus();
-        } catch (err) {
-            waitingForModelId = null;
-            setModelStatus(`${model.name}: Conversion failed`, 'error', `${model.name}: ${err.message}`);
-            showToast(`Failed to start conversion`);
+        function setModelStatus(text, className = '', title = text) {
+            modelStatus.textContent = text;
+            modelStatus.className = className;
+            modelStatus.title = title || text;
         }
-    }
 
-    async function requestModelUnload(modelId) {
-        const model = availableModels.get(modelId);
-        if (!model || !model.can_unload) { updateModelUi(); return; }
-        try {
-            const res = await fetch('/v1/models/unload', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ model: modelId })
-            });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
-            showToast(`${model.name} unloaded`);
-            if (modelSelect.value === modelId) waitingForModelId = null;
-            await updateStatus();
-        } catch (err) {
-            showToast(`Failed to unload ${model.name}`);
-            setModelStatus(`${model.name}: Unload failed`, 'error', `${model.name}: ${err.message}`);
-        }
-    }
-
-    async function requestModelDelete(modelId) {
-        const model = availableModels.get(modelId);
-        if (!model || !model.can_delete) { updateModelUi(); return; }
-        if (!window.confirm(`Delete local OpenVINO files for ${model.name}?\n\nThis frees disk space; you can re-convert later.`)) return;
-        try {
-            const res = await fetch('/v1/models/delete', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ model: modelId })
-            });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
-            const freedLabel = data.freed_gb > 0 ? `${data.freed_gb.toFixed(2)} GB freed` : 'No files to remove';
-            showToast(`${model.name}: ${freedLabel}`);
-            waitingForModelId = null;
-            await updateStatus();
-        } catch (err) {
-            showToast(`Failed to delete ${model.name}`);
-            setModelStatus(`${model.name}: Delete failed`, 'error', `${model.name}: ${err.message}`);
-        }
-    }
-
-    // ── Status Polling ────────────────────────────────────
-    async function updateStatus() {
-        try {
-            const res  = await fetch('/v1/system/status');
-            const data = await res.json();
-
-            memLabel.textContent = `${data.memory.used_percent}% RAM`;
-            if (data.disk) {
-                const gb = data.disk.models_gb ?? data.disk.total_gb ?? 0;
-                diskLabel.textContent = gb >= 1 ? `${gb.toFixed(1)} GB` : `${Math.round(gb * 1024)} MB`;
-                diskChip.title = (data.disk.free_gb != null && data.disk.total_gb)
-                    ? `Converted models: ${gb.toFixed(1)} GB · ${Math.round(data.disk.free_gb)} GB free of ${Math.round(data.disk.total_gb)} GB`
-                    : 'Converted model footprint on disk';
+        function updateModelUi() {
+            const model = getSelectedModelMeta();
+            if (!model) {
+                setModelStatus('Loading model catalog…');
+                sendBtn.disabled = !isGenerating; loadModelBtn.disabled = true;
+                unloadModelBtn.disabled = true; deleteModelBtn.disabled = true; deviceSelect.disabled = true;
+                return;
             }
-
-            const dev = data.device || {};
-            isMock = !!dev.mock;
-            defaultDevice = normalizeUiDevice(dev.default || 'NPU');
-            selectedDevice = normalizeUiDevice(selectedDevice || defaultDevice);
-            deviceSelect.value = selectedDevice;
-            const busy = !!dev.busy;
-            const loadingCount = data.models.loading_count || 0;
-            const modelEntries = data.models.available || [];
-            const loadedEntry = modelEntries.find(model => model.is_loaded);
-            const displayDevice = loadedEntry?.device || modelLoadDevice();
-
-            if (isMock) {
-                deviceChip.className = 'stat-chip mock';
-                deviceLabel.textContent = 'Mock engine';
-                deviceChip.title = 'OpenVINO not active — running the built-in mock engine for UI/API testing.';
+            const deviceSuffix = model.device ? ` on ${model.device}` : '';
+            const loadDevice = modelLoadDevice();
+            if (model.is_loaded) {
+                setModelStatus(`${model.name} is ready${deviceSuffix}`, 'ready');
+                userInput.placeholder = 'Message the model… (Enter to send, Shift+Enter for newline)';
+            } else if (model.is_loading) {
+                setModelStatus(`${model.name}: ${model.status_label}`, 'loading');
+                userInput.placeholder = model.status === 'converting'
+                    ? `Converting ${model.name} to OpenVINO IR…`
+                    : `Loading ${model.name}…`;
+            } else if (model.status === 'error') {
+                const isConvertRetry = !!model.can_convert;
+                const actionLabel = isConvertRetry ? 'Conversion failed' : 'Load failed';
+                const fullError = `${model.name}: ${model.error || actionLabel}`;
+                setModelStatus(`${model.name}: ${actionLabel}`, 'error', fullError);
+                userInput.placeholder = isConvertRetry
+                    ? `Click convert to retry ${model.name}`
+                    : `Click load to retry ${model.name}`;
+            } else if (model.status === 'ready_to_load') {
+                setModelStatus(`${model.name} is converted and ready to load`);
+                userInput.placeholder = `Click load to bring ${model.name} into ${loadDevice}`;
             } else {
-                deviceChip.className = `stat-chip ${(busy || loadingCount > 0) ? 'busy' : 'online'}`;
-                deviceLabel.textContent = busy ? `${displayDevice} · busy` : (loadingCount > 0 ? `Loading ${displayDevice}…` : `${displayDevice} · idle`);
-                deviceChip.title = `Selected load device: ${modelLoadDevice()}. Server default: ${defaultDevice}. Available: ${(dev.available||[]).join(', ') || 'none detected'}`;
+                setModelStatus(`${model.name} is ready to convert`);
+                userInput.placeholder = isMock
+                    ? `Mock mode — click load to test ${model.name}`
+                    : `Click convert to prepare ${model.name} for ${loadDevice}`;
             }
 
-            renderModelOptions(modelEntries);
+            sendBtn.disabled = isGenerating ? false : !model.is_loaded;  // acts as Stop while generating
+            const canPrimaryAction = model.can_load || model.can_convert;
+            loadModelBtn.disabled = isGenerating || !canPrimaryAction;
+            unloadModelBtn.disabled = isGenerating || !model.can_unload;
+            deleteModelBtn.disabled = isGenerating || !model.can_delete;
+            deviceSelect.disabled = isGenerating || model.is_loading;
+            loadModelBtn.innerHTML = model.can_convert ? CONVERT_ICON : LOAD_ICON;
+            loadModelBtn.title = model.can_convert
+                ? `Convert ${model.name}, then load it on ${loadDevice}`
+                : (model.is_loaded ? `${model.name} is already loaded` : `Load ${model.name} on ${loadDevice}`);
+            loadModelBtn.setAttribute('aria-label', model.can_convert ? 'Convert and load selected model' : 'Load selected model');
+            unloadModelBtn.title = model.can_unload ? `Unload ${model.name} from memory` : `${model.name} is not loaded`;
+            deleteModelBtn.title = model.can_delete ? `Delete ${model.name} from disk` : `No local files to delete for ${model.name}`;
+        }
+
+        async function requestModelLoad(modelId, suppressToast = false) {
+            const model = availableModels.get(modelId);
+            if (!model || model.is_loaded || !model.can_load) { updateModelUi(); return; }
+            waitingForModelId = modelId;
             updateModelUi();
-
-            if (!isGenerating) setStatusPolling(loadingCount > 0 ? 1000 : 3000);
-
-            if (waitingForModelId) {
-                const wm = availableModels.get(waitingForModelId);
-                if (wm?.is_loaded) { showToast(`${wm.name} is ready`); waitingForModelId = null; }
-                else if (wm?.status === 'error') { showToast(`${wm.name} failed to load`); waitingForModelId = null; }
+            try {
+                const res = await fetch('/v1/models/load', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ model: modelId, device: modelLoadDevice() })
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+                if (!suppressToast) showToast(data.message || `Loading ${model.name}…`);
+                setStatusPolling(1000);
+                await updateStatus();
+            } catch (err) {
+                waitingForModelId = null;
+                setModelStatus(`${model.name}: Load failed`, 'error', `${model.name}: ${err.message}`);
+                showToast(`Failed to start ${model.name}`);
             }
-        } catch {
-            deviceChip.className = 'stat-chip offline';
-            deviceLabel.textContent = 'Offline';
-            memLabel.textContent = '--'; diskLabel.textContent = '-- GB';
-            setModelStatus('Server unavailable', 'error');
-            sendBtn.disabled = !isGenerating;
         }
-    }
 
-    statusInterval = setInterval(updateStatus, 3000);
-    updateStatus();
-
-    // ── Message Rendering ─────────────────────────────────
-    function formatTime(date) { return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
-
-    function appendMessage(role, content, isStreaming = false) {
-        emptyState.classList.add('hidden');
-        const row = document.createElement('div');
-        row.className = `msg-row ${role}`;
-        const avatar = document.createElement('div');
-        avatar.className = `avatar ${role}`;
-        avatar.textContent = role === 'ai' ? '◇' : '🧑';
-        const bubble = document.createElement('div');
-        bubble.className = 'bubble';
-        const bubbleContent = document.createElement('div');
-        const timeEl = document.createElement('div');
-        timeEl.className = 'msg-time';
-        timeEl.textContent = formatTime(new Date());
-
-        if (isStreaming && role === 'ai') {
-            bubbleContent.innerHTML = '<div class="typing-indicator"><div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div></div>';
-        } else {
-            bubbleContent.innerHTML = role === 'ai' ? renderMarkdown(content) : escapeHtml(content);
+        async function requestModelConvert(modelId, suppressToast = false) {
+            const model = availableModels.get(modelId);
+            if (!model || model.is_loaded || !model.can_convert) { updateModelUi(); return; }
+            waitingForModelId = modelId;
+            updateModelUi();
+            try {
+                const res = await fetch('/v1/models/convert', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ model: modelId, device: modelLoadDevice(), load_after: true })
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+                if (!suppressToast) showToast(data.message || `Converting ${model.name}…`);
+                setStatusPolling(1000);
+                await updateStatus();
+            } catch (err) {
+                waitingForModelId = null;
+                setModelStatus(`${model.name}: Conversion failed`, 'error', `${model.name}: ${err.message}`);
+                showToast(`Failed to start conversion`);
+            }
         }
-        bubble.appendChild(bubbleContent);
-        if (role === 'ai' && !isStreaming) enhanceCodeBlocks(bubble);
 
-        const col = document.createElement('div');
-        col.style.cssText = 'display:flex;flex-direction:column;max-width:75%';
-        if (role === 'user') col.style.alignItems = 'flex-end';
-        col.appendChild(bubble);
-        if (role === 'ai') {
-            const copyBtn = document.createElement('button');
-            copyBtn.className = 'copy-btn';
-            copyBtn.title = 'Copy response';
-            copyBtn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
-            copyBtn.onclick = () => navigator.clipboard.writeText(bubble.innerText).then(() => showToast('Copied!'));
-            col.appendChild(copyBtn);
+        async function requestModelUnload(modelId) {
+            const model = availableModels.get(modelId);
+            if (!model || !model.can_unload) { updateModelUi(); return; }
+            try {
+                const res = await fetch('/v1/models/unload', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ model: modelId })
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+                showToast(`${model.name} unloaded`);
+                if (modelSelect.value === modelId) waitingForModelId = null;
+                await updateStatus();
+            } catch (err) {
+                showToast(`Failed to unload ${model.name}`);
+                setModelStatus(`${model.name}: Unload failed`, 'error', `${model.name}: ${err.message}`);
+            }
         }
-        col.appendChild(timeEl);
 
-        if (role === 'ai') { row.appendChild(avatar); row.appendChild(col); }
-        else { row.appendChild(col); row.appendChild(avatar); }
+        async function requestModelDelete(modelId) {
+            const model = availableModels.get(modelId);
+            if (!model || !model.can_delete) { updateModelUi(); return; }
+            if (!window.confirm(`Delete local OpenVINO files for ${model.name}?\n\nThis frees disk space; you can re-convert later.`)) return;
+            try {
+                const res = await fetch('/v1/models/delete', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ model: modelId })
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+                const freedLabel = data.freed_gb > 0 ? `${data.freed_gb.toFixed(2)} GB freed` : 'No files to remove';
+                showToast(`${model.name}: ${freedLabel}`);
+                waitingForModelId = null;
+                await updateStatus();
+            } catch (err) {
+                showToast(`Failed to delete ${model.name}`);
+                setModelStatus(`${model.name}: Delete failed`, 'error', `${model.name}: ${err.message}`);
+            }
+        }
 
-        chatInner.appendChild(row);
-        scrollToBottom();
-        return bubble;
-    }
+        // ── Status Polling ────────────────────────────────────
+        async function updateStatus() {
+            try {
+                const res = await fetch('/v1/system/status');
+                const data = await res.json();
 
-    // Only follow the stream when the user is already at the bottom (force overrides).
-    function isNearBottom() { return chatArea.scrollHeight - chatArea.scrollTop - chatArea.clientHeight < 120; }
-    function scrollToBottom(force = false) { if (force || autoScroll) chatArea.scrollTop = chatArea.scrollHeight; }
-    chatArea.addEventListener('scroll', () => {
-        autoScroll = isNearBottom();
-        jumpBtn.classList.toggle('show', !autoScroll);
-    });
-    jumpBtn.addEventListener('click', () => { autoScroll = true; scrollToBottom(true); jumpBtn.classList.remove('show'); });
+                memLabel.textContent = `${data.memory.used_percent}% RAM`;
+                if (data.disk) {
+                    const gb = data.disk.models_gb ?? data.disk.total_gb ?? 0;
+                    diskLabel.textContent = gb >= 1 ? `${gb.toFixed(1)} GB` : `${Math.round(gb * 1024)} MB`;
+                    diskChip.title = (data.disk.free_gb != null && data.disk.total_gb)
+                        ? `Converted models: ${gb.toFixed(1)} GB · ${Math.round(data.disk.free_gb)} GB free of ${Math.round(data.disk.total_gb)} GB`
+                        : 'Converted model footprint on disk';
+                }
 
-    // ── Conversation persistence (survives reloads) ───────
-    function saveConversation() {
-        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(conversation)); } catch {}
-    }
-    function restoreConversation() {
-        let saved;
-        try { saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); } catch { saved = []; }
-        if (!Array.isArray(saved) || !saved.length) return;
-        conversation = saved;
-        saved.forEach(m => appendMessage(m.role === 'user' ? 'user' : 'ai', m.content || ''));
-        scrollToBottom(true);
-    }
+                const dev = data.device || {};
+                isMock = !!dev.mock;
+                defaultDevice = normalizeUiDevice(dev.default || 'NPU');
+                selectedDevice = normalizeUiDevice(selectedDevice || defaultDevice);
+                deviceSelect.value = selectedDevice;
+                const busy = !!dev.busy;
+                const loadingCount = data.models.loading_count || 0;
+                const modelEntries = data.models.available || [];
+                const loadedEntry = modelEntries.find(model => model.is_loaded);
+                const displayDevice = loadedEntry?.device || modelLoadDevice();
 
-    function clearConversation() {
-        if (isGenerating) stopGeneration();
-        conversation = [];
-        try { localStorage.removeItem(STORAGE_KEY); } catch {}
-        tokenCounter.textContent = '0 tokens';
-        chatInner.innerHTML = '';
-        chatInner.appendChild(emptyState);
-        emptyState.classList.remove('hidden');
-        autoScroll = true;
-        jumpBtn.classList.remove('show');
-        showToast('New chat started');
-    }
-    newChatBtn.addEventListener('click', clearConversation);
+                if (isMock) {
+                    deviceChip.className = 'stat-chip mock';
+                    deviceLabel.textContent = 'Mock engine';
+                    deviceChip.title = 'OpenVINO not active — running the built-in mock engine for UI/API testing.';
+                } else {
+                    deviceChip.className = `stat-chip ${(busy || loadingCount > 0) ? 'busy' : 'online'}`;
+                    deviceLabel.textContent = busy ? `${displayDevice} · busy` : (loadingCount > 0 ? `Loading ${displayDevice}…` : `${displayDevice} · idle`);
+                    deviceChip.title = `Selected load device: ${modelLoadDevice()}. Server default: ${defaultDevice}. Available: ${(dev.available || []).join(', ') || 'none detected'}`;
+                }
 
-    function fillInput(el) { userInput.value = el.textContent; autoResize(); userInput.focus(); }
+                renderModelOptions(modelEntries);
+                updateModelUi();
 
-    function showToast(msg) {
-        const toast = document.getElementById('toast');
-        toast.textContent = msg;
-        toast.classList.add('show');
-        setTimeout(() => toast.classList.remove('show'), 2200);
-    }
+                // Update sidebar stats
+                infoEngineType.textContent = isMock ? 'Mock engine (no OpenVINO)' : 'OpenVINO GenAI';
+                infoLoadedDevice.textContent = loadedEntry ? `${loadedEntry.device} (loaded)` : '-';
+                if (data.disk && data.disk.models_dir) {
+                    infoModelsDir.textContent = data.disk.models_dir;
+                } else {
+                    infoModelsDir.textContent = '-';
+                }
 
-    function autoResize() {
-        userInput.style.height = 'auto';
-        userInput.style.height = Math.min(userInput.scrollHeight, 160) + 'px';
-    }
-    userInput.addEventListener('input', autoResize);
+                if (!isGenerating) setStatusPolling(loadingCount > 0 ? 1000 : 3000);
 
-    userInput.addEventListener('keydown', e => {
-        if (e.key === 'Enter' && !e.shiftKey && !isGenerating) { e.preventDefault(); sendMessage(); }
-    });
-    document.addEventListener('keydown', e => {
-        if ((e.ctrlKey || e.metaKey) && e.key === 'l') { e.preventDefault(); clearConversation(); }
-    });
+                if (waitingForModelId) {
+                    const wm = availableModels.get(waitingForModelId);
+                    if (wm?.is_loaded) { showToast(`${wm.name} is ready`); waitingForModelId = null; }
+                    else if (wm?.status === 'error') { showToast(`${wm.name} failed to load`); waitingForModelId = null; }
+                }
+            } catch {
+                deviceChip.className = 'stat-chip offline';
+                deviceLabel.textContent = 'Offline';
+                memLabel.textContent = '--'; diskLabel.textContent = '-- GB';
+                setModelStatus('Server unavailable', 'error');
+                sendBtn.disabled = !isGenerating;
+            }
+        }
 
-    // The send button is type=submit, so the form's submit event is the single
-    // entry point for both Enter and clicks (no duplicate click listener).
-    document.getElementById('chat-form').addEventListener('submit', e => { e.preventDefault(); sendMessage(); });
-    loadModelBtn.addEventListener('click', () => {
-        const m = getSelectedModelMeta();
-        if (!m) return;
-        if (m.can_convert) requestModelConvert(m.id);
-        else if (m.can_load) requestModelLoad(m.id);
-    });
-    unloadModelBtn.addEventListener('click', () => { const m = getSelectedModelMeta(); if (m) requestModelUnload(m.id); });
-    deleteModelBtn.addEventListener('click', () => { const m = getSelectedModelMeta(); if (m) requestModelDelete(m.id); });
-    modelSelect.addEventListener('change', updateModelUi);
-    deviceSelect.addEventListener('change', () => {
-        selectedDevice = normalizeUiDevice(deviceSelect.value);
-        localStorage.setItem('ovllm.device.v1', selectedDevice);
-        updateModelUi();
-    });
+        statusInterval = setInterval(updateStatus, 3000);
+        updateStatus();
 
-    function setSendButtonMode(mode) {
-        const stop = mode === 'stop';
-        sendBtn.innerHTML = stop ? STOP_ICON : SEND_ICON;
-        sendBtn.classList.toggle('stop', stop);
-        sendBtn.title = stop ? 'Stop generating' : 'Send (Enter)';
-    }
+        // ── Message Rendering ─────────────────────────────────
+        function formatTime(date) { return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
 
-    function stopGeneration() {
-        if (currentAbort) { currentAbort.abort(); showToast('Stopping…'); }
-    }
+        function appendMessage(role, content, isStreaming = false) {
+            emptyState.classList.add('hidden');
+            const row = document.createElement('div');
+            row.className = `msg-row ${role}`;
+            const avatar = document.createElement('div');
+            avatar.className = `avatar ${role}`;
+            if (role === 'ai') {
+                avatar.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="color: white;"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>';
+            } else {
+                avatar.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="color: white;"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>';
+            }
+            const bubble = document.createElement('div');
+            bubble.className = 'bubble';
+            const bubbleContent = document.createElement('div');
+            const timeEl = document.createElement('div');
+            timeEl.className = 'msg-time';
+            timeEl.textContent = formatTime(new Date());
 
-    // Render any tool-call deltas as cards beneath the assistant bubble.
-    function renderToolCards(toolCalls, aiBubble) {
-        toolCalls.forEach(tc => {
-            if (!tc.function?.name) return;
-            let args = tc.function.arguments || '';
-            try { args = JSON.stringify(JSON.parse(args || '{}'), null, 2); } catch {}
-            const card = document.createElement('div');
-            card.className = 'tool-call-card';
-            card.innerHTML = `
+            if (isStreaming && role === 'ai') {
+                bubbleContent.innerHTML = '<div class="typing-indicator"><div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div></div>';
+            } else {
+                bubbleContent.innerHTML = role === 'ai' ? renderMarkdown(content) : escapeHtml(content);
+            }
+            bubble.appendChild(bubbleContent);
+            if (role === 'ai' && !isStreaming) enhanceCodeBlocks(bubble);
+
+            const col = document.createElement('div');
+            col.style.cssText = 'display:flex;flex-direction:column;max-width:75%';
+            if (role === 'user') col.style.alignItems = 'flex-end';
+            col.appendChild(bubble);
+            if (role === 'ai') {
+                const copyBtn = document.createElement('button');
+                copyBtn.className = 'copy-btn';
+                copyBtn.title = 'Copy response';
+                copyBtn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+                copyBtn.onclick = () => navigator.clipboard.writeText(bubble.innerText).then(() => showToast('Copied!'));
+                col.appendChild(copyBtn);
+            }
+            col.appendChild(timeEl);
+
+            if (role === 'ai') { row.appendChild(avatar); row.appendChild(col); }
+            else { row.appendChild(col); row.appendChild(avatar); }
+
+            chatInner.appendChild(row);
+            scrollToBottom();
+            return bubble;
+        }
+
+        // Only follow the stream when the user is already at the bottom (force overrides).
+        function isNearBottom() { return chatArea.scrollHeight - chatArea.scrollTop - chatArea.clientHeight < 120; }
+        function scrollToBottom(force = false) { if (force || autoScroll) chatArea.scrollTop = chatArea.scrollHeight; }
+        chatArea.addEventListener('scroll', () => {
+            autoScroll = isNearBottom();
+            jumpBtn.classList.toggle('show', !autoScroll);
+        });
+        jumpBtn.addEventListener('click', () => { autoScroll = true; scrollToBottom(true); jumpBtn.classList.remove('show'); });
+
+        // ── Conversation persistence (survives reloads) ───────
+        function saveConversation() {
+            try { localStorage.setItem(STORAGE_KEY, JSON.stringify(conversation)); } catch { }
+        }
+        function restoreConversation() {
+            let saved;
+            try { saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); } catch { saved = []; }
+            if (!Array.isArray(saved) || !saved.length) return;
+            conversation = saved;
+            saved.forEach(m => appendMessage(m.role === 'user' ? 'user' : 'ai', m.content || ''));
+            scrollToBottom(true);
+        }
+
+        function clearConversation() {
+            if (isGenerating) stopGeneration();
+            conversation = [];
+            try { localStorage.removeItem(STORAGE_KEY); } catch { }
+            tokenCounter.textContent = '0 tokens';
+            chatInner.innerHTML = '';
+            chatInner.appendChild(emptyState);
+            emptyState.classList.remove('hidden');
+            autoScroll = true;
+            jumpBtn.classList.remove('show');
+            showToast('New chat started');
+        }
+        newChatBtn.addEventListener('click', clearConversation);
+
+        function fillInput(el) { userInput.value = el.textContent; autoResize(); userInput.focus(); }
+
+        function showToast(msg) {
+            const toast = document.getElementById('toast');
+            toast.textContent = msg;
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 2200);
+        }
+
+        function autoResize() {
+            userInput.style.height = 'auto';
+            userInput.style.height = Math.min(userInput.scrollHeight, 160) + 'px';
+        }
+
+        userInput.addEventListener('input', autoResize);
+
+        userInput.addEventListener('keydown', e => {
+            if (e.key === 'Enter' && !e.shiftKey && !isGenerating) { e.preventDefault(); sendMessage(); }
+        });
+        document.addEventListener('keydown', e => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'l') { e.preventDefault(); clearConversation(); }
+            if (e.key === 'Escape' && isGenerating) { e.preventDefault(); stopGeneration(); }
+        });
+
+        // The send button is type=submit, so the form's submit event is the single
+        // entry point for both Enter and clicks (no duplicate click listener).
+        document.getElementById('chat-form').addEventListener('submit', e => { e.preventDefault(); sendMessage(); });
+        loadModelBtn.addEventListener('click', () => {
+            const m = getSelectedModelMeta();
+            if (!m) return;
+            if (m.can_convert) requestModelConvert(m.id);
+            else if (m.can_load) requestModelLoad(m.id);
+        });
+        unloadModelBtn.addEventListener('click', () => { const m = getSelectedModelMeta(); if (m) requestModelUnload(m.id); });
+        deleteModelBtn.addEventListener('click', () => { const m = getSelectedModelMeta(); if (m) requestModelDelete(m.id); });
+        modelSelect.addEventListener('change', updateModelUi);
+        deviceSelect.addEventListener('change', async () => {
+            const newDevice = normalizeUiDevice(deviceSelect.value);
+            if (newDevice === selectedDevice) return;
+            selectedDevice = newDevice;
+            localStorage.setItem('ovllm.device.v1', selectedDevice);
+            updateModelUi();
+            // If the selected model is loaded on a different device, auto-switch
+            const model = getSelectedModelMeta();
+            if (model && model.is_loaded && model.device && model.device !== selectedDevice) {
+                showToast(`Switching ${model.name} to ${selectedDevice}…`);
+                await requestModelUnload(model.id);
+                await requestModelLoad(model.id, true);
+            }
+        });
+
+        function setSendButtonMode(mode) {
+            const stop = mode === 'stop';
+            sendBtn.innerHTML = stop ? STOP_ICON : SEND_ICON;
+            sendBtn.classList.toggle('stop', stop);
+            sendBtn.title = stop ? 'Stop generating' : 'Send (Enter)';
+        }
+
+        function stopGeneration() {
+            if (currentAbort) { currentAbort.abort(); showToast('Stopping…'); }
+        }
+
+        // Render any tool-call deltas as cards beneath the assistant bubble.
+        function renderToolCards(toolCalls, aiBubble) {
+            toolCalls.forEach(tc => {
+                if (!tc.function?.name) return;
+                let args = tc.function.arguments || '';
+                try { args = JSON.stringify(JSON.parse(args || '{}'), null, 2); } catch { }
+                const card = document.createElement('div');
+                card.className = 'tool-call-card';
+                card.innerHTML = `
         <div class="tool-call-header">
           <span class="tool-call-icon">⚙</span>
           <span class="tool-call-name">${escapeHtml(tc.function.name)}</span>
           <span class="tool-call-badge">tool call</span>
         </div>
         <pre class="tool-call-args">${escapeHtml(args)}</pre>`;
-            aiBubble.appendChild(card);
-        });
-    }
-
-    async function sendMessage() {
-        if (isGenerating) { stopGeneration(); return; }  // button doubles as Stop
-
-        const text = userInput.value.trim();
-        const selectedModel = getSelectedModelMeta();
-        if (!text || !modelSelect.value || !selectedModel?.is_loaded) {
-            if (text && selectedModel && !selectedModel.is_loaded) {
-                if (selectedModel.can_convert) requestModelConvert(selectedModel.id, true);
-                else if (selectedModel.can_load) requestModelLoad(selectedModel.id, true);
-            }
-            return;
-        }
-
-        userInput.value = '';
-        autoResize();
-        isGenerating = true;
-        autoScroll = true;
-        setStatusPolling(1000);
-        setSendButtonMode('stop');
-        updateModelUi();
-
-        conversation.push({ role: 'user', content: text });
-        saveConversation();
-        appendMessage('user', text);
-        scrollToBottom(true);
-
-        const aiBubble = appendMessage('ai', '', true);
-        const aiBubbleContent = aiBubble.firstElementChild;
-
-        currentAbort = new AbortController();
-        let fullText = '';
-
-        // Parse one SSE line and update the UI (token counter, content, tool calls).
-        const processLine = (line) => {
-            if (!line.startsWith('data: ') || line === 'data: [DONE]') return;
-            let data;
-            try { data = JSON.parse(line.slice(6)); } catch { return; }
-            if (data.usage) {
-                tokenCounter.textContent = `${data.usage.prompt_tokens || 0} prompt · ${data.usage.completion_tokens || 0} completion tokens`;
-            }
-            const content = data.choices?.[0]?.delta?.content || '';
-            if (content) { fullText += content; aiBubbleContent.innerHTML = renderMarkdown(fullText); scrollToBottom(); }
-            const toolCalls = data.choices?.[0]?.delta?.tool_calls;
-            if (toolCalls?.length) { renderToolCards(toolCalls, aiBubble); scrollToBottom(); }
-        };
-
-        const finalize = (aborted = false) => {
-            if (fullText) {
-                aiBubbleContent.innerHTML = renderMarkdown(fullText);
-                enhanceCodeBlocks(aiBubble);
-                conversation.push({ role: 'assistant', content: fullText });
-                saveConversation();
-            } else if (!aiBubble.querySelector('.tool-call-card')) {
-                aiBubbleContent.innerHTML = `<span style="color:var(--text-3)">${aborted ? '(stopped)' : '(no response)'}</span>`;
-            }
-        };
-
-        try {
-            const resp = await fetch('/v1/chat/completions', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    model: modelSelect.value,
-                    messages: conversation,
-                    stream: true,
-                    stream_options: { include_usage: true }
-                }),
-                signal: currentAbort.signal
+                aiBubble.appendChild(card);
             });
-            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-
-            const reader  = resp.body.getReader();
-            const decoder = new TextDecoder();
-            aiBubbleContent.innerHTML = '';
-
-            // Buffer across reads: an SSE line can be split between network chunks,
-            // so only complete lines are parsed and the trailing fragment is kept.
-            let buffer = '';
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-                buffer += decoder.decode(value, { stream: true });
-                const lines = buffer.split('\n');
-                buffer = lines.pop();
-                for (const line of lines) processLine(line);
-            }
-            buffer += decoder.decode();
-            if (buffer) processLine(buffer);
-
-            finalize();
-        } catch (err) {
-            if (err.name === 'AbortError') {
-                finalize(true);  // keep whatever streamed before the user stopped
-            } else {
-                aiBubbleContent.innerHTML = `<span style="color:var(--red)">⚠ Error: ${escapeHtml(err.message)}</span>`;
-            }
-        } finally {
-            isGenerating = false;
-            currentAbort = null;
-            setSendButtonMode('send');
-            updateModelUi();
-            setStatusPolling(Array.from(availableModels.values()).some(m => m.is_loading) ? 1000 : 3000);
-            userInput.focus();
         }
-    }
 
-    // ── Init ──────────────────────────────────────────────
-    setSendButtonMode('send');
-    restoreConversation();
-</script>
+        async function sendMessage() {
+            if (isGenerating) { stopGeneration(); return; }  // button doubles as Stop
+
+            const text = userInput.value.trim();
+            const selectedModel = getSelectedModelMeta();
+            if (!text || !modelSelect.value || !selectedModel?.is_loaded) {
+                if (text && selectedModel && !selectedModel.is_loaded) {
+                    if (selectedModel.can_convert) requestModelConvert(selectedModel.id, true);
+                    else if (selectedModel.can_load) requestModelLoad(selectedModel.id, true);
+                }
+                return;
+            }
+
+            userInput.value = '';
+            autoResize();
+            isGenerating = true;
+            autoScroll = true;
+            setStatusPolling(1000);
+            setSendButtonMode('stop');
+            updateModelUi();
+
+            conversation.push({ role: 'user', content: text });
+            saveConversation();
+            appendMessage('user', text);
+            scrollToBottom(true);
+
+            const aiBubble = appendMessage('ai', '', true);
+            const aiBubbleContent = aiBubble.firstElementChild;
+
+            currentAbort = new AbortController();
+            const genStart = performance.now();
+            let lastUsage = null;
+            let fullText = '';
+
+            // Parse one SSE line and update the UI (token counter, content, tool calls).
+            const processLine = (line) => {
+                if (!line.startsWith('data: ') || line === 'data: [DONE]') return;
+                let data;
+                try { data = JSON.parse(line.slice(6)); } catch { return; }
+                if (data.usage) {
+                    lastUsage = data.usage;
+                    tokenCounter.textContent = `${data.usage.prompt_tokens || 0} prompt \u00b7 ${data.usage.completion_tokens || 0} completion tokens`;
+                }
+                const content = data.choices?.[0]?.delta?.content || '';
+                if (content) { fullText += content; aiBubbleContent.innerHTML = renderMarkdown(fullText); scrollToBottom(); }
+                const toolCalls = data.choices?.[0]?.delta?.tool_calls;
+                if (toolCalls?.length) { renderToolCards(toolCalls, aiBubble); scrollToBottom(); }
+            };
+
+            const finalize = (aborted = false) => {
+                if (fullText) {
+                    aiBubbleContent.innerHTML = renderMarkdown(fullText);
+                    enhanceCodeBlocks(aiBubble);
+                    conversation.push({ role: 'assistant', content: fullText });
+                    saveConversation();
+                } else if (!aiBubble.querySelector('.tool-call-card')) {
+                    aiBubbleContent.innerHTML = `<span style="color:var(--text-3)">${aborted ? '(stopped)' : '(no response)'}</span>`;
+                }
+            };
+
+            const systemPrompt = settingsSystemPrompt.value.trim();
+            const temperature = parseFloat(settingsTemperature.value);
+            const maxTokens = parseInt(settingsMaxTokens.value);
+
+            const messages = [];
+            if (systemPrompt) {
+                messages.push({ role: 'system', content: systemPrompt });
+            }
+            messages.push(...conversation);
+
+            try {
+                const resp = await fetch('/v1/chat/completions', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        model: modelSelect.value,
+                        messages: messages,
+                        stream: true,
+                        stream_options: { include_usage: true },
+                        temperature: temperature,
+                        max_tokens: maxTokens
+                    }),
+                    signal: currentAbort.signal
+                });
+                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+
+                const reader = resp.body.getReader();
+                const decoder = new TextDecoder();
+                aiBubbleContent.innerHTML = '';
+
+                // Buffer across reads: an SSE line can be split between network chunks,
+                // so only complete lines are parsed and the trailing fragment is kept.
+                let buffer = '';
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop();
+                    for (const line of lines) processLine(line);
+                }
+                buffer += decoder.decode();
+                if (buffer) processLine(buffer);
+
+                finalize();
+            } catch (err) {
+                if (err.name === 'AbortError') {
+                    finalize(true);  // keep whatever streamed before the user stopped
+                } else {
+                    aiBubbleContent.innerHTML = `<span style="color:var(--red)">\u26a0 Error: ${escapeHtml(err.message)}</span>`;
+                }
+            } finally {
+                isGenerating = false;
+                currentAbort = null;
+                setSendButtonMode('send');
+                if (lastUsage && lastUsage.completion_tokens > 0) {
+                    const elapsed = (performance.now() - genStart) / 1000;
+                    const tokPerSec = (lastUsage.completion_tokens / elapsed).toFixed(1);
+                    tokenCounter.textContent = `${lastUsage.prompt_tokens} prompt \u00b7 ${lastUsage.completion_tokens} completion \u00b7 ${tokPerSec} tok/s`;
+                }
+                updateModelUi();
+                setStatusPolling(Array.from(availableModels.values()).some(m => m.is_loading) ? 1000 : 3000);
+                userInput.focus();
+            }
+        }
+
+        // ── Settings Sidebar Event Handlers & Persistence ──────
+        // Toggle sidebar
+        settingsToggleBtn.addEventListener('click', () => {
+            settingsSidebar.classList.toggle('hidden');
+            settingsToggleBtn.classList.toggle('active');
+        });
+        closeSidebarBtn.addEventListener('click', () => {
+            settingsSidebar.classList.add('hidden');
+            settingsToggleBtn.classList.remove('active');
+        });
+
+        // Handle inputs and sliders
+        settingsTemperature.addEventListener('input', () => {
+            settingsTemperatureVal.textContent = settingsTemperature.value;
+        });
+        settingsTemperature.addEventListener('change', () => {
+            localStorage.setItem('ovllm.temperature.v1', settingsTemperature.value);
+        });
+
+        settingsMaxTokens.addEventListener('input', () => {
+            settingsMaxTokensVal.textContent = settingsMaxTokens.value;
+        });
+        settingsMaxTokens.addEventListener('change', () => {
+            localStorage.setItem('ovllm.max_tokens.v1', settingsMaxTokens.value);
+        });
+
+        settingsSystemPrompt.addEventListener('change', () => {
+            localStorage.setItem('ovllm.system_prompt.v1', settingsSystemPrompt.value);
+        });
+
+        // Restore saved settings
+        const savedTemp = localStorage.getItem('ovllm.temperature.v1');
+        if (savedTemp !== null) {
+            settingsTemperature.value = savedTemp;
+            settingsTemperatureVal.textContent = savedTemp;
+        }
+        const savedMaxTokens = localStorage.getItem('ovllm.max_tokens.v1');
+        if (savedMaxTokens !== null) {
+            settingsMaxTokens.value = savedMaxTokens;
+            settingsMaxTokensVal.textContent = savedMaxTokens;
+        }
+        const savedSystemPrompt = localStorage.getItem('ovllm.system_prompt.v1');
+        if (savedSystemPrompt !== null) {
+            settingsSystemPrompt.value = savedSystemPrompt;
+        }
+
+        // ── Init ──────────────────────────────────────────────
+        setSendButtonMode('send');
+        restoreConversation();
+    </script>
 </body>
+
 </html>
