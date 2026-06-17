@@ -15,9 +15,17 @@ and your own agents just work) plus a built-in browser chat UI — targeting Int
 
 ## Visual Preview
 
+### 1. Main Chat Interface
 ![OpenVINO Windows LLM Chat Interface](screenshots/chat_preview.png)
+*Sleek, dark-mode chat interface with real-time tokens/second tracking, device indicators, and system telemetry (RAM/Disk footprint).*
 
-*A sleek, modern web interface featuring real-time NPU, RAM, and Disk telemetry, alongside an integrated Model Manager and Generation Settings sidebar.*
+### 2. Collapsible Settings & System Info
+![OpenVINO Windows LLM Settings](screenshots/settings_preview.png)
+*Deep control over system prompt instructions, model parameters (temperature, token limits), and loaded engine properties.*
+
+### 3. Clean Setup & Onboarding
+![OpenVINO Windows LLM Empty State](screenshots/empty_state.png)
+*Simple, high-tech onboarding screen offering single-click quickstart suggestion chips that auto-run prompts.*
 
 ---
 
