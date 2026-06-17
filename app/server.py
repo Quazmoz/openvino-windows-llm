@@ -13,6 +13,7 @@ import asyncio
 import json
 import logging
 import os
+import secrets
 import sys
 import time
 import uuid
@@ -119,7 +120,12 @@ def create_app(settings: Settings) -> FastAPI:
     def require_api_key(authorization: str | None = Header(default=None)) -> None:
         if not settings.api_key:
             return
-        if authorization != f"Bearer {settings.api_key}":
+        expected = f"Bearer {settings.api_key}"
+        # Constant-time comparison so a wrong key can't be recovered via timing.
+        # Compare bytes to tolerate any non-ASCII header without raising.
+        if authorization is None or not secrets.compare_digest(
+            authorization.encode("utf-8"), expected.encode("utf-8")
+        ):
             raise HTTPException(status_code=401, detail="Invalid or missing API key")
 
     auth = [Depends(require_api_key)]

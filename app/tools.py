@@ -17,7 +17,7 @@ from app.openai_api import FunctionCall, ToolCall, ToolDefinition
 
 
 def format_tools_for_prompt(
-    tools: list[ToolDefinition],
+    tools: list[ToolDefinition] | None,
     tool_choice: Any = None,
 ) -> str:
     """Render a system-prompt section instructing the model how to call tools.

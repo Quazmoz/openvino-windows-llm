@@ -115,6 +115,37 @@ def test_unknown_model_load_404(client):
     assert resp.status_code == 404
 
 
+@pytest.fixture()
+def authed_client():
+    settings = Settings(
+        models_file=BASE_DIR / "models.json",
+        models_dir=BASE_DIR / "models" / "openvino",
+        api_key="sk-secret-key",
+        force_mock=True,
+    )
+    with TestClient(create_app(settings)) as c:
+        yield c
+
+
+def test_protected_route_rejects_missing_key(authed_client):
+    assert authed_client.get("/v1/models").status_code == 401
+
+
+def test_protected_route_rejects_wrong_key(authed_client):
+    resp = authed_client.get("/v1/models", headers={"Authorization": "Bearer nope"})
+    assert resp.status_code == 401
+
+
+def test_protected_route_accepts_correct_key(authed_client):
+    resp = authed_client.get("/v1/models", headers={"Authorization": "Bearer sk-secret-key"})
+    assert resp.status_code == 200
+
+
+def test_health_is_unauthenticated(authed_client):
+    # Liveness must stay reachable without a key even when auth is enabled.
+    assert authed_client.get("/health").status_code == 200
+
+
 def test_stream_handle_stop_halts_worker_early():
     """request_stop() must end generation before the full reply is produced, and
     wait_closed() must unblock once the worker thread has actually finished."""
