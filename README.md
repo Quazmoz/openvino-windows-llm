@@ -1,300 +1,202 @@
 # OpenVINO Windows LLM
 
-A Windows-first local LLM server built around **OpenVINO GenAI** for Intel PCs. This project is intended to replace the older [`npu-windows`](https://github.com/Quazmoz/npu-windows) IPEX-LLM experiment with a cleaner OpenVINO-native architecture.
+A lightweight, **Windows-first local LLM server** built on **OpenVINO GenAI** for Intel
+PCs. It exposes an **OpenAI-compatible API** (so Open WebUI, n8n, LangChain, Continue,
+and your own agents just work) plus a built-in browser chat UI — targeting Intel
+**CPU, GPU, and NPU** through OpenVINO.
 
-> **Status:** early successor repo. This README defines the target product, setup flow, architecture, and implementation plan. Runtime code will be added incrementally.
+> **Status: working.** The server, OpenAI-compatible API, streaming, web UI, model
+> lifecycle (load/unload/delete), device discovery, conversion helper, and Windows
+> setup scripts are all implemented. The full test suite (69 tests) passes against a
+> built-in mock engine, so the stack runs end-to-end on any OS. Real OpenVINO
+> inference runs on Windows/Intel hardware once you've converted a model.
 
----
-
-## Why this project exists
-
-The original `npu-windows` repo proved that a local OpenAI-compatible LLM server on an Intel Windows laptop is useful, but it was tightly coupled to the IPEX-LLM / BigDL stack:
-
-- `ipex-llm[npu]` install flow
-- `ipex-npu` conda environment naming
-- Torch / Transformers pins tied to IPEX compatibility
-- `neural-compressor` and `setuptools` compatibility workarounds
-- `IPEX_LLM_NPU_MTL` startup handling
-- IPEX-specific low-bit conversion and model cache layout
-
-This repo starts fresh with **OpenVINO GenAI as the only backend**. The goal is a simpler, cleaner, more maintainable Windows local AI server that can target Intel CPU, Intel GPU, and Intel NPU through OpenVINO devices.
+This is the successor to the older [`npu-windows`](https://github.com/Quazmoz/npu-windows)
+IPEX-LLM experiment, rebuilt on a cleaner OpenVINO-native architecture.
 
 ---
 
-## Goals
+## Why use this instead of...
 
-- Run local LLMs on Windows through OpenVINO GenAI
-- Provide an OpenAI-compatible API for tools such as Open WebUI, LangChain, Continue, n8n, and custom agents
-- Include a built-in browser chat UI for quick testing
-- Support model discovery, local model conversion, loading, unloading, and deletion
-- Prefer pre-converted OpenVINO IR models where available
-- Support CPU first, then GPU/NPU device targeting where hardware and drivers allow it
-- Keep setup easier than the older IPEX-based repo
-- Avoid Docker for the default path
-- Keep all inference local and private
+This project is not a wrapper — `openvino_genai.LLMPipeline` is a *Python library*
+(`pipe.generate("...")`), not a server. To get what's in this repo, you'd otherwise have
+to build the HTTP API, streaming, multi-model lifecycle, tool-call shim, prompt budgeting,
+device-error handling, a chat UI, and Windows setup yourself.
 
----
+| You could instead use… | …but here's the gap this fills |
+|---|---|
+| **Plain OpenVINO GenAI** | It's a library, not a server. No OpenAI API, no UI, no model management, no setup flow. |
+| **OpenVINO Model Server (OVMS)** | Official and powerful, but Docker/C++-heavy, no built-in chat UI, no one-command convert + catalog. This is laptop-friendly and zero-Docker. |
+| **Ollama / LM Studio** | llama.cpp/GGUF-based — **no real Intel NPU path**. Intel NPU/GPU acceleration is exactly what OpenVINO does well, and what this server targets. |
 
-## Non-goals
-
-- This is **not** an IPEX-LLM wrapper.
-- This is **not** a llama.cpp / GGUF-first project, although OpenVINO GenAI has some GGUF support for selected model families.
-- This is **not** intended to target Apple Silicon acceleration. For Apple Silicon, MLX is usually the better native path.
-- This is **not** a cloud-hosted inference service.
-- This is **not** a production-secured API gateway by default. Bind locally unless you know what you are doing.
+**The niche:** a small, no-Docker, Windows-first, **Intel-NPU-capable**, OpenAI-compatible
+local server with the UI, model conversion, catalog, and setup scripts all included.
 
 ---
 
-## Target platform
+## What it does
 
-### Primary target
+- Runs local LLMs on Windows through **OpenVINO GenAI** (CPU / GPU / NPU / AUTO)
+- Serves an **OpenAI-compatible API** — `/v1/chat/completions` (streaming + non-streaming),
+  `/v1/models`, `/v1/responses`
+- Includes a **built-in browser chat UI** at `http://localhost:8000`
+- **Model lifecycle:** discover, load, unload, delete, with background loading and
+  per-model locks so requests never block and two big models don't load at once
+- **Function/tool calling** via a prompt shim (OpenVINO GenAI has no native tool calling)
+  with malformed-call retry
+- **Actionable device errors** (e.g. "OpenVINO doesn't see the NPU — retry with `--device CPU`")
+- A **conversion helper** that exports Hugging Face models to OpenVINO IR
+- A **mock engine** that runs the entire stack (API, streaming, UI) on machines without
+  OpenVINO — so you can develop/test on macOS or Linux and CI stays green everywhere
+- Optional **API-key enforcement** for shared/LAN use
 
-- Windows 11 64-bit
-- Python 3.11 or 3.12
-- Intel Core Ultra / Intel AI PC class hardware preferred
-- OpenVINO GenAI installed through PyPI
+### Non-goals
 
-### Target devices
-
-OpenVINO device support depends on your hardware, installed drivers, and OpenVINO build. The planned server device selector will support:
-
-```text
-CPU
-GPU
-NPU
-AUTO
-```
-
-Recommended bring-up order:
-
-1. `CPU` — easiest baseline
-2. `GPU` — useful if Intel GPU drivers are installed and compatible
-3. `NPU` — target path for Intel NPU systems after driver validation
-4. `AUTO` — convenience mode after explicit devices work
+- Not an IPEX-LLM wrapper, not a llama.cpp/GGUF-first project, not an Apple-Silicon
+  accelerator (use MLX there), not a cloud service, and **not a hardened public gateway** —
+  bind to localhost unless you know what you're doing.
 
 ---
 
-## Planned features
+## Quick start
 
-### API compatibility
-
-Planned OpenAI-style endpoints:
-
-```text
-GET  /health
-GET  /v1/models
-POST /v1/chat/completions
-POST /v1/responses
-POST /v1/models/load
-POST /v1/models/unload
-POST /v1/models/delete
-GET  /v1/system/status
-```
-
-Initial focus will be `/v1/chat/completions`, `/v1/models`, `/health`, and the built-in web UI.
-
-### Built-in chat UI
-
-The repo will include a lightweight local UI at:
-
-```text
-http://localhost:8000
-```
-
-Planned UI capabilities:
-
-- Model selector
-- Device selector display
-- Streaming output
-- Local conversation history
-- Token / generation timing display
-- Basic system telemetry
-- Model load status
-- Clear error messages for missing models, drivers, and incompatible devices
-
-### Open WebUI support
-
-Once the API is implemented, Open WebUI should be able to connect using:
-
-```text
-API Base URL: http://<WINDOWS-PC-IP>:8000/v1
-API Key:      sk-dummy
-```
-
-For local-only testing:
-
-```text
-API Base URL: http://localhost:8000/v1
-API Key:      sk-dummy
-```
-
----
-
-## Expected project structure
-
-```text
-openvino-windows-llm/
-  app/
-    server.py              # FastAPI entry point
-    openai_api.py          # OpenAI-compatible request/response models
-    model_registry.py      # models.json loading and validation
-    chat_format.py         # ChatML / prompt formatting helpers
-    telemetry.py           # CPU/RAM/disk/device telemetry
-    errors.py              # User-facing error formatting
-
-  runtime/
-    openvino_engine.py     # OpenVINO GenAI LLMPipeline wrapper
-    model_converter.py     # optimum-intel export helper
-    device_check.py        # OpenVINO device discovery and validation
-
-  web/
-    index.html             # Built-in local chat UI
-
-  setup/
-    setup_all.ps1          # Full Windows setup flow
-    check_hardware.ps1     # Windows / CPU / GPU / NPU checks
-    install_deps.ps1       # Python dependency install
-    convert_model.ps1      # Convenience wrapper for model export
-
-  models/
-    openvino/              # Local converted models; ignored by git
-
-  models.json              # Model catalog
-  requirements.txt
-  requirements-convert.txt
-  setup.bat
-  start_server.bat
-  README.md
-```
-
----
-
-## Quick start target flow
-
-> These commands describe the intended flow for the first working version.
-
-### 1. Clone the repo
+### 1. Setup (Windows)
 
 ```powershell
 git clone https://github.com/Quazmoz/openvino-windows-llm.git
 cd openvino-windows-llm
+
+.\setup.bat                 # venv + OpenVINO GenAI + server deps
+.\setup.bat -WithConvert    # also install model-conversion deps (optimum-intel)
 ```
 
-### 2. Create a virtual environment
+`setup.bat` runs `setup/setup_all.ps1` with an execution-policy bypass, so no manual
+PowerShell policy change is needed. Targets Python 3.11/3.12 on Windows 11, Intel Core
+Ultra / AI PC class hardware preferred.
+
+### 2. Convert a small model first
+
+OpenVINO runs models in **OpenVINO IR** format. Validate the stack with a small model:
 
 ```powershell
-py -3.11 -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-```
+# Resolve source/output/weights straight from models.json:
+python -m runtime.model_converter --id tinyllama-1.1b-chat
 
-### 3. Install runtime dependencies
-
-```powershell
-pip install -r requirements.txt
-```
-
-Expected core dependency:
-
-```text
-openvino-genai
-```
-
-Optional conversion dependencies:
-
-```powershell
-pip install -r requirements-convert.txt
-```
-
-Expected conversion dependencies:
-
-```text
-optimum-intel[openvino]
-huggingface_hub
-```
-
-### 4. Convert a model to OpenVINO IR
-
-OpenVINO works best with models converted to OpenVINO IR format. A small model should be used first to validate the stack.
-
-Example:
-
-```powershell
+# …or call optimum-cli directly:
 optimum-cli export openvino `
   --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 `
-  --weight-format int4 `
-  --trust-remote-code `
+  --weight-format int4 --trust-remote-code `
   models\openvino\tinyllama-1.1b-chat-int4
 ```
 
-For a Qwen test model:
+Conversion is a deliberate, heavier step (it downloads + quantizes), kept separate from
+server startup.
 
-```powershell
-optimum-cli export openvino `
-  --model Qwen/Qwen2.5-1.5B-Instruct `
-  --weight-format int4 `
-  --trust-remote-code `
-  models\openvino\qwen2.5-1.5b-instruct-int4
-```
-
-### 5. Start the server
+### 3. Start the server
 
 ```powershell
 .\start_server.bat --model tinyllama-1.1b-chat --device CPU
-```
-
-Later NPU test:
-
-```powershell
+# later, on Intel NPU hardware:
 .\start_server.bat --model qwen2.5-1.5b --device NPU
 ```
 
-### 6. Test the API
+Open `http://localhost:8000` for the chat UI, or hit the API:
 
 ```powershell
 curl http://localhost:8000/v1/models
-```
 
-```powershell
 curl http://localhost:8000/v1/chat/completions `
   -H "Content-Type: application/json" `
-  -d '{"model":"tinyllama-1.1b-chat","messages":[{"role":"user","content":"Give me a one-sentence explanation of OpenVINO."}],"max_tokens":64}'
+  -d '{"model":"tinyllama-1.1b-chat","messages":[{"role":"user","content":"Explain OpenVINO in one sentence."}],"max_tokens":64}'
+```
+
+### Try it without OpenVINO (any OS)
+
+No Intel hardware? Run the mock engine to exercise the full API, streaming, and UI:
+
+```bash
+python -m app.server --mock            # or set OV_LLM_MOCK=1
+```
+
+(On non-Windows hosts where `openvino-genai` isn't installed, mock mode turns on
+automatically.)
+
+---
+
+## CLI
+
+```text
+start_server.bat [args]            # activates the venv, passes args to python -m app.server
+
+  --model <id>        Model id from models.json to auto-load on startup
+  --device <dev>      CPU | GPU | NPU | AUTO
+  --host <host>       Bind host (default 127.0.0.1)
+  --port <port>       Bind port (default 8000)
+  --mock              Force the mock engine (no OpenVINO needed)
+  --list              List catalog models and exit
+  --check-devices     Show the OpenVINO devices this machine sees and exit
 ```
 
 ---
 
-## Minimal OpenVINO GenAI runtime example
+## API endpoints
 
-The core runtime should stay much smaller than the older IPEX implementation:
-
-```python
-import openvino_genai as ov_genai
-
-model_path = "models/openvino/tinyllama-1.1b-chat-int4"
-device = "CPU"  # CPU, GPU, NPU, AUTO
-
-pipe = ov_genai.LLMPipeline(model_path, device)
-result = pipe.generate("The benefit of local AI is", max_new_tokens=100)
-print(result)
+```text
+GET  /                       Built-in chat UI
+GET  /health                 Liveness + mock/device/openvino/loaded-count
+GET  /v1/models              OpenAI-style model list (with load status)
+POST /v1/chat/completions    Chat (streaming SSE + non-streaming), tool calls
+POST /v1/responses           OpenAI Responses API (used by n8n)
+POST /v1/models/load         Background-load a model (optional device override)
+POST /v1/models/unload       Unload a model and free memory
+POST /v1/models/delete       Delete a model's on-disk IR directory (frees disk)
+GET  /v1/devices             OpenVINO device discovery + details
+GET  /v1/system/status       CPU / RAM / disk / device / model telemetry
 ```
 
-Streaming target:
+### Connecting Open WebUI
 
-```python
-import openvino_genai as ov_genai
-
-pipe = ov_genai.LLMPipeline(model_path, device)
-streamer = lambda token: print(token, end="", flush=True)
-pipe.generate("Explain Intel NPUs in simple terms.", streamer=streamer, max_new_tokens=100)
+```text
+API Base URL: http://localhost:8000/v1          (or http://<WINDOWS-PC-IP>:8000/v1 over LAN)
+API Key:      sk-dummy                           (any value, unless OV_LLM_API_KEY is set)
 ```
 
 ---
 
-## Model catalog design
+## Configuration
 
-`models.json` should describe local OpenVINO model directories instead of raw IPEX/Hugging Face runtime entries.
+Copy `.env.example` to `.env`, or set environment variables directly:
 
-Example:
+```powershell
+$env:OV_LLM_HOST        = "127.0.0.1"
+$env:OV_LLM_PORT        = "8000"
+$env:OV_LLM_DEVICE      = "CPU"                 # CPU | GPU | NPU | AUTO
+$env:OV_LLM_MODEL       = "tinyllama-1.1b-chat" # auto-load on startup (blank = none)
+$env:OV_LLM_MODELS_FILE = "models.json"
+$env:OV_LLM_MODELS_DIR  = "models\openvino"
+$env:OV_LLM_API_KEY     = ""                    # set => /v1/* requires Authorization: Bearer <key>
+$env:OV_LLM_MOCK        = ""                     # 1 => force the mock engine
+$env:HF_TOKEN           = "hf_..."              # only for converting gated models (e.g. Llama)
+```
+
+CLI flags override environment values. Paths resolve against the repo root regardless of
+your working directory.
+
+---
+
+## Model catalog
+
+`models.json` describes local OpenVINO IR directories. The repo ships with five entries:
+
+| id | model | weights | recommended device |
+|---|---|---|---|
+| `tinyllama-1.1b-chat` | TinyLlama 1.1B Chat | int4 | CPU |
+| `qwen2.5-1.5b` | Qwen2.5 1.5B Instruct | int4 | CPU |
+| `qwen2.5-3b` | Qwen2.5 3B Instruct | int4 | GPU |
+| `phi-3.5-mini` | Phi-3.5 Mini Instruct | int4 | GPU |
+| `llama-3.2-3b` | Llama 3.2 3B Instruct (gated) | int4 | GPU |
+
+A catalog entry:
 
 ```json
 {
@@ -308,117 +210,122 @@ Example:
     "recommended_device": "CPU",
     "max_context_len": 2048,
     "max_output_tokens": 512
-  },
-  "qwen2.5-1.5b": {
-    "name": "Qwen2.5 1.5B Instruct INT4",
-    "description": "Small Qwen instruct model for local OpenVINO testing.",
-    "backend": "openvino-genai",
-    "model_path": "models/openvino/qwen2.5-1.5b-instruct-int4",
-    "source_model": "Qwen/Qwen2.5-1.5B-Instruct",
-    "weight_format": "int4",
-    "recommended_device": "CPU",
-    "max_context_len": 2048,
-    "max_output_tokens": 512
   }
 }
 ```
 
+A model shows in `/v1/models` and the UI once its `model_path` directory exists locally;
+`source_model` lets the converter fetch and export it by id.
+
 ---
 
-## Environment variables
-
-Planned environment variables:
-
-```powershell
-$env:OV_LLM_HOST = "127.0.0.1"
-$env:OV_LLM_PORT = "8000"
-$env:OV_LLM_DEVICE = "CPU"
-$env:OV_LLM_MODEL = "tinyllama-1.1b-chat"
-$env:OV_LLM_MODELS_FILE = "models.json"
-$env:OV_LLM_MODELS_DIR = "models\openvino"
-$env:HF_TOKEN = "hf_..."   # optional, only needed for gated Hugging Face models
-```
-
-This repo should avoid legacy IPEX-specific variables such as:
+## Project structure
 
 ```text
-IPEX_LLM_NPU_MTL
-NPU_CONDA_ENV=ipex-npu
+app/
+  server.py          FastAPI app: OpenAI routes, lifecycle, CLI
+  openai_api.py      Request/response models
+  model_manager.py   Load/unload/delete, background loading, per-model locks
+  model_registry.py  models.json loading + catalog entries
+  chat_format.py     ChatML / chat-template rendering + token-budget trimming
+  tools.py           Function/tool-call prompt shim + parsing + retry
+  telemetry.py       CPU / RAM / disk telemetry
+  errors.py          User-facing error formatting
+  config.py          Env-var settings
+
+runtime/
+  openvino_engine.py OpenVINO GenAI LLMPipeline wrapper + MockEngine
+  model_converter.py optimum-intel export helper (HF -> OpenVINO IR)
+  device_check.py    OpenVINO device discovery + validation
+
+web/index.html       Built-in chat UI (streaming, model picker, telemetry)
+setup/*.ps1          Windows setup, hardware check, dep install, convert wrapper
+models.json          Model catalog
+tests/               69 tests, run against the mock engine (no OpenVINO needed)
 ```
 
 ---
 
-## Windows setup philosophy
+## Development & testing
 
-The setup should be boring and repeatable:
+```bash
+pip install -r requirements.txt -r requirements-dev.txt
+python -m pytest          # 69 tests, all on the mock engine — no Intel hardware required
+ruff check .
+```
+
+The mock engine means the whole stack (API contract, streaming, tool parsing, UI) is
+testable on macOS/Linux/CI. Real CPU/GPU/NPU inference is exercised manually on Windows.
+
+---
+
+## Troubleshooting
+
+### Hugging Face TLS / enterprise certificates
+
+On managed Windows networks, HF downloads can fail because Python doesn't trust the
+enterprise root CA:
 
 ```powershell
-.\setup.bat
-.\start_server.bat
+pip install python-certifi-win32
+# or point at the corporate root cert:
+$env:REQUESTS_CA_BUNDLE = "C:\path\to\company-root-ca.pem"
+$env:SSL_CERT_FILE       = "C:\path\to\company-root-ca.pem"
 ```
 
-Setup should eventually handle:
+### Gated models (Llama, etc.)
 
-- Python version check
-- venv creation
-- OpenVINO GenAI install
-- optional model conversion dependencies
-- Hugging Face token setup
-- device discovery
-- helpful diagnostics bundle
+1. Accept the model license on Hugging Face
+2. Create a token at https://huggingface.co/settings/tokens
+3. `setx HF_TOKEN hf_your_token_here` (or set it in `.env`) before converting
 
-Unlike the old IPEX repo, this project should not need fragile Torch / Transformers / neural-compressor pin juggling for normal runtime inference.
+### Device errors
+
+If a device fails, the server reports whether OpenVINO sees it and suggests a fallback.
+Check what your machine exposes:
+
+```powershell
+.\start_server.bat --check-devices
+```
+
+If `NPU` doesn't work, retry with `--device CPU` while you sort out drivers.
+
+### First-run conversion is slow
+
+Conversion downloads and quantizes the model — much slower than server startup. It's a
+separate explicit step on purpose; don't expect it to happen during boot.
 
 ---
 
-## Implementation roadmap
+## Security
 
-### Phase 1 — Foundation
+Binds to `127.0.0.1:8000` by default. To reach it from another machine:
 
-- [ ] Add FastAPI server shell
-- [ ] Add `/health`
-- [ ] Add OpenVINO device discovery
-- [ ] Add `models.json`
-- [ ] Add OpenVINO GenAI `LLMPipeline` wrapper
-- [ ] Add `/v1/models`
-- [ ] Add basic non-streaming `/v1/chat/completions`
-- [ ] Add `start_server.bat`
+```powershell
+.\start_server.bat --host 0.0.0.0 --port 8000
+```
 
-### Phase 2 — Usability
+If you bind to the LAN: use a trusted private network, add firewall rules intentionally,
+**never expose it directly to the internet**, and set `OV_LLM_API_KEY` to require
+`Authorization: Bearer <key>` on every `/v1/*` request.
 
-- [ ] Add built-in chat UI
-- [ ] Add streaming responses
-- [ ] Add `/v1/system/status`
-- [ ] Add model load/unload flow
-- [ ] Add clearer error handling for missing model directories
-- [ ] Add support bundle script
+---
 
-### Phase 3 — Model workflow
+## Roadmap
 
-- [ ] Add `setup/convert_model.ps1`
-- [ ] Add one-command TinyLlama conversion
-- [ ] Add one-command Qwen conversion
-- [ ] Add Hugging Face token helper
-- [ ] Add model deletion / disk cleanup
-- [ ] Add conversion status documentation
+**Done** — FastAPI server, `/health`, device discovery, `models.json` + registry,
+`LLMPipeline` wrapper + mock engine, `/v1/models`, streaming + non-streaming
+`/v1/chat/completions`, `/v1/responses`, model load/unload/delete, system status,
+tool-call shim, optional API-key auth, built-in chat UI, conversion helper, Windows
+setup scripts, 69 passing tests.
 
-### Phase 4 — OpenAI compatibility polish
+**Next**
 
-- [ ] Add `/v1/responses`
-- [ ] Add OpenAI-compatible streaming chunks
-- [ ] Add tool/function calling prompt helper
-- [ ] Add usage accounting where possible
-- [ ] Add Open WebUI validation
-- [ ] Add n8n validation
-
-### Phase 5 — Device-specific validation
-
-- [ ] CPU baseline benchmarks
-- [ ] Intel GPU validation
-- [ ] Intel NPU validation
-- [ ] AUTO device validation
-- [ ] Document known driver issues
-- [ ] Document model/device compatibility matrix
+- [ ] Auto-download + convert a catalog model on first load (drop the manual step)
+- [ ] CPU / GPU / NPU benchmark numbers on real Intel hardware
+- [ ] Documented model ↔ device compatibility matrix and known driver issues
+- [ ] Open WebUI and n8n validation write-ups
+- [ ] Support/diagnostics bundle command
 
 ---
 
@@ -428,129 +335,28 @@ Unlike the old IPEX repo, this project should not need fragile Torch / Transform
 |---|---|---|
 | Primary backend | IPEX-LLM / BigDL | OpenVINO GenAI |
 | Setup style | Conda + IPEX pins | venv + OpenVINO packages |
-| Model format | IPEX low-bit cache | OpenVINO IR model directory |
+| Model format | IPEX low-bit cache | OpenVINO IR directory |
 | Runtime API | Torch-style `model.generate()` | `openvino_genai.LLMPipeline` |
 | Default target | Intel NPU via IPEX | Intel CPU/GPU/NPU via OpenVINO |
-| Long-term direction | Legacy/reference | Successor project |
+| Direction | Legacy/reference | Successor project |
 
----
-
-## Troubleshooting notes to preserve from the old project
-
-The older project surfaced several Windows-local-AI issues that should be handled better here:
-
-### Hugging Face TLS / enterprise certificates
-
-Windows machines on managed networks may fail Hugging Face downloads because Python does not trust the enterprise root certificate. The new setup should include clear guidance for:
-
-```powershell
-pip install python-certifi-win32
-```
-
-or:
-
-```powershell
-$env:REQUESTS_CA_BUNDLE = "C:\path\to\company-root-ca.pem"
-$env:SSL_CERT_FILE = "C:\path\to\company-root-ca.pem"
-```
-
-### Gated models
-
-Llama and other gated models require:
-
-1. Accepting the model license on Hugging Face
-2. Creating a Hugging Face token
-3. Setting `HF_TOKEN`
-
-```powershell
-$env:HF_TOKEN = "hf_your_token_here"
-```
-
-### First-run model conversion takes time
-
-Model conversion is expected to take much longer than normal server startup. Conversion should be treated as a separate explicit step rather than hidden inside server boot.
-
-### Device errors should be actionable
-
-If `NPU` does not work, the server should tell the user:
-
-- whether OpenVINO sees the NPU device
-- whether the Intel NPU driver appears installed
-- whether the selected model is missing or incompatible
-- whether to retry with `--device CPU`
-
----
-
-## Security notes
-
-By default, the server should bind to localhost:
-
-```text
-127.0.0.1:8000
-```
-
-Only bind to the LAN when intentionally connecting from another machine:
-
-```powershell
-.\start_server.bat --host 0.0.0.0 --port 8000
-```
-
-If binding to the LAN:
-
-- Use a trusted private network only
-- Add firewall rules intentionally
-- Do not expose the server directly to the internet
-- Add API key enforcement before any shared/networked use
-
----
-
-## Useful commands
-
-List models:
-
-```powershell
-.\start_server.bat --list
-```
-
-Start on CPU:
-
-```powershell
-.\start_server.bat --model tinyllama-1.1b-chat --device CPU
-```
-
-Start on NPU:
-
-```powershell
-.\start_server.bat --model qwen2.5-1.5b --device NPU
-```
-
-Use a different port:
-
-```powershell
-.\start_server.bat --port 8001
-```
-
-Run diagnostics:
-
-```powershell
-.\start_server.bat --diagnose
-```
+No legacy IPEX env vars (`IPEX_LLM_NPU_MTL`, `NPU_CONDA_ENV`) and no Torch/Transformers/
+neural-compressor pin juggling for normal inference.
 
 ---
 
 ## References
 
-- OpenVINO GenAI install docs: https://docs.openvino.ai/2025/get-started/install-openvino/install-openvino-genai.html
-- OpenVINO GenAI inference docs: https://docs.openvino.ai/2025/openvino-workflow-generative/inference-with-genai.html
-- OpenVINO generative model preparation: https://docs.openvino.ai/2025/openvino-workflow-generative/genai-model-preparation.html
-- OpenVINO system requirements: https://docs.openvino.ai/2025/about-openvino/release-notes-openvino/system-requirements.html
+- OpenVINO GenAI install: https://docs.openvino.ai/2025/get-started/install-openvino/install-openvino-genai.html
+- OpenVINO GenAI inference: https://docs.openvino.ai/2025/openvino-workflow-generative/inference-with-genai.html
+- Generative model preparation: https://docs.openvino.ai/2025/openvino-workflow-generative/genai-model-preparation.html
+- System requirements: https://docs.openvino.ai/2025/about-openvino/release-notes-openvino/system-requirements.html
 - Optimum Intel: https://github.com/huggingface/optimum-intel
-- OpenVINO Toolkit: https://github.com/openvinotoolkit/openvino
-- OpenVINO GenAI: https://github.com/openvinotoolkit/openvino.genai
+- OpenVINO GenAI repo: https://github.com/openvinotoolkit/openvino.genai
 - Legacy repo: https://github.com/Quazmoz/npu-windows
 
 ---
 
 ## License
 
-Add a license before publishing this as a reusable open-source project. Recommended default: MIT or Apache-2.0.
+MIT — see [LICENSE](LICENSE).
