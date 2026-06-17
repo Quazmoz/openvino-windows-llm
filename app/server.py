@@ -9,6 +9,7 @@ Or via uvicorn directly (settings come from environment variables):
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import logging
 import os
@@ -37,7 +38,7 @@ from app.openai_api import (
     ResponseRequest,
     UsageInfo,
 )
-from app.telemetry import cpu_stats, dir_size_gb, memory_stats
+from app.telemetry import cpu_stats, disk_stats, memory_stats
 from runtime import device_check
 from runtime.openvino_engine import BaseEngine, GenParams
 
@@ -238,7 +239,6 @@ def create_app(settings: Settings) -> FastAPI:
 
     @app.get("/v1/system/status", dependencies=auth)
     async def system_status():
-        models_dir_gb = dir_size_gb(settings.models_dir)
         entries = manager.catalog_entries()
         return {
             "memory": memory_stats(),
@@ -255,7 +255,7 @@ def create_app(settings: Settings) -> FastAPI:
                 "loading_count": manager.loading_count(),
                 "available": entries,
             },
-            "disk": {"models_gb": models_dir_gb, "total_gb": models_dir_gb},
+            "disk": disk_stats(settings.models_dir),
         }
 
     # --- chat completions --------------------------------------------------
@@ -289,6 +289,7 @@ def create_app(settings: Settings) -> FastAPI:
         text = ""
         completion_tokens = 0
         current_prompt = prompt
+        current_prompt_tokens = prompt_tokens
 
         for attempt in range(MAX_RETRIES + 1):
             result = await manager.generate(engine, current_prompt, params)
@@ -300,7 +301,7 @@ def create_app(settings: Settings) -> FastAPI:
                     ChatMessage(role="assistant", content=text),
                     ChatMessage(role="user", content=tools.get_retry_prompt()),
                 ]
-                current_prompt, _ = _build_chat_prompt(
+                current_prompt, current_prompt_tokens = _build_chat_prompt(
                     engine, retry_messages, max_prompt_len,
                     tools.format_tools_for_prompt(request.tools, request.tool_choice),
                 )
@@ -329,9 +330,9 @@ def create_app(settings: Settings) -> FastAPI:
                 )
             ],
             usage=UsageInfo(
-                prompt_tokens=prompt_tokens,
+                prompt_tokens=current_prompt_tokens,
                 completion_tokens=completion_tokens,
-                total_tokens=prompt_tokens + completion_tokens,
+                total_tokens=current_prompt_tokens + completion_tokens,
             ),
         )
 
@@ -350,10 +351,11 @@ def create_app(settings: Settings) -> FastAPI:
 
         full_text = ""
         finish_reason = "stop"
+        stream_gen = manager.stream(engine, prompt, params)
         try:
             if use_tools:
                 # Tool detection needs the full output, so buffer then decide.
-                async for piece in manager.stream(engine, prompt, params):
+                async for piece in stream_gen:
                     full_text += piece
                 remaining, parsed = tools.parse_tool_calls(full_text, request.tools)
                 if parsed:
@@ -377,7 +379,7 @@ def create_app(settings: Settings) -> FastAPI:
             else:
                 # Real-time token streaming for normal chat.
                 first = True
-                async for piece in manager.stream(engine, prompt, params):
+                async for piece in stream_gen:
                     full_text += piece
                     delta = {"content": piece}
                     if first:
@@ -387,11 +389,16 @@ def create_app(settings: Settings) -> FastAPI:
         except Exception as exc:  # noqa: BLE001 - report inline to the SSE client
             logger.exception("Generation failed: %s", exc)
             yield chunk({"content": f"\n\n[error: {exc}]"})
+        finally:
+            # Promptly stop the worker + release the model lock if the client
+            # disconnected, instead of waiting for the generator to be GC'd.
+            await stream_gen.aclose()
 
         yield chunk({}, finish_reason=finish_reason)
 
         if request.stream_options and request.stream_options.include_usage:
-            completion_tokens = engine.count_tokens(full_text)
+            loop = asyncio.get_running_loop()
+            completion_tokens = await loop.run_in_executor(None, engine.count_tokens, full_text)
             usage_payload = {
                 "id": request_id,
                 "object": "chat.completion.chunk",

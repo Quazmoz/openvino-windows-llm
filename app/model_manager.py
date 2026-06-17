@@ -292,10 +292,18 @@ class ModelManager:
         lock = self.get_lock(engine.model_id)
         async with lock:
             handle: StreamHandle = engine.stream(prompt, params)
-            while True:
-                chunk = await loop.run_in_executor(None, handle.next_chunk)
-                if chunk is None:
-                    break
-                yield chunk
-            if handle.error is not None:
-                raise handle.error
+            try:
+                while True:
+                    chunk = await loop.run_in_executor(None, handle.next_chunk)
+                    if chunk is None:
+                        break
+                    yield chunk
+                if handle.error is not None:
+                    raise handle.error
+            finally:
+                # If the consumer stopped early (client disconnect), signal the
+                # worker and wait for it to finish before releasing the lock, so a
+                # later request can't call generate() on the same pipeline while a
+                # stale worker is still running on it.
+                handle.request_stop()
+                await loop.run_in_executor(None, handle.wait_closed)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 from pathlib import Path
 
 try:
@@ -28,6 +29,29 @@ def dir_size_bytes(path: str | Path) -> int:
 
 def dir_size_gb(path: str | Path) -> float:
     return round(dir_size_bytes(path) / (1024**3), 2)
+
+
+def _first_existing(path: Path) -> Path | None:
+    """Walk up from ``path`` to the first directory that exists (for disk_usage)."""
+    for candidate in (path, *path.parents):
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def disk_stats(models_dir: str | Path) -> dict:
+    """Converted-model footprint plus the real free/total space on its volume."""
+    models_dir = Path(models_dir)
+    stats = {"models_gb": dir_size_gb(models_dir), "total_gb": 0.0, "free_gb": 0.0}
+    target = _first_existing(models_dir)
+    if target is not None:
+        try:
+            usage = shutil.disk_usage(target)
+            stats["total_gb"] = round(usage.total / (1024**3), 2)
+            stats["free_gb"] = round(usage.free / (1024**3), 2)
+        except OSError:
+            pass
+    return stats
 
 
 def memory_stats() -> dict:

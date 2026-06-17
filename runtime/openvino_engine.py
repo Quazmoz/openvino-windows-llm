@@ -54,6 +54,8 @@ class StreamHandle:
         self._q: queue.Queue = queue.Queue()
         self.error: BaseException | None = None
         self.text = ""
+        self._stop = threading.Event()
+        self._done = threading.Event()
 
     def push(self, piece: str) -> None:
         self.text += piece
@@ -62,10 +64,22 @@ class StreamHandle:
     def finish(self, error: BaseException | None = None) -> None:
         self.error = error
         self._q.put(_SENTINEL)
+        self._done.set()
 
     def next_chunk(self) -> str | None:
         item = self._q.get()
         return None if item is _SENTINEL else item
+
+    def request_stop(self) -> None:
+        """Ask the worker to stop generating early (e.g. the client disconnected)."""
+        self._stop.set()
+
+    def should_stop(self) -> bool:
+        return self._stop.is_set()
+
+    def wait_closed(self, timeout: float | None = 30.0) -> None:
+        """Block until the worker thread has finished, so the engine is free again."""
+        self._done.wait(timeout)
 
 
 class BaseEngine:
@@ -130,6 +144,8 @@ class MockEngine(BaseEngine):
 
         def worker() -> None:
             for token in re.findall(r"\S+\s*", text):
+                if handle.should_stop():
+                    break
                 time.sleep(0.015)  # simulate generation latency for the UI
                 handle.push(token)
             handle.finish()
@@ -209,7 +225,7 @@ class OpenVINOEngine(BaseEngine):
 
         def streamer(subword: str) -> bool:
             handle.push(subword)
-            return False  # False / RUNNING => keep generating
+            return handle.should_stop()  # True => stop generation, False => keep going
 
         def worker() -> None:
             try:

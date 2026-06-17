@@ -7,9 +7,12 @@
     <meta name="description" content="Local AI chat powered by OpenVINO GenAI with an OpenAI-compatible API.">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11/styles/github-dark.min.css">
     <script src="https://cdn.jsdelivr.net/npm/marked@9/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11/highlight.min.js"></script>
     <script>
-        marked.setOptions({ breaks: true, gfm: true, mangle: false, headerIds: false });
+        if (window.marked) marked.setOptions({ breaks: true, gfm: true, mangle: false, headerIds: false });
     </script>
     <style>
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -156,7 +159,7 @@
         .msg-row.ai:hover .copy-btn { opacity: 1; }
         .copy-btn:hover { color: var(--text-1); }
 
-        #input-area { padding: 16px 20px; background: var(--surface-1); border-top: 1px solid var(--border); }
+        #input-area { position: relative; padding: 16px 20px; background: var(--surface-1); border-top: 1px solid var(--border); }
         .input-row { max-width: 820px; margin: 0 auto; display: flex; gap: 8px; align-items: flex-end; }
         #user-input { flex: 1; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text-1); font-family: inherit; font-size: 14px; padding: 12px 16px; outline: none; resize: none; transition: border-color 0.2s, box-shadow 0.2s; line-height: 1.5; max-height: 160px; min-height: 46px; }
         #user-input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-glow); }
@@ -178,6 +181,35 @@
 
         @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
         .hidden { display: none !important; }
+
+        /* Send button doubles as a Stop control while generating. */
+        #send-btn.stop { background: var(--red); box-shadow: 0 2px 12px rgba(239,68,68,0.3); }
+        #send-btn.stop:hover:not(:disabled) { background: #dc2626; }
+
+        /* Per-code-block copy button + highlight.js surface. */
+        .bubble pre { position: relative; }
+        .bubble pre code.hljs { background: transparent; padding: 0; }
+        .code-copy {
+            position: absolute; top: 6px; right: 6px;
+            padding: 3px 8px; font-size: 11px; font-family: 'Inter', sans-serif;
+            background: var(--surface-3); border: 1px solid var(--border);
+            color: var(--text-2); border-radius: 6px; cursor: pointer;
+            opacity: 0; transition: opacity 0.2s, color 0.2s;
+        }
+        .bubble pre:hover .code-copy { opacity: 1; }
+        .code-copy:hover { color: var(--text-1); border-color: var(--border-hover); }
+
+        /* Floating "jump to latest" affordance when scrolled up mid-conversation. */
+        #jump-btn {
+            position: absolute; left: 50%; top: -48px; transform: translateX(-50%) translateY(8px);
+            display: flex; align-items: center; gap: 6px;
+            padding: 7px 14px; border-radius: 20px;
+            background: var(--surface-3); border: 1px solid var(--border-hover);
+            color: var(--text-1); font-size: 12px; font-weight: 500; cursor: pointer;
+            box-shadow: var(--shadow); opacity: 0; pointer-events: none; transition: all 0.25s; z-index: 5;
+        }
+        #jump-btn.show { opacity: 1; pointer-events: auto; transform: translateX(-50%) translateY(0); }
+        #jump-btn:hover { border-color: var(--primary); }
     </style>
 </head>
 <body>
@@ -239,6 +271,10 @@
     </div>
 
     <div id="input-area">
+        <button id="jump-btn" title="Scroll to latest message">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></svg>
+            Latest
+        </button>
         <form id="chat-form" class="input-row" onsubmit="return false;">
             <textarea id="user-input" placeholder="Message the model… (Enter to send, Shift+Enter for newline)" rows="1" autocomplete="off"></textarea>
             <button type="submit" id="send-btn" title="Send (Enter)">
@@ -266,7 +302,13 @@
     let waitingForModelId = null;
     let isMock = false;
     let defaultDevice = 'CPU';
+    let currentAbort = null;       // AbortController for the in-flight generation
+    let autoScroll = true;         // follow new tokens only when the user is at the bottom
     const availableModels = new Map();
+    const STORAGE_KEY = 'ovllm.chat.v1';
+
+    const SEND_ICON = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13"/><path d="M22 2L15 22 11 13 2 9l20-7z"/></svg>';
+    const STOP_ICON = '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>';
 
     // ── DOM Refs ──────────────────────────────────────────
     const chatInner    = document.getElementById('chat-inner');
@@ -287,11 +329,38 @@
     const newChatBtn   = document.getElementById('new-chat-btn');
     const modelStatus  = document.getElementById('model-status');
     const tokenCounter = document.getElementById('token-counter');
+    const jumpBtn      = document.getElementById('jump-btn');
     sendBtn.disabled = true;
 
     // ── Helpers ───────────────────────────────────────────
-    function renderMarkdown(text) { return marked.parse(text); }
-    function escapeHtml(text) { return text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+    // Render model output as markdown, then sanitize the HTML before insertion.
+    // (Degrades gracefully if the marked / DOMPurify CDNs are unavailable.)
+    function renderMarkdown(text) {
+        const raw = window.marked ? marked.parse(text || '') : escapeHtml(text || '');
+        return window.DOMPurify ? DOMPurify.sanitize(raw) : raw;
+    }
+    function escapeHtml(text) { return String(text).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+    // Syntax-highlight code blocks and add a per-block copy button (once each).
+    function enhanceCodeBlocks(container) {
+        container.querySelectorAll('pre:not(.tool-call-args)').forEach(pre => {
+            if (pre.dataset.enhanced) return;
+            pre.dataset.enhanced = '1';
+            const code = pre.querySelector('code');
+            if (code && window.hljs) { try { hljs.highlightElement(code); } catch {} }
+            const btn = document.createElement('button');
+            btn.className = 'code-copy';
+            btn.type = 'button';
+            btn.textContent = 'Copy';
+            btn.addEventListener('click', () => {
+                navigator.clipboard.writeText(code ? code.innerText : pre.innerText).then(() => {
+                    btn.textContent = 'Copied';
+                    setTimeout(() => { btn.textContent = 'Copy'; }, 1500);
+                });
+            });
+            pre.appendChild(btn);
+        });
+    }
 
     function setStatusPolling(ms) {
         if (currentStatusPollMs === ms) return;
@@ -328,7 +397,7 @@
         if (!model) {
             modelStatus.textContent = 'Loading model catalog…';
             modelStatus.className = '';
-            sendBtn.disabled = true; loadModelBtn.disabled = true;
+            sendBtn.disabled = !isGenerating; loadModelBtn.disabled = true;
             unloadModelBtn.disabled = true; deleteModelBtn.disabled = true;
             return;
         }
@@ -357,7 +426,7 @@
                 : `Convert ${model.name} to OpenVINO IR first (see README)`;
         }
 
-        sendBtn.disabled = isGenerating || !model.is_loaded;
+        sendBtn.disabled = isGenerating ? false : !model.is_loaded;  // acts as Stop while generating
         loadModelBtn.disabled = isGenerating || !model.can_load;
         unloadModelBtn.disabled = isGenerating || !model.can_unload;
         deleteModelBtn.disabled = isGenerating || !model.can_delete;
@@ -439,8 +508,11 @@
 
             memLabel.textContent = `${data.memory.used_percent}% RAM`;
             if (data.disk) {
-                const gb = data.disk.total_gb;
+                const gb = data.disk.models_gb ?? data.disk.total_gb ?? 0;
                 diskLabel.textContent = gb >= 1 ? `${gb.toFixed(1)} GB` : `${Math.round(gb * 1024)} MB`;
+                diskChip.title = (data.disk.free_gb != null && data.disk.total_gb)
+                    ? `Converted models: ${gb.toFixed(1)} GB · ${Math.round(data.disk.free_gb)} GB free of ${Math.round(data.disk.total_gb)} GB`
+                    : 'Converted model footprint on disk';
             }
 
             const dev = data.device || {};
@@ -475,7 +547,7 @@
             memLabel.textContent = '--'; diskLabel.textContent = '-- GB';
             modelStatus.textContent = 'Server unavailable';
             modelStatus.className = 'error';
-            sendBtn.disabled = true;
+            sendBtn.disabled = !isGenerating;
         }
     }
 
@@ -505,6 +577,7 @@
             bubbleContent.innerHTML = role === 'ai' ? renderMarkdown(content) : escapeHtml(content);
         }
         bubble.appendChild(bubbleContent);
+        if (role === 'ai' && !isStreaming) enhanceCodeBlocks(bubble);
 
         const col = document.createElement('div');
         col.style.cssText = 'display:flex;flex-direction:column;max-width:75%';
@@ -528,14 +601,38 @@
         return bubble;
     }
 
-    function scrollToBottom() { chatArea.scrollTop = chatArea.scrollHeight; }
+    // Only follow the stream when the user is already at the bottom (force overrides).
+    function isNearBottom() { return chatArea.scrollHeight - chatArea.scrollTop - chatArea.clientHeight < 120; }
+    function scrollToBottom(force = false) { if (force || autoScroll) chatArea.scrollTop = chatArea.scrollHeight; }
+    chatArea.addEventListener('scroll', () => {
+        autoScroll = isNearBottom();
+        jumpBtn.classList.toggle('show', !autoScroll);
+    });
+    jumpBtn.addEventListener('click', () => { autoScroll = true; scrollToBottom(true); jumpBtn.classList.remove('show'); });
+
+    // ── Conversation persistence (survives reloads) ───────
+    function saveConversation() {
+        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(conversation)); } catch {}
+    }
+    function restoreConversation() {
+        let saved;
+        try { saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); } catch { saved = []; }
+        if (!Array.isArray(saved) || !saved.length) return;
+        conversation = saved;
+        saved.forEach(m => appendMessage(m.role === 'user' ? 'user' : 'ai', m.content || ''));
+        scrollToBottom(true);
+    }
 
     function clearConversation() {
+        if (isGenerating) stopGeneration();
         conversation = [];
+        try { localStorage.removeItem(STORAGE_KEY); } catch {}
         tokenCounter.textContent = '0 tokens';
         chatInner.innerHTML = '';
         chatInner.appendChild(emptyState);
         emptyState.classList.remove('hidden');
+        autoScroll = true;
+        jumpBtn.classList.remove('show');
         showToast('New chat started');
     }
     newChatBtn.addEventListener('click', clearConversation);
@@ -556,23 +653,56 @@
     userInput.addEventListener('input', autoResize);
 
     userInput.addEventListener('keydown', e => {
-        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+        if (e.key === 'Enter' && !e.shiftKey && !isGenerating) { e.preventDefault(); sendMessage(); }
     });
     document.addEventListener('keydown', e => {
         if ((e.ctrlKey || e.metaKey) && e.key === 'l') { e.preventDefault(); clearConversation(); }
     });
 
-    document.getElementById('chat-form').addEventListener('submit', sendMessage);
-    sendBtn.addEventListener('click', sendMessage);
+    // The send button is type=submit, so the form's submit event is the single
+    // entry point for both Enter and clicks (no duplicate click listener).
+    document.getElementById('chat-form').addEventListener('submit', e => { e.preventDefault(); sendMessage(); });
     loadModelBtn.addEventListener('click', () => { const m = getSelectedModelMeta(); if (m && m.can_load) requestModelLoad(m.id); });
     unloadModelBtn.addEventListener('click', () => { const m = getSelectedModelMeta(); if (m) requestModelUnload(m.id); });
     deleteModelBtn.addEventListener('click', () => { const m = getSelectedModelMeta(); if (m) requestModelDelete(m.id); });
     modelSelect.addEventListener('change', updateModelUi);
 
+    function setSendButtonMode(mode) {
+        const stop = mode === 'stop';
+        sendBtn.innerHTML = stop ? STOP_ICON : SEND_ICON;
+        sendBtn.classList.toggle('stop', stop);
+        sendBtn.title = stop ? 'Stop generating' : 'Send (Enter)';
+    }
+
+    function stopGeneration() {
+        if (currentAbort) { currentAbort.abort(); showToast('Stopping…'); }
+    }
+
+    // Render any tool-call deltas as cards beneath the assistant bubble.
+    function renderToolCards(toolCalls, aiBubble) {
+        toolCalls.forEach(tc => {
+            if (!tc.function?.name) return;
+            let args = tc.function.arguments || '';
+            try { args = JSON.stringify(JSON.parse(args || '{}'), null, 2); } catch {}
+            const card = document.createElement('div');
+            card.className = 'tool-call-card';
+            card.innerHTML = `
+        <div class="tool-call-header">
+          <span class="tool-call-icon">⚙</span>
+          <span class="tool-call-name">${escapeHtml(tc.function.name)}</span>
+          <span class="tool-call-badge">tool call</span>
+        </div>
+        <pre class="tool-call-args">${escapeHtml(args)}</pre>`;
+            aiBubble.appendChild(card);
+        });
+    }
+
     async function sendMessage() {
+        if (isGenerating) { stopGeneration(); return; }  // button doubles as Stop
+
         const text = userInput.value.trim();
         const selectedModel = getSelectedModelMeta();
-        if (!text || isGenerating || !modelSelect.value || !selectedModel?.is_loaded) {
+        if (!text || !modelSelect.value || !selectedModel?.is_loaded) {
             if (text && selectedModel && !selectedModel.is_loaded && selectedModel.can_load) {
                 requestModelLoad(selectedModel.id, true);
             }
@@ -582,14 +712,46 @@
         userInput.value = '';
         autoResize();
         isGenerating = true;
+        autoScroll = true;
         setStatusPolling(1000);
+        setSendButtonMode('stop');
         updateModelUi();
 
         conversation.push({ role: 'user', content: text });
+        saveConversation();
         appendMessage('user', text);
+        scrollToBottom(true);
 
         const aiBubble = appendMessage('ai', '', true);
         const aiBubbleContent = aiBubble.firstElementChild;
+
+        currentAbort = new AbortController();
+        let fullText = '';
+
+        // Parse one SSE line and update the UI (token counter, content, tool calls).
+        const processLine = (line) => {
+            if (!line.startsWith('data: ') || line === 'data: [DONE]') return;
+            let data;
+            try { data = JSON.parse(line.slice(6)); } catch { return; }
+            if (data.usage) {
+                tokenCounter.textContent = `${data.usage.prompt_tokens || 0} prompt · ${data.usage.completion_tokens || 0} completion tokens`;
+            }
+            const content = data.choices?.[0]?.delta?.content || '';
+            if (content) { fullText += content; aiBubbleContent.innerHTML = renderMarkdown(fullText); scrollToBottom(); }
+            const toolCalls = data.choices?.[0]?.delta?.tool_calls;
+            if (toolCalls?.length) { renderToolCards(toolCalls, aiBubble); scrollToBottom(); }
+        };
+
+        const finalize = (aborted = false) => {
+            if (fullText) {
+                aiBubbleContent.innerHTML = renderMarkdown(fullText);
+                enhanceCodeBlocks(aiBubble);
+                conversation.push({ role: 'assistant', content: fullText });
+                saveConversation();
+            } else if (!aiBubble.querySelector('.tool-call-card')) {
+                aiBubbleContent.innerHTML = `<span style="color:var(--text-3)">${aborted ? '(stopped)' : '(no response)'}</span>`;
+            }
+        };
 
         try {
             const resp = await fetch('/v1/chat/completions', {
@@ -599,60 +761,49 @@
                     messages: conversation,
                     stream: true,
                     stream_options: { include_usage: true }
-                })
+                }),
+                signal: currentAbort.signal
             });
             if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
 
             const reader  = resp.body.getReader();
             const decoder = new TextDecoder();
-            let fullText = '';
             aiBubbleContent.innerHTML = '';
 
+            // Buffer across reads: an SSE line can be split between network chunks,
+            // so only complete lines are parsed and the trailing fragment is kept.
+            let buffer = '';
             while (true) {
                 const { done, value } = await reader.read();
                 if (done) break;
-                const chunk = decoder.decode(value, { stream: true });
-                for (const line of chunk.split('\n')) {
-                    if (!line.startsWith('data: ') || line === 'data: [DONE]') continue;
-                    try {
-                        const data = JSON.parse(line.slice(6));
-                        if (data.usage) {
-                            tokenCounter.textContent = `${data.usage.prompt_tokens || 0} prompt · ${data.usage.completion_tokens || 0} completion tokens`;
-                        }
-                        const content = data.choices?.[0]?.delta?.content || '';
-                        if (content) { fullText += content; aiBubbleContent.innerHTML = renderMarkdown(fullText); scrollToBottom(); }
-                        const toolCalls = data.choices?.[0]?.delta?.tool_calls;
-                        if (toolCalls && toolCalls.length > 0) {
-                            toolCalls.forEach(tc => {
-                                if (!tc.function?.name) return;
-                                const card = document.createElement('div');
-                                card.className = 'tool-call-card';
-                                card.innerHTML = `
-        <div class="tool-call-header">
-          <span class="tool-call-icon">⚙</span>
-          <span class="tool-call-name">${escapeHtml(tc.function.name)}</span>
-          <span class="tool-call-badge">tool call</span>
-        </div>
-        <pre class="tool-call-args">${escapeHtml(
-          (() => { try { return JSON.stringify(JSON.parse(tc.function.arguments || '{}'), null, 2); } catch { return tc.function.arguments || ''; } })()
-        )}</pre>`;
-                                aiBubble.appendChild(card);
-                            });
-                            scrollToBottom();
-                        }
-                    } catch {}
-                }
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop();
+                for (const line of lines) processLine(line);
             }
-            conversation.push({ role: 'assistant', content: fullText });
+            buffer += decoder.decode();
+            if (buffer) processLine(buffer);
+
+            finalize();
         } catch (err) {
-            aiBubbleContent.innerHTML = `<span style="color:var(--red)">⚠ Error: ${escapeHtml(err.message)}</span>`;
+            if (err.name === 'AbortError') {
+                finalize(true);  // keep whatever streamed before the user stopped
+            } else {
+                aiBubbleContent.innerHTML = `<span style="color:var(--red)">⚠ Error: ${escapeHtml(err.message)}</span>`;
+            }
         } finally {
             isGenerating = false;
+            currentAbort = null;
+            setSendButtonMode('send');
             updateModelUi();
             setStatusPolling(Array.from(availableModels.values()).some(m => m.is_loading) ? 1000 : 3000);
             userInput.focus();
         }
     }
+
+    // ── Init ──────────────────────────────────────────────
+    setSendButtonMode('send');
+    restoreConversation();
 </script>
 </body>
 </html>

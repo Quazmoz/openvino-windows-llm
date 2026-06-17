@@ -4,13 +4,16 @@ These exercise the full FastAPI stack (routing, lifecycle, the model manager, an
 the streaming bridge) without OpenVINO, so they run anywhere — including macOS.
 """
 
+import asyncio
 import time
 
 import pytest
 from fastapi.testclient import TestClient
 
 from app.config import BASE_DIR, Settings
+from app.model_manager import ModelManager
 from app.server import create_app
+from runtime.openvino_engine import GenParams, MockEngine
 
 MODEL_ID = "tinyllama-1.1b-chat"
 
@@ -110,3 +113,58 @@ def test_chat_on_unloaded_model_returns_409(client):
 def test_unknown_model_load_404(client):
     resp = client.post("/v1/models/load", json={"model": "does-not-exist"})
     assert resp.status_code == 404
+
+
+def test_stream_handle_stop_halts_worker_early():
+    """request_stop() must end generation before the full reply is produced, and
+    wait_closed() must unblock once the worker thread has actually finished."""
+    engine = MockEngine("test-model")
+    prompt = "<|im_start|>user\nhi<|im_end|>\n"
+    full_reply = engine.generate(prompt, GenParams()).text
+
+    handle = engine.stream(prompt, GenParams())
+    handle.next_chunk()  # let generation start
+    handle.request_stop()
+
+    while handle.next_chunk() is not None:  # drain to the sentinel
+        pass
+    handle.wait_closed(timeout=2.0)
+
+    assert handle._done.is_set()  # worker really finished
+    assert len(handle.text) < len(full_reply)  # it stopped early, didn't run to completion
+
+
+def test_stream_cancellation_frees_the_model_lock():
+    """Abandoning a stream early must stop the worker and release the lock before
+    the next request runs, so two generations never overlap on one pipeline."""
+    settings = Settings(
+        models_file=BASE_DIR / "models.json",
+        models_dir=BASE_DIR / "models" / "openvino",
+        force_mock=True,
+    )
+    manager = ModelManager(settings)
+    prompt = "<|im_start|>user\nhi<|im_end|>\n"
+    params = GenParams(max_new_tokens=64)
+
+    async def scenario():
+        await manager.startup()
+        task = manager.schedule_load(MODEL_ID)
+        if task:
+            await task
+        engine = manager.resolve_engine(MODEL_ID)
+        lock = manager.get_lock(engine.model_id)
+
+        gen = manager.stream(engine, prompt, params)
+        first = await gen.__anext__()  # consume one chunk, then bail out
+        assert first
+        assert lock.locked()  # held for the duration of the stream
+
+        await gen.aclose()  # client-disconnect path
+        assert not lock.locked()  # worker finished, lock released
+
+        # The engine is still usable by a subsequent request.
+        result = await manager.generate(engine, prompt, params)
+        assert "Mock engine" in result.text
+        await manager.shutdown()
+
+    asyncio.run(scenario())
