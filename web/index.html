@@ -322,6 +322,8 @@
 
     const SEND_ICON = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13"/><path d="M22 2L15 22 11 13 2 9l20-7z"/></svg>';
     const STOP_ICON = '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>';
+    const LOAD_ICON = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 5v14l11-7z"/></svg>';
+    const CONVERT_ICON = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>';
 
     // ── DOM Refs ──────────────────────────────────────────
     const chatInner    = document.getElementById('chat-inner');
@@ -429,34 +431,45 @@
             userInput.placeholder = 'Message the model… (Enter to send, Shift+Enter for newline)';
         } else if (model.is_loading) {
             setModelStatus(`${model.name}: ${model.status_label}`, 'loading');
-            userInput.placeholder = `Loading ${model.name}…`;
+            userInput.placeholder = model.status === 'converting'
+                ? `Converting ${model.name} to OpenVINO IR…`
+                : `Loading ${model.name}…`;
         } else if (model.status === 'error') {
-            const fullError = `${model.name}: ${model.error || 'Load failed'}`;
-            setModelStatus(`${model.name}: Load failed`, 'error', fullError);
-            userInput.placeholder = `Click load to retry ${model.name}`;
+            const isConvertRetry = !!model.can_convert;
+            const actionLabel = isConvertRetry ? 'Conversion failed' : 'Load failed';
+            const fullError = `${model.name}: ${model.error || actionLabel}`;
+            setModelStatus(`${model.name}: ${actionLabel}`, 'error', fullError);
+            userInput.placeholder = isConvertRetry
+                ? `Click convert to retry ${model.name}`
+                : `Click load to retry ${model.name}`;
         } else if (model.status === 'ready_to_load') {
             setModelStatus(`${model.name} is converted and ready to load`);
             userInput.placeholder = `Click load to bring ${model.name} into ${loadDevice}`;
         } else {
-            setModelStatus(`${model.name} is not converted yet`);
+            setModelStatus(`${model.name} is ready to convert`);
             userInput.placeholder = isMock
                 ? `Mock mode — click load to test ${model.name}`
-                : `Convert ${model.name} to OpenVINO IR first (see README)`;
+                : `Click convert to prepare ${model.name} for ${loadDevice}`;
         }
 
         sendBtn.disabled = isGenerating ? false : !model.is_loaded;  // acts as Stop while generating
-        loadModelBtn.disabled = isGenerating || !model.can_load;
+        const canPrimaryAction = model.can_load || model.can_convert;
+        loadModelBtn.disabled = isGenerating || !canPrimaryAction;
         unloadModelBtn.disabled = isGenerating || !model.can_unload;
         deleteModelBtn.disabled = isGenerating || !model.can_delete;
         deviceSelect.disabled = isGenerating || model.is_loaded || model.is_loading;
-        loadModelBtn.title = model.is_loaded ? `${model.name} is already loaded` : `Load ${model.name} on ${loadDevice}`;
+        loadModelBtn.innerHTML = model.can_convert ? CONVERT_ICON : LOAD_ICON;
+        loadModelBtn.title = model.can_convert
+            ? `Convert ${model.name}, then load it on ${loadDevice}`
+            : (model.is_loaded ? `${model.name} is already loaded` : `Load ${model.name} on ${loadDevice}`);
+        loadModelBtn.setAttribute('aria-label', model.can_convert ? 'Convert and load selected model' : 'Load selected model');
         unloadModelBtn.title = model.can_unload ? `Unload ${model.name} from memory` : `${model.name} is not loaded`;
         deleteModelBtn.title = model.can_delete ? `Delete ${model.name} from disk` : `No local files to delete for ${model.name}`;
     }
 
     async function requestModelLoad(modelId, suppressToast = false) {
         const model = availableModels.get(modelId);
-        if (!model || model.is_loaded) { updateModelUi(); return; }
+        if (!model || model.is_loaded || !model.can_load) { updateModelUi(); return; }
         waitingForModelId = modelId;
         updateModelUi();
         try {
@@ -473,6 +486,28 @@
             waitingForModelId = null;
             setModelStatus(`${model.name}: Load failed`, 'error', `${model.name}: ${err.message}`);
             showToast(`Failed to start ${model.name}`);
+        }
+    }
+
+    async function requestModelConvert(modelId, suppressToast = false) {
+        const model = availableModels.get(modelId);
+        if (!model || model.is_loaded || !model.can_convert) { updateModelUi(); return; }
+        waitingForModelId = modelId;
+        updateModelUi();
+        try {
+            const res = await fetch('/v1/models/convert', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ model: modelId, device: modelLoadDevice(), load_after: true })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+            if (!suppressToast) showToast(data.message || `Converting ${model.name}…`);
+            setStatusPolling(1000);
+            await updateStatus();
+        } catch (err) {
+            waitingForModelId = null;
+            setModelStatus(`${model.name}: Conversion failed`, 'error', `${model.name}: ${err.message}`);
+            showToast(`Failed to start conversion`);
         }
     }
 
@@ -682,7 +717,12 @@
     // The send button is type=submit, so the form's submit event is the single
     // entry point for both Enter and clicks (no duplicate click listener).
     document.getElementById('chat-form').addEventListener('submit', e => { e.preventDefault(); sendMessage(); });
-    loadModelBtn.addEventListener('click', () => { const m = getSelectedModelMeta(); if (m && m.can_load) requestModelLoad(m.id); });
+    loadModelBtn.addEventListener('click', () => {
+        const m = getSelectedModelMeta();
+        if (!m) return;
+        if (m.can_convert) requestModelConvert(m.id);
+        else if (m.can_load) requestModelLoad(m.id);
+    });
     unloadModelBtn.addEventListener('click', () => { const m = getSelectedModelMeta(); if (m) requestModelUnload(m.id); });
     deleteModelBtn.addEventListener('click', () => { const m = getSelectedModelMeta(); if (m) requestModelDelete(m.id); });
     modelSelect.addEventListener('change', updateModelUi);
@@ -728,8 +768,9 @@
         const text = userInput.value.trim();
         const selectedModel = getSelectedModelMeta();
         if (!text || !modelSelect.value || !selectedModel?.is_loaded) {
-            if (text && selectedModel && !selectedModel.is_loaded && selectedModel.can_load) {
-                requestModelLoad(selectedModel.id, true);
+            if (text && selectedModel && !selectedModel.is_loaded) {
+                if (selectedModel.can_convert) requestModelConvert(selectedModel.id, true);
+                else if (selectedModel.can_load) requestModelLoad(selectedModel.id, true);
             }
             return;
         }

@@ -129,6 +129,12 @@ class ModelLoadRequest(BaseModel):
     device: str | None = None  # override the server default device for this load
 
 
+class ModelConvertRequest(BaseModel):
+    model: str
+    device: str | None = None  # optional device to use if loading after conversion
+    load_after: bool = True
+
+
 class ModelUnloadRequest(BaseModel):
     model: str
 

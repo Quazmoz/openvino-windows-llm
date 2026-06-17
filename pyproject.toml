@@ -46,5 +46,6 @@ ignore = ["E501"]  # line length handled pragmatically
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q"
+addopts = "-q --basetemp=.tmp/pytest"
+tmp_path_retention_policy = "none"
 filterwarnings = ["ignore::DeprecationWarning"]

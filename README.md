@@ -48,7 +48,7 @@ local server with the UI, model conversion, catalog, and setup scripts all inclu
   with malformed-call retry
 - **Actionable device errors** (e.g. "OpenVINO doesn't see the NPU — retry with `--device CPU`")
 - A **conversion helper** that exports Hugging Face models to OpenVINO IR
-- A chat UI with model management plus a CPU / GPU / NPU device selector
+- A chat UI with one-click catalog model conversion/loading plus a CPU / GPU / NPU device selector
 - A **mock engine** that runs the entire stack (API, streaming, UI) on machines without
   OpenVINO — so you can develop/test on macOS or Linux and CI stays green everywhere
 - Optional **API-key enforcement** for shared/LAN use
@@ -152,7 +152,8 @@ GET  /health                 Liveness + mock/device/openvino/loaded-count
 GET  /v1/models              OpenAI-style model list (with load status)
 POST /v1/chat/completions    Chat (streaming SSE + non-streaming), tool calls
 POST /v1/responses           OpenAI Responses API (used by n8n)
-POST /v1/models/load         Background-load a model (optional device override)
+POST /v1/models/convert      Background-convert a catalog model, optionally auto-loading it
+POST /v1/models/load         Background-load a converted model (optional device override)
 POST /v1/models/unload       Unload a model and free memory
 POST /v1/models/delete       Delete a model's on-disk IR directory (frees disk)
 GET  /v1/devices             OpenVINO device discovery + details
