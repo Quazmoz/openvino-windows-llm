@@ -1058,6 +1058,82 @@
                 flex-shrink: 0;
             }
         }
+
+        /* Model Action Card (Onboarding & Prep) */
+        .model-action-card {
+            background: rgba(19, 31, 44, 0.65);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 24px;
+            max-width: 520px;
+            width: 100%;
+            margin-top: 24px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 14px;
+            backdrop-filter: blur(16px);
+            box-shadow: var(--shadow);
+            animation: fade-in 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .action-card-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--text-1);
+        }
+
+        .action-card-text {
+            font-size: 13.5px;
+            color: var(--text-2);
+            line-height: 1.55;
+            text-align: center;
+        }
+
+        .action-btn {
+            background: linear-gradient(135deg, #0ea5e9, #6366f1);
+            color: white;
+            border: none;
+            padding: 10px 24px;
+            border-radius: 20px;
+            font-size: 13.5px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 4px 12px rgba(14, 165, 233, 0.25);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .action-btn:hover:not(:disabled) {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 16px rgba(14, 165, 233, 0.4);
+            filter: brightness(1.08);
+        }
+
+        .action-btn:disabled {
+            background: var(--surface-3);
+            color: var(--text-3);
+            cursor: not-allowed;
+            box-shadow: none;
+        }
+
+        .spinner {
+            width: 18px;
+            height: 18px;
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            border-top: 2px solid var(--primary);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            display: inline-block;
+            flex-shrink: 0;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
     </style>
 </head>
 
@@ -1281,6 +1357,8 @@
         let autoScroll = true;         // follow new tokens only when the user is at the bottom
         const availableModels = new Map();
         const STORAGE_KEY = 'ovllm.chat.v1';
+        let queuedPrompt = null;
+        let activeLoaderBubble = null;
 
         const SEND_ICON = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13"/><path d="M22 2L15 22 11 13 2 9l20-7z"/></svg>';
         const STOP_ICON = '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>';
@@ -1308,7 +1386,7 @@
         const modelStatus = document.getElementById('model-status');
         const tokenCounter = document.getElementById('token-counter');
         const jumpBtn = document.getElementById('jump-btn');
-        sendBtn.disabled = true;
+        updateSendButtonState();
 
         // Settings panel DOM refs
         const settingsToggleBtn = document.getElementById('settings-toggle-btn');
@@ -1350,6 +1428,125 @@
                 });
                 pre.appendChild(btn);
             });
+        }
+
+        function updateSendButtonState() {
+            const model = getSelectedModelMeta();
+            if (isGenerating) {
+                sendBtn.disabled = false;
+                return;
+            }
+            if (!model) {
+                sendBtn.disabled = true;
+                return;
+            }
+            const hasText = userInput.value.trim().length > 0;
+            const canPrimaryAction = model.is_loaded || model.can_load || model.can_convert || model.is_loading;
+            sendBtn.disabled = !(model.is_loaded ? hasText : (hasText && canPrimaryAction));
+        }
+
+        function updateEmptyStateActionCard(model) {
+            let card = document.getElementById('model-action-card');
+            if (!card) {
+                card = document.createElement('div');
+                card.id = 'model-action-card';
+                card.className = 'model-action-card';
+                emptyState.appendChild(card);
+            }
+            
+            if (!model) {
+                card.classList.add('hidden');
+                return;
+            }
+            card.classList.remove('hidden');
+            
+            const loadDevice = modelLoadDevice();
+            
+            if (model.is_loaded) {
+                card.innerHTML = `
+                    <div class="action-card-title">Model Ready: <span style="color:var(--green)">${model.name}</span></div>
+                    <p class="action-card-text">Loaded on <strong>${model.device}</strong>. Type a message below or click a suggestion to start chatting!</p>
+                `;
+            } else if (model.is_loading) {
+                const actionText = model.status === 'converting' 
+                    ? `Converting <strong>${model.name}</strong> to OpenVINO IR...` 
+                    : `Loading <strong>${model.name}</strong> into memory...`;
+                const subText = model.status === 'converting'
+                    ? 'This downloads the weights from Hugging Face and exports them. It may take 1-5 minutes.'
+                    : 'Bringing model onto the selected device...';
+                card.innerHTML = `
+                    <div class="action-card-title" style="color:var(--amber)">Preparing Model...</div>
+                    <div style="display:flex;align-items:center;gap:12px;margin:8px 0;">
+                        <div class="spinner"></div>
+                        <span class="action-card-text">${actionText}</span>
+                    </div>
+                    <p class="action-card-text" style="font-size:11px;color:var(--text-3);">${subText}</p>
+                `;
+            } else if (model.status === 'error') {
+                const actionLabel = model.can_convert ? 'Conversion failed' : 'Load failed';
+                card.innerHTML = `
+                    <div class="action-card-title" style="color:var(--red)">${actionLabel}</div>
+                    <p class="action-card-text">${model.error || 'An error occurred during preparation.'}</p>
+                    <button class="action-btn" onclick="triggerModelPrimaryAction('${model.id}')">
+                        Retry Preparation
+                    </button>
+                `;
+            } else if (model.status === 'ready_to_load') {
+                card.innerHTML = `
+                    <div class="action-card-title">Model Converted: <span>${model.name}</span></div>
+                    <p class="action-card-text">The model is ready on disk. Load it to begin chatting.</p>
+                    <button class="action-btn" onclick="triggerModelPrimaryAction('${model.id}')">
+                        ${LOAD_ICON} Load on ${loadDevice}
+                    </button>
+                `;
+            } else {
+                card.innerHTML = `
+                    <div class="action-card-title">Model Available: <span>${model.name}</span></div>
+                    <p class="action-card-text">This model needs to be prepared (converted to OpenVINO IR) first.</p>
+                    <button class="action-btn" onclick="triggerModelPrimaryAction('${model.id}')">
+                        ${CONVERT_ICON} Convert & Load on ${loadDevice}
+                    </button>
+                `;
+            }
+        }
+
+        window.triggerModelPrimaryAction = function(modelId) {
+            const m = availableModels.get(modelId);
+            if (!m) return;
+            if (m.can_convert) requestModelConvert(m.id);
+            else if (m.can_load) requestModelLoad(m.id);
+        }
+
+        function startQueuedLoad(text, selectedModel) {
+            queuedPrompt = text;
+            userInput.value = '';
+            autoResize();
+            
+            conversation.push({ role: 'user', content: text });
+            saveConversation();
+            appendMessage('user', text);
+            scrollToBottom(true);
+
+            const loadDevice = modelLoadDevice();
+            const actionText = selectedModel.status === 'converting' || selectedModel.can_convert ? 'Downloading & converting' : 'Loading';
+            activeLoaderBubble = appendMessage('ai', '', true);
+            activeLoaderBubble.firstElementChild.innerHTML = `
+                <div class="model-loader-status" style="display:flex;align-items:center;gap:10px;padding:4px 0;color:var(--amber);">
+                    <div class="spinner"></div>
+                    <span>${actionText} <strong>${selectedModel.name}</strong> on <strong>${loadDevice}</strong>... This may take a moment.</span>
+                </div>
+            `;
+            scrollToBottom(true);
+            
+            if (waitingForModelId === selectedModel.id) {
+                return;
+            }
+            
+            if (selectedModel.can_convert) {
+                requestModelConvert(selectedModel.id, true);
+            } else if (selectedModel.can_load) {
+                requestModelLoad(selectedModel.id, true);
+            }
         }
 
         function setStatusPolling(ms) {
@@ -1397,8 +1594,12 @@
             const model = getSelectedModelMeta();
             if (!model) {
                 setModelStatus('Loading model catalog…');
-                sendBtn.disabled = !isGenerating; loadModelBtn.disabled = true;
+                updateSendButtonState();
+                loadModelBtn.disabled = true;
                 unloadModelBtn.disabled = true; deleteModelBtn.disabled = true; deviceSelect.disabled = true;
+                if (!emptyState.classList.contains('hidden')) {
+                    updateEmptyStateActionCard(null);
+                }
                 return;
             }
             const deviceSuffix = model.device ? ` on ${model.device}` : '';
@@ -1429,7 +1630,7 @@
                     : `Click convert to prepare ${model.name} for ${loadDevice}`;
             }
 
-            sendBtn.disabled = isGenerating ? false : !model.is_loaded;  // acts as Stop while generating
+            updateSendButtonState();
             const canPrimaryAction = model.can_load || model.can_convert;
             loadModelBtn.disabled = isGenerating || !canPrimaryAction;
             unloadModelBtn.disabled = isGenerating || !model.can_unload;
@@ -1442,6 +1643,10 @@
             loadModelBtn.setAttribute('aria-label', model.can_convert ? 'Convert and load selected model' : 'Load selected model');
             unloadModelBtn.title = model.can_unload ? `Unload ${model.name} from memory` : `${model.name} is not loaded`;
             deleteModelBtn.title = model.can_delete ? `Delete ${model.name} from disk` : `No local files to delete for ${model.name}`;
+
+            if (!emptyState.classList.contains('hidden')) {
+                updateEmptyStateActionCard(model);
+            }
         }
 
         async function requestModelLoad(modelId, suppressToast = false) {
@@ -1580,15 +1785,38 @@
 
                 if (waitingForModelId) {
                     const wm = availableModels.get(waitingForModelId);
-                    if (wm?.is_loaded) { showToast(`${wm.name} is ready`); waitingForModelId = null; }
-                    else if (wm?.status === 'error') { showToast(`${wm.name} failed to load`); waitingForModelId = null; }
+                    if (wm?.is_loaded) {
+                        showToast(`${wm.name} is ready`);
+                        waitingForModelId = null;
+                        if (queuedPrompt && activeLoaderBubble) {
+                            queuedPrompt = null;
+                            executeGeneration(activeLoaderBubble);
+                            activeLoaderBubble = null;
+                        }
+                    }
+                    else if (wm?.status === 'error') {
+                        showToast(`${wm.name} failed to load`);
+                        waitingForModelId = null;
+                        if (queuedPrompt && activeLoaderBubble) {
+                            queuedPrompt = null;
+                            activeLoaderBubble.firstElementChild.innerHTML = `
+                                <span style="color:var(--red)">⚠ Failed to prepare model: ${wm.error || 'Unknown error'}</span>
+                            `;
+                            activeLoaderBubble = null;
+                        }
+                    }
                 }
             } catch {
                 deviceChip.className = 'stat-chip offline';
                 deviceLabel.textContent = 'Offline';
                 memLabel.textContent = '--'; diskLabel.textContent = '-- GB';
                 setModelStatus('Server unavailable', 'error');
-                sendBtn.disabled = !isGenerating;
+                updateSendButtonState();
+                if (queuedPrompt && activeLoaderBubble) {
+                    queuedPrompt = null;
+                    activeLoaderBubble.firstElementChild.innerHTML = `<span style="color:var(--red)">⚠ Server went offline during model loading.</span>`;
+                    activeLoaderBubble = null;
+                }
             }
         }
 
@@ -1701,7 +1929,10 @@
             userInput.style.height = Math.min(userInput.scrollHeight, 160) + 'px';
         }
 
-        userInput.addEventListener('input', autoResize);
+        userInput.addEventListener('input', () => {
+            autoResize();
+            updateSendButtonState();
+        });
 
         userInput.addEventListener('keydown', e => {
             if (e.key === 'Enter' && !e.shiftKey && !isGenerating) { e.preventDefault(); sendMessage(); }
@@ -1775,19 +2006,13 @@
             const selectedModel = getSelectedModelMeta();
             if (!text || !modelSelect.value || !selectedModel?.is_loaded) {
                 if (text && selectedModel && !selectedModel.is_loaded) {
-                    if (selectedModel.can_convert) requestModelConvert(selectedModel.id, true);
-                    else if (selectedModel.can_load) requestModelLoad(selectedModel.id, true);
+                    startQueuedLoad(text, selectedModel);
                 }
                 return;
             }
 
             userInput.value = '';
             autoResize();
-            isGenerating = true;
-            autoScroll = true;
-            setStatusPolling(1000);
-            setSendButtonMode('stop');
-            updateModelUi();
 
             conversation.push({ role: 'user', content: text });
             saveConversation();
@@ -1795,7 +2020,16 @@
             scrollToBottom(true);
 
             const aiBubble = appendMessage('ai', '', true);
+            await executeGeneration(aiBubble);
+        }
+
+        async function executeGeneration(aiBubble) {
             const aiBubbleContent = aiBubble.firstElementChild;
+            isGenerating = true;
+            autoScroll = true;
+            setStatusPolling(1000);
+            setSendButtonMode('stop');
+            updateModelUi();
 
             currentAbort = new AbortController();
             const genStart = performance.now();

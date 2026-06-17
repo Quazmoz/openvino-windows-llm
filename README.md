@@ -69,6 +69,8 @@ local server with the UI, model conversion, catalog, and setup scripts all inclu
 - A chat UI with one-click catalog model conversion/loading plus a CPU / GPU / NPU device selector
 - A **mock engine** that runs the entire stack (API, streaming, UI) on machines without
   OpenVINO — so you can develop/test on macOS or Linux and CI stays green everywhere
+- A **mock engine** that runs the entire stack (API, streaming, UI) on machines without
+  OpenVINO — so you can develop/test on macOS or Linux and CI stays green everywhere
 - Optional **API-key enforcement** for shared/LAN use
 
 ### Non-goals
@@ -81,72 +83,50 @@ local server with the UI, model conversion, catalog, and setup scripts all inclu
 
 ## Quick start
 
-### 1. Setup (Windows)
+### 1. Setup
+
+Clone the repository and run the setup script to create the Python virtual environment and install all server and model-conversion dependencies:
 
 ```powershell
 git clone https://github.com/Quazmoz/openvino-windows-llm.git
 cd openvino-windows-llm
-
-.\setup.bat                 # venv + OpenVINO GenAI + server deps
-.\setup.bat -WithConvert    # also install model-conversion deps (optimum-intel)
+.\setup.bat
 ```
+*(To install only runtime dependencies and skip conversion tools, run `.\setup.bat -Minimal` instead).*
 
-`setup.bat` runs `setup/setup_all.ps1` with an execution-policy bypass, so no manual
-PowerShell policy change is needed. Targets Python 3.11/3.12/3.13 on Windows 11, Intel
-Core Ultra / AI PC class hardware preferred. If Windows resolves `python` or `py` to
-Microsoft Store aliases, pass the full interpreter path with `.\setup.bat -Python
-"C:\path\to\python.exe"` or disable the aliases in Windows Settings.
+### 2. Convert a catalog model
 
-### 2. Convert a small model first
-
-OpenVINO runs models in **OpenVINO IR** format. Validate the stack with a small model:
+Convert a model from Hugging Face to local OpenVINO IR format using the wrapper script:
 
 ```powershell
-# Resolve source/output/weights straight from models.json:
-python -m runtime.model_converter --id tinyllama-1.1b-chat-fp16
-
-# …or call optimum-cli directly:
-optimum-cli export openvino `
-  --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 `
-  --weight-format fp16 --trust-remote-code `
-  models\openvino\tinyllama-1.1b-chat-fp16
+.\setup\convert_model.ps1 -Id tinyllama-1.1b-chat-fp16
 ```
-
-Conversion is a deliberate, heavier step (it downloads + exports), kept separate from
-server startup. The shipped catalog is FP16-only because that is the working NPU path.
 
 ### 3. Start the server
 
+Run the server and load your model on your target hardware device:
+
 ```powershell
+# Run TinyLlama on Intel NPU
 .\start_server.bat --model tinyllama-1.1b-chat-fp16 --device NPU
-# after converting a larger catalog entry:
-.\start_server.bat --model qwen2.5-1.5b-fp16 --device NPU
+
+# Fallback to CPU if needed
+.\start_server.bat --model tinyllama-1.1b-chat-fp16 --device CPU
 ```
 
-Open `http://localhost:8000` for the chat UI, or hit the API:
+Open **http://localhost:8000** for the browser chat UI, or connect external API tools.
+
+### Try it without OpenVINO (Mock Mode)
+
+If you don't have Intel hardware or are developing on macOS/Linux, run the server with mock mode enabled:
 
 ```powershell
-curl http://localhost:8000/v1/models
-
-curl http://localhost:8000/v1/chat/completions `
-  -H "Content-Type: application/json" `
-  -d '{"model":"tinyllama-1.1b-chat-fp16","messages":[{"role":"user","content":"Explain OpenVINO in one sentence."}],"max_tokens":64}'
+.\start_server.bat --mock
 ```
-
-### Try it without OpenVINO (any OS)
-
-No Intel hardware? Run the mock engine to exercise the full API, streaming, and UI:
-
-```bash
-python -m app.server --mock            # or set OV_LLM_MOCK=1
-```
-
-(On non-Windows hosts where `openvino-genai` isn't installed, mock mode turns on
-automatically.)
 
 ---
 
-## CLI
+## CLI Options
 
 ```text
 start_server.bat [args]            # activates the venv, passes args to python -m app.server
@@ -162,7 +142,7 @@ start_server.bat [args]            # activates the venv, passes args to python -
 
 ---
 
-## API endpoints
+## API Endpoints
 
 ```text
 GET  /                       Built-in chat UI
@@ -210,18 +190,25 @@ your working directory.
 
 ## Model catalog
 
-`models.json` describes local OpenVINO IR directories. The repo ships with eight NPU-focused FP16 entries:
+`models.json` describes local OpenVINO IR directories. The repo ships with fifteen NPU-focused FP16 entries:
 
 | id | model | weights | recommended device |
 |---|---|---|---|
 | `qwen2.5-0.5b-fp16` | Qwen2.5 0.5B Instruct | fp16 | NPU |
+| `smollm2-135m-fp16` | SmolLM2 135M Instruct | fp16 | NPU |
+| `smollm2-360m-fp16` | SmolLM2 360M Instruct | fp16 | NPU |
 | `tinyllama-1.1b-chat-fp16` | TinyLlama 1.1B Chat | fp16 | NPU |
 | `qwen2.5-1.5b-fp16` | Qwen2.5 1.5B Instruct | fp16 | NPU |
 | `deepseek-r1-distill-qwen-1.5b-fp16` | DeepSeek-R1 Distill Qwen 1.5B | fp16 | NPU |
 | `llama-3.2-1b-fp16` | Llama 3.2 1B Instruct (gated) | fp16 | NPU |
+| `smollm2-1.7b-fp16` | SmolLM2 1.7B Instruct | fp16 | NPU |
+| `gemma-2-2b-fp16` | Gemma 2 2B Instruct (gated) | fp16 | NPU |
 | `qwen2.5-3b-fp16` | Qwen2.5 3B Instruct | fp16 | NPU |
 | `phi-3.5-mini-fp16` | Phi-3.5 Mini Instruct | fp16 | NPU |
 | `llama-3.2-3b-fp16` | Llama 3.2 3B Instruct (gated) | fp16 | NPU |
+| `phi-4-mini-fp16` | Phi-4 Mini Instruct | fp16 | NPU |
+| `qwen2.5-7b-fp16` | Qwen2.5 7B Instruct | fp16 | NPU |
+| `llama-3.1-8b-fp16` | Llama 3.1 8B Instruct (gated) | fp16 | NPU |
 
 A catalog entry:
 

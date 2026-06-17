@@ -12,6 +12,20 @@
     Also install requirements-convert.txt (optimum-intel, nncf) for model export.
 
 .PARAMETER SkipHardwareCheck
+<#
+.SYNOPSIS
+    Full setup flow for the OpenVINO Windows LLM server.
+
+.DESCRIPTION
+    1. Runs hardware / Python preflight checks.
+    2. Creates a Python virtual environment and installs runtime dependencies.
+    3. Optionally installs the model-conversion dependencies.
+    4. Optionally captures a Hugging Face token into .env (for gated models).
+
+.PARAMETER Minimal
+    Skip installing requirements-convert.txt (optimum-intel, nncf).
+
+.PARAMETER SkipHardwareCheck
     Skip the hardware/Python preflight.
 
 .PARAMETER Python
@@ -20,7 +34,7 @@
 #>
 [CmdletBinding()]
 param(
-    [switch]$WithConvert,
+    [switch]$Minimal,
     [switch]$SkipHardwareCheck,
     [string]$Python = ""
 )
@@ -36,22 +50,23 @@ if (-not $SkipHardwareCheck) {
 }
 
 $installArgs = @{ Python = $Python }
-if ($WithConvert) { $installArgs["WithConvert"] = $true }
+if (-not $Minimal) { $installArgs["WithConvert"] = $true }
 & "$PSScriptRoot\install_deps.ps1" @installArgs
 
-# --- Optional Hugging Face token (only needed to convert gated models) ---
+# --- Configure .env if not exists ---
 $envFile = Join-Path $RepoRoot ".env"
+$envExampleFile = Join-Path $RepoRoot ".env.example"
 if (-not (Test-Path $envFile)) {
-    Write-Host ""
-    Write-Host "A Hugging Face token is only needed to convert GATED models (e.g. Llama)." -ForegroundColor Yellow
-    $token = Read-Host "Paste an HF token to save to .env, or press Enter to skip"
-    if ($token.Trim().Length -gt 0) {
-        "HF_TOKEN=$($token.Trim())" | Out-File -FilePath $envFile -Encoding utf8
-        Write-Host "Saved token to .env" -ForegroundColor Green
-    } else {
-        Write-Host "Skipped. You can copy .env.example to .env later." -ForegroundColor DarkGray
+    if (Test-Path $envExampleFile) {
+        Copy-Item -Path $envExampleFile -Destination $envFile
+        Write-Host "Created .env from .env.example" -ForegroundColor Green
     }
 }
+
+# --- Hugging Face token hint for gated models ---
+Write-Host ""
+Write-Host "Tip: A Hugging Face token is only needed to convert gated models (e.g., Llama, Gemma)." -ForegroundColor Yellow
+Write-Host "     You can configure HF_TOKEN in your .env file." -ForegroundColor Yellow
 
 Write-Host ""
 Write-Host "==========================================" -ForegroundColor Green
@@ -59,8 +74,8 @@ Write-Host "  Setup complete." -ForegroundColor Green
 Write-Host "==========================================" -ForegroundColor Green
 Write-Host ""
 Write-Host "Next steps:" -ForegroundColor Cyan
-Write-Host "  1. Convert a small model to OpenVINO IR:" -ForegroundColor Cyan
+Write-Host "  1. Start the server (runs the mock engine by default on first load):" -ForegroundColor Cyan
+Write-Host "       .\start_server.bat" -ForegroundColor White
+Write-Host "  2. Open the chat UI and prepare models dynamically:  http://localhost:8000" -ForegroundColor Cyan
+Write-Host "  3. (Optional) Convert a model manually via terminal:" -ForegroundColor Cyan
 Write-Host "       .\setup\convert_model.ps1 -Id tinyllama-1.1b-chat-fp16" -ForegroundColor White
-Write-Host "  2. Start the server:" -ForegroundColor Cyan
-Write-Host "       .\start_server.bat --model tinyllama-1.1b-chat-fp16 --device NPU" -ForegroundColor White
-Write-Host "  3. Open the chat UI:  http://localhost:8000" -ForegroundColor Cyan

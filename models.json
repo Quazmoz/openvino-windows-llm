@@ -86,5 +86,82 @@
     "recommended_device": "NPU",
     "max_context_len": 4096,
     "max_output_tokens": 1024
+  },
+  "smollm2-135m-fp16": {
+    "name": "SmolLM2 135M Instruct FP16",
+    "description": "Ultra-lightweight SmolLM2 model (135M parameters) for lightning-fast testing and NPU/CPU debugging.",
+    "backend": "openvino-genai",
+    "model_path": "models/openvino/smollm2-135m-instruct-fp16",
+    "source_model": "HuggingFaceTB/SmolLM2-135M-Instruct",
+    "weight_format": "fp16",
+    "recommended_device": "NPU",
+    "max_context_len": 2048,
+    "max_output_tokens": 512
+  },
+  "smollm2-360m-fp16": {
+    "name": "SmolLM2 360M Instruct FP16",
+    "description": "Highly efficient small model (360M parameters) balancing speed and conversational performance on NPUs.",
+    "backend": "openvino-genai",
+    "model_path": "models/openvino/smollm2-360m-instruct-fp16",
+    "source_model": "HuggingFaceTB/SmolLM2-360M-Instruct",
+    "weight_format": "fp16",
+    "recommended_device": "NPU",
+    "max_context_len": 2048,
+    "max_output_tokens": 512
+  },
+  "smollm2-1.7b-fp16": {
+    "name": "SmolLM2 1.7B Instruct FP16",
+    "description": "Powerful small model from the SmolLM2 series, optimized as FP16 for Intel NPUs.",
+    "backend": "openvino-genai",
+    "model_path": "models/openvino/smollm2-1.7b-instruct-fp16",
+    "source_model": "HuggingFaceTB/SmolLM2-1.7B-Instruct",
+    "weight_format": "fp16",
+    "recommended_device": "NPU",
+    "max_context_len": 2048,
+    "max_output_tokens": 512
+  },
+  "gemma-2-2b-fp16": {
+    "name": "Gemma 2 2B Instruct FP16",
+    "description": "Google Gemma 2 2B Instruct model exported as FP16 for NPU; gated model, set HF_TOKEN before converting.",
+    "backend": "openvino-genai",
+    "model_path": "models/openvino/gemma-2-2b-instruct-fp16",
+    "source_model": "google/gemma-2-2b-it",
+    "weight_format": "fp16",
+    "recommended_device": "NPU",
+    "max_context_len": 4096,
+    "max_output_tokens": 1024
+  },
+  "phi-4-mini-fp16": {
+    "name": "Phi-4 Mini Instruct FP16",
+    "description": "Microsoft Phi-4 mini reasoning model exported as FP16 for Intel NPU testing.",
+    "backend": "openvino-genai",
+    "model_path": "models/openvino/phi-4-mini-instruct-fp16",
+    "source_model": "microsoft/phi-4-mini-instruct",
+    "weight_format": "fp16",
+    "recommended_device": "NPU",
+    "max_context_len": 4096,
+    "max_output_tokens": 1024
+  },
+  "qwen2.5-7b-fp16": {
+    "name": "Qwen2.5 7B Instruct FP16",
+    "description": "Full-sized Qwen2.5 7B model for high-end systems, exported as FP16.",
+    "backend": "openvino-genai",
+    "model_path": "models/openvino/qwen2.5-7b-instruct-fp16",
+    "source_model": "Qwen/Qwen2.5-7B-Instruct",
+    "weight_format": "fp16",
+    "recommended_device": "NPU",
+    "max_context_len": 4096,
+    "max_output_tokens": 1024
+  },
+  "llama-3.1-8b-fp16": {
+    "name": "Llama 3.1 8B Instruct FP16",
+    "description": "Meta Llama 3.1 8B model exported as FP16; gated model, set HF_TOKEN before converting.",
+    "backend": "openvino-genai",
+    "model_path": "models/openvino/llama-3.1-8b-instruct-fp16",
+    "source_model": "meta-llama/Llama-3.1-8B-Instruct",
+    "weight_format": "fp16",
+    "recommended_device": "NPU",
+    "max_context_len": 4096,
+    "max_output_tokens": 1024
   }
 }

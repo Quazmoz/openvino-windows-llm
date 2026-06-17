@@ -14,6 +14,7 @@ Both expose the same small interface:
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 import queue
 import re
 import threading
@@ -266,8 +267,6 @@ def build_plugin_config(
     The NPU plugin compiles to static shapes and benefits from an explicit prompt
     length bound; CPU/GPU/AUTO use defaults.
     """
-    from pathlib import Path
-
     device = normalize_device(device)
     config: dict = {}
     if device == "NPU" and max_prompt_len:
