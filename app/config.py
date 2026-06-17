@@ -35,7 +35,7 @@ class Settings:
 
     host: str = "127.0.0.1"
     port: int = 8000
-    device: str = "CPU"
+    device: str = "NPU"
     models_file: Path = BASE_DIR / "models.json"
     models_dir: Path = BASE_DIR / "models" / "openvino"
     default_model: str | None = None
@@ -47,7 +47,7 @@ class Settings:
         return cls(
             host=os.environ.get("OV_LLM_HOST", "127.0.0.1"),
             port=int(os.environ.get("OV_LLM_PORT", "8000")),
-            device=os.environ.get("OV_LLM_DEVICE", "CPU").upper(),
+            device=os.environ.get("OV_LLM_DEVICE", "NPU").upper(),
             models_file=_resolve(os.environ.get("OV_LLM_MODELS_FILE", "models.json")),
             models_dir=_resolve(os.environ.get("OV_LLM_MODELS_DIR", "models/openvino")),
             default_model=(os.environ.get("OV_LLM_MODEL") or "").strip() or None,

@@ -80,16 +80,18 @@
             50%       { opacity: 0.6; transform: scale(1.3); }
         }
 
-        .model-select-wrap { position: relative; }
-        #model-select {
+        .model-select-wrap, .device-select-wrap { position: relative; }
+        #model-select, #device-select {
             appearance: none;
             background: var(--surface-2); border: 1px solid var(--border);
             color: var(--text-1); font-family: inherit; font-size: 12px; font-weight: 500;
             padding: 5px 28px 5px 10px; border-radius: 20px; cursor: pointer; outline: none;
             transition: border-color 0.2s; max-width: 280px;
         }
-        #model-select:hover { border-color: var(--border-hover); }
-        .model-arrow { position: absolute; right: 9px; top: 50%; transform: translateY(-50%); pointer-events: none; color: var(--text-3); font-size: 10px; }
+        #device-select { width: 76px; }
+        #model-select:hover, #device-select:hover { border-color: var(--border-hover); }
+        #device-select:disabled { opacity: 0.55; cursor: not-allowed; }
+        .model-arrow, .device-arrow { position: absolute; right: 9px; top: 50%; transform: translateY(-50%); pointer-events: none; color: var(--text-3); font-size: 10px; }
 
         .icon-btn {
             width: 32px; height: 32px; border-radius: var(--radius-sm);
@@ -169,12 +171,14 @@
         #send-btn:hover:not(:disabled) { background: #0284c7; transform: scale(1.04); }
         #send-btn:disabled { background: var(--surface-3); box-shadow: none; cursor: not-allowed; color: var(--text-3); }
 
-        .footer-meta { max-width: 820px; margin: 8px auto 0; display: flex; justify-content: space-between; font-size: 11px; color: var(--text-3); }
-        .footer-right { display: flex; align-items: center; gap: 12px; }
-        #model-status { color: var(--text-2); transition: color 0.2s; }
+        .footer-meta { max-width: 820px; margin: 8px auto 0; display: flex; justify-content: space-between; gap: 12px; font-size: 11px; color: var(--text-3); min-width: 0; }
+        .footer-meta > span:first-child { flex: 0 1 auto; min-width: 0; }
+        .footer-right { display: flex; align-items: center; justify-content: flex-end; gap: 12px; min-width: 0; flex: 1 1 55%; }
+        #model-status { color: var(--text-2); transition: color 0.2s; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         #model-status.loading { color: var(--amber); }
         #model-status.ready { color: var(--green); }
         #model-status.error { color: var(--red); }
+        #token-counter { flex-shrink: 0; white-space: nowrap; }
 
         #toast { position: fixed; bottom: 90px; left: 50%; transform: translateX(-50%) translateY(20px); background: var(--surface-3); border: 1px solid var(--border); color: var(--text-1); font-size: 13px; padding: 8px 16px; border-radius: 20px; opacity: 0; transition: all 0.3s; pointer-events: none; white-space: nowrap; }
         #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
@@ -239,6 +243,14 @@
                 <select id="model-select"><option value="">Loading models…</option></select>
                 <span class="model-arrow">▾</span>
             </div>
+            <div class="device-select-wrap">
+                <select id="device-select" title="Load selected model on this device" aria-label="Inference device">
+                    <option value="NPU">NPU</option>
+                    <option value="GPU">GPU</option>
+                    <option value="CPU">CPU</option>
+                </select>
+                <span class="device-arrow">▾</span>
+            </div>
             <button class="icon-btn" id="load-model-btn" title="Load selected model" aria-label="Load selected model">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
             </button>
@@ -301,7 +313,8 @@
     let currentStatusPollMs = 3000;
     let waitingForModelId = null;
     let isMock = false;
-    let defaultDevice = 'CPU';
+    let defaultDevice = 'NPU';
+    let selectedDevice = localStorage.getItem('ovllm.device.v1') || 'NPU';
     let currentAbort = null;       // AbortController for the in-flight generation
     let autoScroll = true;         // follow new tokens only when the user is at the bottom
     const availableModels = new Map();
@@ -317,6 +330,7 @@
     const userInput    = document.getElementById('user-input');
     const sendBtn      = document.getElementById('send-btn');
     const modelSelect  = document.getElementById('model-select');
+    const deviceSelect = document.getElementById('device-select');
     const loadModelBtn = document.getElementById('load-model-btn');
     const unloadModelBtn = document.getElementById('unload-model-btn');
     const deleteModelBtn = document.getElementById('delete-model-btn');
@@ -371,7 +385,8 @@
 
     function getSelectedModelMeta() { return availableModels.get(modelSelect.value) || null; }
     function formatModelOptionLabel(model) { return `${model.name} · ${model.status_label}`; }
-    function modelLoadDevice(model) { return model?.recommended_device || defaultDevice || 'CPU'; }
+    function normalizeUiDevice(device) { return ['CPU', 'GPU', 'NPU'].includes(device) ? device : 'NPU'; }
+    function modelLoadDevice() { return normalizeUiDevice(selectedDevice || defaultDevice); }
 
     function renderModelOptions(models) {
         const previousValue = modelSelect.value;
@@ -393,35 +408,37 @@
         modelSelect.value = nextValue;
     }
 
+    function setModelStatus(text, className = '', title = text) {
+        modelStatus.textContent = text;
+        modelStatus.className = className;
+        modelStatus.title = title || text;
+    }
+
     function updateModelUi() {
         const model = getSelectedModelMeta();
         if (!model) {
-            modelStatus.textContent = 'Loading model catalog…';
-            modelStatus.className = '';
+            setModelStatus('Loading model catalog…');
             sendBtn.disabled = !isGenerating; loadModelBtn.disabled = true;
-            unloadModelBtn.disabled = true; deleteModelBtn.disabled = true;
+            unloadModelBtn.disabled = true; deleteModelBtn.disabled = true; deviceSelect.disabled = true;
             return;
         }
         const deviceSuffix = model.device ? ` on ${model.device}` : '';
+        const loadDevice = modelLoadDevice();
         if (model.is_loaded) {
-            modelStatus.textContent = `${model.name} is ready${deviceSuffix}`;
-            modelStatus.className = 'ready';
+            setModelStatus(`${model.name} is ready${deviceSuffix}`, 'ready');
             userInput.placeholder = 'Message the model… (Enter to send, Shift+Enter for newline)';
         } else if (model.is_loading) {
-            modelStatus.textContent = `${model.name}: ${model.status_label}`;
-            modelStatus.className = 'loading';
+            setModelStatus(`${model.name}: ${model.status_label}`, 'loading');
             userInput.placeholder = `Loading ${model.name}…`;
         } else if (model.status === 'error') {
-            modelStatus.textContent = `${model.name}: ${model.error || 'Load failed'}`;
-            modelStatus.className = 'error';
+            const fullError = `${model.name}: ${model.error || 'Load failed'}`;
+            setModelStatus(`${model.name}: Load failed`, 'error', fullError);
             userInput.placeholder = `Click load to retry ${model.name}`;
         } else if (model.status === 'ready_to_load') {
-            modelStatus.textContent = `${model.name} is converted and ready to load`;
-            modelStatus.className = '';
-            userInput.placeholder = `Click load to bring ${model.name} into ${modelLoadDevice(model)}`;
+            setModelStatus(`${model.name} is converted and ready to load`);
+            userInput.placeholder = `Click load to bring ${model.name} into ${loadDevice}`;
         } else {
-            modelStatus.textContent = `${model.name} is not converted yet`;
-            modelStatus.className = '';
+            setModelStatus(`${model.name} is not converted yet`);
             userInput.placeholder = isMock
                 ? `Mock mode — click load to test ${model.name}`
                 : `Convert ${model.name} to OpenVINO IR first (see README)`;
@@ -431,7 +448,8 @@
         loadModelBtn.disabled = isGenerating || !model.can_load;
         unloadModelBtn.disabled = isGenerating || !model.can_unload;
         deleteModelBtn.disabled = isGenerating || !model.can_delete;
-        loadModelBtn.title = model.is_loaded ? `${model.name} is already loaded` : `Load ${model.name}`;
+        deviceSelect.disabled = isGenerating || model.is_loaded || model.is_loading;
+        loadModelBtn.title = model.is_loaded ? `${model.name} is already loaded` : `Load ${model.name} on ${loadDevice}`;
         unloadModelBtn.title = model.can_unload ? `Unload ${model.name} from memory` : `${model.name} is not loaded`;
         deleteModelBtn.title = model.can_delete ? `Delete ${model.name} from disk` : `No local files to delete for ${model.name}`;
     }
@@ -444,7 +462,7 @@
         try {
             const res = await fetch('/v1/models/load', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ model: modelId, device: modelLoadDevice(model) })
+                body: JSON.stringify({ model: modelId, device: modelLoadDevice() })
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
@@ -453,8 +471,7 @@
             await updateStatus();
         } catch (err) {
             waitingForModelId = null;
-            modelStatus.textContent = `${model.name}: ${err.message}`;
-            modelStatus.className = 'error';
+            setModelStatus(`${model.name}: Load failed`, 'error', `${model.name}: ${err.message}`);
             showToast(`Failed to start ${model.name}`);
         }
     }
@@ -474,8 +491,7 @@
             await updateStatus();
         } catch (err) {
             showToast(`Failed to unload ${model.name}`);
-            modelStatus.textContent = `${model.name}: ${err.message}`;
-            modelStatus.className = 'error';
+            setModelStatus(`${model.name}: Unload failed`, 'error', `${model.name}: ${err.message}`);
         }
     }
 
@@ -496,8 +512,7 @@
             await updateStatus();
         } catch (err) {
             showToast(`Failed to delete ${model.name}`);
-            modelStatus.textContent = `${model.name}: ${err.message}`;
-            modelStatus.className = 'error';
+            setModelStatus(`${model.name}: Delete failed`, 'error', `${model.name}: ${err.message}`);
         }
     }
 
@@ -518,9 +533,14 @@
 
             const dev = data.device || {};
             isMock = !!dev.mock;
-            defaultDevice = dev.default || 'CPU';
+            defaultDevice = normalizeUiDevice(dev.default || 'NPU');
+            selectedDevice = normalizeUiDevice(selectedDevice || defaultDevice);
+            deviceSelect.value = selectedDevice;
             const busy = !!dev.busy;
             const loadingCount = data.models.loading_count || 0;
+            const modelEntries = data.models.available || [];
+            const loadedEntry = modelEntries.find(model => model.is_loaded);
+            const displayDevice = loadedEntry?.device || modelLoadDevice();
 
             if (isMock) {
                 deviceChip.className = 'stat-chip mock';
@@ -528,11 +548,11 @@
                 deviceChip.title = 'OpenVINO not active — running the built-in mock engine for UI/API testing.';
             } else {
                 deviceChip.className = `stat-chip ${(busy || loadingCount > 0) ? 'busy' : 'online'}`;
-                deviceLabel.textContent = busy ? `${defaultDevice} · busy` : (loadingCount > 0 ? 'Loading…' : `${defaultDevice} · idle`);
-                deviceChip.title = `Default OpenVINO device: ${defaultDevice}. Available: ${(dev.available||[]).join(', ') || 'none detected'}`;
+                deviceLabel.textContent = busy ? `${displayDevice} · busy` : (loadingCount > 0 ? `Loading ${displayDevice}…` : `${displayDevice} · idle`);
+                deviceChip.title = `Selected load device: ${modelLoadDevice()}. Server default: ${defaultDevice}. Available: ${(dev.available||[]).join(', ') || 'none detected'}`;
             }
 
-            renderModelOptions(data.models.available || []);
+            renderModelOptions(modelEntries);
             updateModelUi();
 
             if (!isGenerating) setStatusPolling(loadingCount > 0 ? 1000 : 3000);
@@ -546,8 +566,7 @@
             deviceChip.className = 'stat-chip offline';
             deviceLabel.textContent = 'Offline';
             memLabel.textContent = '--'; diskLabel.textContent = '-- GB';
-            modelStatus.textContent = 'Server unavailable';
-            modelStatus.className = 'error';
+            setModelStatus('Server unavailable', 'error');
             sendBtn.disabled = !isGenerating;
         }
     }
@@ -667,6 +686,11 @@
     unloadModelBtn.addEventListener('click', () => { const m = getSelectedModelMeta(); if (m) requestModelUnload(m.id); });
     deleteModelBtn.addEventListener('click', () => { const m = getSelectedModelMeta(); if (m) requestModelDelete(m.id); });
     modelSelect.addEventListener('change', updateModelUi);
+    deviceSelect.addEventListener('change', () => {
+        selectedDevice = normalizeUiDevice(deviceSelect.value);
+        localStorage.setItem('ovllm.device.v1', selectedDevice);
+        updateModelUi();
+    });
 
     function setSendButtonMode(mode) {
         const stop = mode === 'stop';

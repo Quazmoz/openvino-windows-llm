@@ -18,7 +18,7 @@ def is_openvino_available() -> bool:
 
 
 def normalize_device(device: str | None) -> str:
-    return (device or "CPU").strip().upper()
+    return (device or "NPU").strip().upper() or "NPU"
 
 
 def available_devices() -> list[str]:

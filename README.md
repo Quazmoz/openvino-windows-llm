@@ -48,6 +48,7 @@ local server with the UI, model conversion, catalog, and setup scripts all inclu
   with malformed-call retry
 - **Actionable device errors** (e.g. "OpenVINO doesn't see the NPU — retry with `--device CPU`")
 - A **conversion helper** that exports Hugging Face models to OpenVINO IR
+- A chat UI with model management plus a CPU / GPU / NPU device selector
 - A **mock engine** that runs the entire stack (API, streaming, UI) on machines without
   OpenVINO — so you can develop/test on macOS or Linux and CI stays green everywhere
 - Optional **API-key enforcement** for shared/LAN use
@@ -242,7 +243,7 @@ runtime/
   model_converter.py optimum-intel export helper (HF -> OpenVINO IR)
   device_check.py    OpenVINO device discovery + validation
 
-web/index.html       Built-in chat UI (streaming, model picker, telemetry)
+web/index.html       Built-in chat UI (streaming, model picker, device selector, telemetry)
 setup/*.ps1          Windows setup, hardware check, dep install, convert wrapper
 models.json          Model catalog
 tests/               69 tests, run against the mock engine (no OpenVINO needed)

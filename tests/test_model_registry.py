@@ -32,6 +32,7 @@ def test_load_catalog_parses_entries(tmp_path):
     cfg = catalog["m1"]
     assert cfg.name == "Model One"
     assert cfg.max_prompt_len == 4096 - 1024
+    assert cfg.recommended_device == "NPU"
 
 
 def test_shipped_catalog_is_npu_fp16_only():

@@ -64,7 +64,7 @@ def _coerce_entry(model_id: str, raw: dict) -> ModelConfig:
         model_path=raw.get("model_path", f"models/openvino/{model_id}"),
         source_model=raw.get("source_model", ""),
         weight_format=raw.get("weight_format", "int4"),
-        recommended_device=raw.get("recommended_device", "CPU"),
+        recommended_device=raw.get("recommended_device", "NPU"),
         max_context_len=int(raw.get("max_context_len", 2048)),
         max_output_tokens=int(raw.get("max_output_tokens", 512)),
     )

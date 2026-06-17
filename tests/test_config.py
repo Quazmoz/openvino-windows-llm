@@ -27,7 +27,7 @@ def test_from_env_defaults(clean_env):
     s = Settings.from_env()
     assert s.host == "127.0.0.1"
     assert s.port == 8000
-    assert s.device == "CPU"
+    assert s.device == "NPU"
     assert s.models_file == BASE_DIR / "models.json"
     assert s.models_dir == BASE_DIR / "models" / "openvino"
     assert s.default_model is None

@@ -2,8 +2,8 @@ from runtime import device_check
 
 
 def test_normalize_device_defaults_and_casing():
-    assert device_check.normalize_device(None) == "CPU"
-    assert device_check.normalize_device("") == "CPU"
+    assert device_check.normalize_device(None) == "NPU"
+    assert device_check.normalize_device("") == "NPU"
     assert device_check.normalize_device("  npu ") == "NPU"
     assert device_check.normalize_device("gpu") == "GPU"
 
