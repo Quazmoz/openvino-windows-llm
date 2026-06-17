@@ -38,6 +38,7 @@ class Settings:
     device: str = "NPU"
     models_file: Path = BASE_DIR / "models.json"
     models_dir: Path = BASE_DIR / "models" / "openvino"
+    cache_dir: Path = BASE_DIR / "models" / "cache"
     default_model: str | None = None
     api_key: str | None = None
     force_mock: bool = False
@@ -50,6 +51,7 @@ class Settings:
             device=os.environ.get("OV_LLM_DEVICE", "NPU").upper(),
             models_file=_resolve(os.environ.get("OV_LLM_MODELS_FILE", "models.json")),
             models_dir=_resolve(os.environ.get("OV_LLM_MODELS_DIR", "models/openvino")),
+            cache_dir=_resolve(os.environ.get("OV_LLM_CACHE_DIR", "models/cache")),
             default_model=(os.environ.get("OV_LLM_MODEL") or "").strip() or None,
             api_key=(os.environ.get("OV_LLM_API_KEY") or "").strip() or None,
             force_mock=_bool_env("OV_LLM_MOCK"),

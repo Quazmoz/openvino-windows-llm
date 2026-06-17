@@ -210,12 +210,15 @@ your working directory.
 
 ## Model catalog
 
-`models.json` describes local OpenVINO IR directories. The repo ships with five NPU-focused FP16 entries:
+`models.json` describes local OpenVINO IR directories. The repo ships with eight NPU-focused FP16 entries:
 
 | id | model | weights | recommended device |
 |---|---|---|---|
+| `qwen2.5-0.5b-fp16` | Qwen2.5 0.5B Instruct | fp16 | NPU |
 | `tinyllama-1.1b-chat-fp16` | TinyLlama 1.1B Chat | fp16 | NPU |
 | `qwen2.5-1.5b-fp16` | Qwen2.5 1.5B Instruct | fp16 | NPU |
+| `deepseek-r1-distill-qwen-1.5b-fp16` | DeepSeek-R1 Distill Qwen 1.5B | fp16 | NPU |
+| `llama-3.2-1b-fp16` | Llama 3.2 1B Instruct (gated) | fp16 | NPU |
 | `qwen2.5-3b-fp16` | Qwen2.5 3B Instruct | fp16 | NPU |
 | `phi-3.5-mini-fp16` | Phi-3.5 Mini Instruct | fp16 | NPU |
 | `llama-3.2-3b-fp16` | Llama 3.2 3B Instruct (gated) | fp16 | NPU |

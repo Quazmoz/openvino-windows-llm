@@ -160,6 +160,7 @@ class ModelManager:
             device=device,
             max_prompt_len=cfg.max_prompt_len,
             force_mock=self.force_mock,
+            cache_dir=self.settings.cache_dir,
         )
 
     async def _load_task(self, model_id: str, device: str) -> None:

@@ -7,7 +7,7 @@ Conversion is a separate, heavier step than serving and requires the extra
 
 Usage:
     python -m runtime.model_converter --id tinyllama-1.1b-chat-fp16
-    python -m runtime.model_converter --model Qwen/Qwen2.5-1.5B-Instruct \\
+    python -m runtime.model_converter --model Qwen/Qwen2.5-1.5B-Instruct \
         --output models/openvino/qwen2.5-1.5b-instruct-fp16 --weight-format fp16
 """
 
@@ -15,10 +15,17 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import shutil
 import subprocess
 import sys
 from pathlib import Path
+
+# Ensure the virtual environment's Scripts/bin directory is on PATH so that
+# optimum-cli can be found when running within the venv.
+_venv_bin = str(Path(sys.executable).parent)
+if _venv_bin not in os.environ.get("PATH", ""):
+    os.environ["PATH"] = _venv_bin + os.pathsep + os.environ.get("PATH", "")
 
 logger = logging.getLogger("ov-llm.convert")
 
