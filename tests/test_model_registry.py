@@ -1,5 +1,6 @@
 import json
 
+from app.config import BASE_DIR
 from app.model_registry import (
     is_downloaded,
     load_catalog,
@@ -31,6 +32,13 @@ def test_load_catalog_parses_entries(tmp_path):
     cfg = catalog["m1"]
     assert cfg.name == "Model One"
     assert cfg.max_prompt_len == 4096 - 1024
+
+
+def test_shipped_catalog_is_npu_fp16_only():
+    catalog = load_catalog(BASE_DIR / "models.json")
+    assert catalog
+    assert all(cfg.weight_format == "fp16" for cfg in catalog.values())
+    assert all(cfg.recommended_device == "NPU" for cfg in catalog.values())
 
 
 def test_load_catalog_missing_file_returns_empty(tmp_path):

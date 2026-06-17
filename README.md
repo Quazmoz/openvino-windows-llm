@@ -11,6 +11,8 @@ and your own agents just work) plus a built-in browser chat UI — targeting Int
 > built-in mock engine, so the stack runs end-to-end on any OS. Real OpenVINO
 > inference runs on Windows/Intel hardware once you've converted a model.
 
+For the shortest setup path, see [QUICKSTART.md](QUICKSTART.md).
+
 This is the successor to the older [`npu-windows`](https://github.com/Quazmoz/npu-windows)
 IPEX-LLM experiment, rebuilt on a cleaner OpenVINO-native architecture.
 
@@ -71,8 +73,10 @@ cd openvino-windows-llm
 ```
 
 `setup.bat` runs `setup/setup_all.ps1` with an execution-policy bypass, so no manual
-PowerShell policy change is needed. Targets Python 3.11/3.12 on Windows 11, Intel Core
-Ultra / AI PC class hardware preferred.
+PowerShell policy change is needed. Targets Python 3.11/3.12/3.13 on Windows 11, Intel
+Core Ultra / AI PC class hardware preferred. If Windows resolves `python` or `py` to
+Microsoft Store aliases, pass the full interpreter path with `.\setup.bat -Python
+"C:\path\to\python.exe"` or disable the aliases in Windows Settings.
 
 ### 2. Convert a small model first
 
@@ -80,24 +84,24 @@ OpenVINO runs models in **OpenVINO IR** format. Validate the stack with a small 
 
 ```powershell
 # Resolve source/output/weights straight from models.json:
-python -m runtime.model_converter --id tinyllama-1.1b-chat
+python -m runtime.model_converter --id tinyllama-1.1b-chat-fp16
 
 # …or call optimum-cli directly:
 optimum-cli export openvino `
   --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 `
-  --weight-format int4 --trust-remote-code `
-  models\openvino\tinyllama-1.1b-chat-int4
+  --weight-format fp16 --trust-remote-code `
+  models\openvino\tinyllama-1.1b-chat-fp16
 ```
 
-Conversion is a deliberate, heavier step (it downloads + quantizes), kept separate from
-server startup.
+Conversion is a deliberate, heavier step (it downloads + exports), kept separate from
+server startup. The shipped catalog is FP16-only because that is the working NPU path.
 
 ### 3. Start the server
 
 ```powershell
-.\start_server.bat --model tinyllama-1.1b-chat --device CPU
-# later, on Intel NPU hardware:
-.\start_server.bat --model qwen2.5-1.5b --device NPU
+.\start_server.bat --model tinyllama-1.1b-chat-fp16 --device NPU
+# after converting a larger catalog entry:
+.\start_server.bat --model qwen2.5-1.5b-fp16 --device NPU
 ```
 
 Open `http://localhost:8000` for the chat UI, or hit the API:
@@ -107,7 +111,7 @@ curl http://localhost:8000/v1/models
 
 curl http://localhost:8000/v1/chat/completions `
   -H "Content-Type: application/json" `
-  -d '{"model":"tinyllama-1.1b-chat","messages":[{"role":"user","content":"Explain OpenVINO in one sentence."}],"max_tokens":64}'
+  -d '{"model":"tinyllama-1.1b-chat-fp16","messages":[{"role":"user","content":"Explain OpenVINO in one sentence."}],"max_tokens":64}'
 ```
 
 ### Try it without OpenVINO (any OS)
@@ -170,8 +174,8 @@ Copy `.env.example` to `.env`, or set environment variables directly:
 ```powershell
 $env:OV_LLM_HOST        = "127.0.0.1"
 $env:OV_LLM_PORT        = "8000"
-$env:OV_LLM_DEVICE      = "CPU"                 # CPU | GPU | NPU | AUTO
-$env:OV_LLM_MODEL       = "tinyllama-1.1b-chat" # auto-load on startup (blank = none)
+$env:OV_LLM_DEVICE      = "NPU"                 # CPU | GPU | NPU | AUTO
+$env:OV_LLM_MODEL       = "tinyllama-1.1b-chat-fp16" # auto-load on startup (blank = none)
 $env:OV_LLM_MODELS_FILE = "models.json"
 $env:OV_LLM_MODELS_DIR  = "models\openvino"
 $env:OV_LLM_API_KEY     = ""                    # set => /v1/* requires Authorization: Bearer <key>
@@ -186,28 +190,28 @@ your working directory.
 
 ## Model catalog
 
-`models.json` describes local OpenVINO IR directories. The repo ships with five entries:
+`models.json` describes local OpenVINO IR directories. The repo ships with five NPU-focused FP16 entries:
 
 | id | model | weights | recommended device |
 |---|---|---|---|
-| `tinyllama-1.1b-chat` | TinyLlama 1.1B Chat | int4 | CPU |
-| `qwen2.5-1.5b` | Qwen2.5 1.5B Instruct | int4 | CPU |
-| `qwen2.5-3b` | Qwen2.5 3B Instruct | int4 | GPU |
-| `phi-3.5-mini` | Phi-3.5 Mini Instruct | int4 | GPU |
-| `llama-3.2-3b` | Llama 3.2 3B Instruct (gated) | int4 | GPU |
+| `tinyllama-1.1b-chat-fp16` | TinyLlama 1.1B Chat | fp16 | NPU |
+| `qwen2.5-1.5b-fp16` | Qwen2.5 1.5B Instruct | fp16 | NPU |
+| `qwen2.5-3b-fp16` | Qwen2.5 3B Instruct | fp16 | NPU |
+| `phi-3.5-mini-fp16` | Phi-3.5 Mini Instruct | fp16 | NPU |
+| `llama-3.2-3b-fp16` | Llama 3.2 3B Instruct (gated) | fp16 | NPU |
 
 A catalog entry:
 
 ```json
 {
-  "tinyllama-1.1b-chat": {
-    "name": "TinyLlama 1.1B Chat INT4",
-    "description": "Small first-run validation model for OpenVINO GenAI.",
+  "tinyllama-1.1b-chat-fp16": {
+    "name": "TinyLlama 1.1B Chat FP16",
+    "description": "Small NPU validation model for OpenVINO GenAI.",
     "backend": "openvino-genai",
-    "model_path": "models/openvino/tinyllama-1.1b-chat-int4",
+    "model_path": "models/openvino/tinyllama-1.1b-chat-fp16",
     "source_model": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
-    "weight_format": "int4",
-    "recommended_device": "CPU",
+    "weight_format": "fp16",
+    "recommended_device": "NPU",
     "max_context_len": 2048,
     "max_output_tokens": 512
   }
@@ -292,7 +296,7 @@ If `NPU` doesn't work, retry with `--device CPU` while you sort out drivers.
 
 ### First-run conversion is slow
 
-Conversion downloads and quantizes the model — much slower than server startup. It's a
+Conversion downloads and exports the model — much slower than server startup. It's a
 separate explicit step on purpose; don't expect it to happen during boot.
 
 ---

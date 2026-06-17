@@ -15,7 +15,7 @@ from app.model_manager import ModelManager
 from app.server import create_app
 from runtime.openvino_engine import GenParams, MockEngine
 
-MODEL_ID = "tinyllama-1.1b-chat"
+MODEL_ID = "tinyllama-1.1b-chat-fp16"
 
 
 @pytest.fixture()

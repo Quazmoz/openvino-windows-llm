@@ -15,7 +15,8 @@
     Skip the hardware/Python preflight.
 
 .PARAMETER Python
-    Python launcher to use (default: "py -3.11"; falls back to "python").
+    Python launcher to use (default: "py -3.11"; falls back through supported
+    launchers, common direct install paths, then "python").
 #>
 [CmdletBinding()]
 param(
@@ -59,7 +60,7 @@ Write-Host "==========================================" -ForegroundColor Green
 Write-Host ""
 Write-Host "Next steps:" -ForegroundColor Cyan
 Write-Host "  1. Convert a small model to OpenVINO IR:" -ForegroundColor Cyan
-Write-Host "       .\setup\convert_model.ps1 -Id tinyllama-1.1b-chat" -ForegroundColor White
+Write-Host "       .\setup\convert_model.ps1 -Id tinyllama-1.1b-chat-fp16" -ForegroundColor White
 Write-Host "  2. Start the server:" -ForegroundColor Cyan
-Write-Host "       .\start_server.bat --model tinyllama-1.1b-chat --device CPU" -ForegroundColor White
+Write-Host "       .\start_server.bat --model tinyllama-1.1b-chat-fp16 --device NPU" -ForegroundColor White
 Write-Host "  3. Open the chat UI:  http://localhost:8000" -ForegroundColor Cyan

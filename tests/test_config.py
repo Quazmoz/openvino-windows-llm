@@ -39,7 +39,7 @@ def test_from_env_parses_overrides(clean_env):
     clean_env.setenv("OV_LLM_HOST", "0.0.0.0")
     clean_env.setenv("OV_LLM_PORT", "9001")
     clean_env.setenv("OV_LLM_DEVICE", "npu")  # lower-cased input
-    clean_env.setenv("OV_LLM_MODEL", "  tinyllama-1.1b-chat  ")  # trimmed
+    clean_env.setenv("OV_LLM_MODEL", "  tinyllama-1.1b-chat-fp16  ")  # trimmed
     clean_env.setenv("OV_LLM_API_KEY", " sk-secret ")
     clean_env.setenv("OV_LLM_MOCK", "yes")
 
@@ -47,7 +47,7 @@ def test_from_env_parses_overrides(clean_env):
     assert s.host == "0.0.0.0"
     assert s.port == 9001
     assert s.device == "NPU"
-    assert s.default_model == "tinyllama-1.1b-chat"
+    assert s.default_model == "tinyllama-1.1b-chat-fp16"
     assert s.api_key == "sk-secret"
     assert s.force_mock is True
 

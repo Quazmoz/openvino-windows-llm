@@ -371,6 +371,7 @@
 
     function getSelectedModelMeta() { return availableModels.get(modelSelect.value) || null; }
     function formatModelOptionLabel(model) { return `${model.name} · ${model.status_label}`; }
+    function modelLoadDevice(model) { return model?.recommended_device || defaultDevice || 'CPU'; }
 
     function renderModelOptions(models) {
         const previousValue = modelSelect.value;
@@ -417,7 +418,7 @@
         } else if (model.status === 'ready_to_load') {
             modelStatus.textContent = `${model.name} is converted and ready to load`;
             modelStatus.className = '';
-            userInput.placeholder = `Click load to bring ${model.name} into ${defaultDevice}`;
+            userInput.placeholder = `Click load to bring ${model.name} into ${modelLoadDevice(model)}`;
         } else {
             modelStatus.textContent = `${model.name} is not converted yet`;
             modelStatus.className = '';
@@ -443,7 +444,7 @@
         try {
             const res = await fetch('/v1/models/load', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ model: modelId })
+                body: JSON.stringify({ model: modelId, device: modelLoadDevice(model) })
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
