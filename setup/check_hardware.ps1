@@ -15,8 +15,20 @@ Write-Host "  Hardware / environment preflight" -ForegroundColor Cyan
 Write-Host "==========================================" -ForegroundColor Cyan
 
 # --- OS ---
-$os = Get-CimInstance Win32_OperatingSystem
-Write-Host ("OS:       {0} (build {1})" -f $os.Caption, $os.BuildNumber)
+$osCaption = "Unknown Windows Version"
+$osBuild = "Unknown"
+try {
+    $os = Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
+    $osCaption = $os.Caption
+    $osBuild = $os.BuildNumber
+} catch {
+    try {
+        $os = Get-WmiObject Win32_OperatingSystem -ErrorAction Stop
+        $osCaption = $os.Caption
+        $osBuild = $os.BuildNumber
+    } catch {}
+}
+Write-Host ("OS:       {0} (build {1})" -f $osCaption, $osBuild)
 
 # --- Python ---
 $pythonOk = $false
@@ -53,32 +65,129 @@ if (-not $pythonOk) {
     Write-Host "Python:   NOT FOUND. Install Python 3.11, 3.12, 3.13 or 3.14 from python.org." -ForegroundColor Red
 }
 
+# --- Registry Long Paths Enabled Check & Auto-Remediation ---
+$lpPath = "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem"
+$lpName = "LongPathsEnabled"
+$lpVal = $null
+try {
+    $lpVal = (Get-ItemProperty -Path $lpPath -Name $lpName -ErrorAction SilentlyContinue).$lpName
+} catch {}
+
+if ($lpVal -ne 1) {
+    Write-Host "Windows:  Long Paths are NOT enabled. This may cause Hugging Face download or conversion errors." -ForegroundColor Yellow
+    try {
+        Write-Host "          Attempting registry auto-remediation to enable Long Paths..." -ForegroundColor Cyan
+        Set-ItemProperty -Path $lpPath -Name $lpName -Value 1 -ErrorAction Stop
+        Write-Host "          SUCCESS: Long Paths enabled in Registry!" -ForegroundColor Green
+    } catch {
+        Write-Host "          Auto-remediation failed (requires administrative privileges)." -ForegroundColor DarkGray
+        Write-Host "          To fix manually, run this command in Administrator PowerShell:" -ForegroundColor DarkGray
+        Write-Host "              Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' -Name 'LongPathsEnabled' -Value 1" -ForegroundColor Gray
+    }
+} else {
+    Write-Host "Windows:  Long Paths are enabled." -ForegroundColor Green
+}
+
+# --- Visual C++ Redistributable Check & Auto-Remediation ---
+$vcRedistInstalled = $false
+$vcKeys = @(
+    "HKLM:\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64",
+    "HKLM:\SOFTWARE\Wow6432Node\Microsoft\VisualStudio\14.0\VC\Runtimes\x64"
+)
+foreach ($key in $vcKeys) {
+    if (Test-Path $key) {
+        $installedVal = Get-ItemProperty -Path $key -Name "Installed" -ErrorAction SilentlyContinue
+        if ($installedVal -and $installedVal.Installed -eq 1) {
+            $vcRedistInstalled = $true
+            break
+        }
+    }
+}
+if (-not $vcRedistInstalled) {
+    $installerKeys = Get-ChildItem "HKLM:\SOFTWARE\Classes\Installer\Dependencies" -ErrorAction SilentlyContinue
+    if ($installerKeys) {
+        foreach ($k in $installerKeys) {
+            if ($k.Name -match "VC,redist\.x64") {
+                $vcRedistInstalled = $true
+                break
+            }
+        }
+    }
+}
+
+if ($vcRedistInstalled) {
+    Write-Host "MSVC VC++: Redistributable (x64) is installed." -ForegroundColor Green
+} else {
+    Write-Host "MSVC VC++: Redistributable (x64) is NOT detected (required by OpenVINO runtime)." -ForegroundColor Yellow
+    if (Get-Command winget -ErrorAction SilentlyContinue) {
+        Write-Host "          Attempting silent installation via winget..." -ForegroundColor Cyan
+        try {
+            Start-Process winget -ArgumentList "install --id Microsoft.VCRedist.2015+.x64 --silent --accept-source-agreements --accept-package-agreements" -NoNewWindow -Wait -ErrorAction Stop
+            Write-Host "          SUCCESS: VC++ Redistributable installed!" -ForegroundColor Green
+            $vcRedistInstalled = $true
+        } catch {
+            Write-Host "          winget installation failed or timed out." -ForegroundColor DarkGray
+        }
+    }
+    if (-not $vcRedistInstalled) {
+        Write-Host "          Please download and install it manually from Microsoft:" -ForegroundColor Red
+        Write-Host "              https://aka.ms/vs/17/release/vc_redist.x64.exe" -ForegroundColor White
+    }
+}
+
 # --- CPU ---
-$cpu = (Get-CimInstance Win32_Processor | Select-Object -First 1).Name
+$cpu = "Unknown"
+try {
+    $cpu = (Get-CimInstance Win32_Processor | Select-Object -First 1 -ErrorAction Stop).Name
+} catch {
+    try {
+        $cpu = (Get-WmiObject Win32_Processor | Select-Object -First 1 -ErrorAction Stop).Name
+    } catch {}
+}
 Write-Host ("CPU:      {0}" -f $cpu)
 if ($cpu -match "Ultra") {
     Write-Host "          Intel Core Ultra detected - NPU acceleration may be available." -ForegroundColor Green
 }
 
 # --- GPU ---
-$gpus = Get-CimInstance Win32_VideoController | Select-Object -ExpandProperty Name
+$gpus = @()
+try {
+    $gpus = Get-CimInstance Win32_VideoController -ErrorAction Stop | Select-Object -ExpandProperty Name
+} catch {
+    try {
+        $gpus = Get-WmiObject Win32_VideoController -ErrorAction Stop | Select-Object -ExpandProperty Name
+    } catch {}
+}
 foreach ($g in $gpus) {
     $color = if ($g -match "Intel") { "Green" } else { "DarkGray" }
     Write-Host ("GPU:      {0}" -f $g) -ForegroundColor $color
 }
 
 # --- NPU (best effort) ---
-$npu = Get-PnpDevice -ErrorAction SilentlyContinue | Where-Object {
-    $_.FriendlyName -match "\bNPU\b|AI Boost|Neural"
+$npu = $null
+try {
+    $npu = Get-PnpDevice -ErrorAction Stop | Where-Object {
+        $_.FriendlyName -match "\bNPU\b|AI Boost|Neural"
+    }
+} catch {
+    Write-Host "NPU:      Get-PnpDevice is not supported or failed on this Windows version." -ForegroundColor DarkGray
 }
+
 if ($npu) {
     foreach ($n in $npu) {
         Write-Host ("NPU:      {0} [{1}]" -f $n.FriendlyName, $n.Status) -ForegroundColor Green
         
         # Try to query the signed driver version
         try {
-            $driver = Get-CimInstance -ClassName Win32_PnPSignedDriver -ErrorAction SilentlyContinue | Where-Object {
-                $_.DeviceID -eq $n.DeviceId
+            $driver = $null
+            try {
+                $driver = Get-CimInstance -ClassName Win32_PnPSignedDriver -ErrorAction Stop | Where-Object {
+                    $_.DeviceID -eq $n.DeviceId
+                }
+            } catch {
+                $driver = Get-WmiObject -Class Win32_PnPSignedDriver -ErrorAction Stop | Where-Object {
+                    $_.DeviceID -eq $n.DeviceId
+                }
             }
             if ($driver) {
                 $ver = $driver.DriverVersion
@@ -109,16 +218,16 @@ if ($npu) {
                         Write-Host "          WARNING: NPU driver version is older than recommended baseline (32.0.100.3104)." -ForegroundColor Yellow
                         Write-Host "                   This may cause OpenVINO GenAI graph compilation failures or segfaults." -ForegroundColor Yellow
                         Write-Host "                   Please update your drivers from the Intel Download Center." -ForegroundColor Yellow
-                    }
-                }
-            }
-        } catch {
-            Write-Host "          Could not retrieve NPU driver version." -ForegroundColor DarkGray
-        }
-    }
-} else {
-    Write-Host "NPU:      not detected via PnP (CPU/GPU will still work)." -ForegroundColor Yellow
-}
+                      }
+                  }
+              }
+          } catch {
+              Write-Host "          Could not retrieve NPU driver version." -ForegroundColor DarkGray
+          }
+      }
+  } else {
+      Write-Host "NPU:      not detected via PnP (CPU/GPU will still work)." -ForegroundColor Yellow
+  }
 
 Write-Host ""
 Write-Host "Preflight is informational; CPU inference works without GPU/NPU drivers." -ForegroundColor DarkGray

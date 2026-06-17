@@ -3,24 +3,10 @@
     Full setup flow for the OpenVINO Windows LLM server.
 
 .DESCRIPTION
-    1. Runs hardware / Python preflight checks.
-    2. Creates a Python virtual environment and installs runtime dependencies.
-    3. Optionally installs the model-conversion dependencies.
-    4. Optionally captures a Hugging Face token into .env (for gated models).
-
-.PARAMETER WithConvert
-    Also install requirements-convert.txt (optimum-intel, nncf) for model export.
-
-.PARAMETER SkipHardwareCheck
-<#
-.SYNOPSIS
-    Full setup flow for the OpenVINO Windows LLM server.
-
-.DESCRIPTION
-    1. Runs hardware / Python preflight checks.
-    2. Creates a Python virtual environment and installs runtime dependencies.
-    3. Optionally installs the model-conversion dependencies.
-    4. Optionally captures a Hugging Face token into .env (for gated models).
+    1. Runs network connectivity diagnostics.
+    2. Runs hardware / Python preflight checks.
+    3. Creates a Python virtual environment and installs runtime dependencies.
+    4. Optionally installs the model-conversion dependencies.
 
 .PARAMETER Minimal
     Skip installing requirements-convert.txt (optimum-intel, nncf).
@@ -43,6 +29,44 @@ $ErrorActionPreference = "Stop"
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 
 Write-Host "Repo: $RepoRoot" -ForegroundColor DarkGray
+
+# --- Network Connectivity Preflight ---
+Write-Host "==========================================" -ForegroundColor Cyan
+Write-Host "  Network connectivity diagnostics" -ForegroundColor Cyan
+Write-Host "==========================================" -ForegroundColor Cyan
+
+$pypiOk = $false
+$hfOk = $false
+
+try {
+    Write-Host "Checking connection to PyPI (pypi.org)... " -NoNewline
+    $resPyPI = Invoke-RestMethod -Uri "https://pypi.org/pypi/fastapi/json" -TimeoutSec 5 -ErrorAction Stop
+    Write-Host "SUCCESS" -ForegroundColor Green
+    $pypiOk = $true
+} catch {
+    Write-Host "FAILED" -ForegroundColor Red
+    Write-Host "          Error details: $($_.Exception.Message)" -ForegroundColor DarkGray
+}
+
+try {
+    Write-Host "Checking connection to Hugging Face (huggingface.co)... " -NoNewline
+    $resHF = Invoke-RestMethod -Uri "https://huggingface.co/api/models/TinyLlama/TinyLlama-1.1B-Chat-v1.0" -TimeoutSec 5 -ErrorAction Stop
+    Write-Host "SUCCESS" -ForegroundColor Green
+    $hfOk = $true
+} catch {
+    Write-Host "FAILED" -ForegroundColor Red
+    Write-Host "          Error details: $($_.Exception.Message)" -ForegroundColor DarkGray
+}
+
+if (-not $pypiOk -or -not $hfOk) {
+    Write-Host ""
+    Write-Host "WARNING: Network check failed for PyPI or Hugging Face." -ForegroundColor Yellow
+    Write-Host "         This can prevent package downloads or model conversions." -ForegroundColor Yellow
+    Write-Host "         Troubleshooting suggestions:" -ForegroundColor Yellow
+    Write-Host "         - If behind a corporate proxy, configure HTTP_PROXY and HTTPS_PROXY environment variables." -ForegroundColor Yellow
+    Write-Host "         - Disable VPN/firewalls temporarily or configure custom cert bundles." -ForegroundColor Yellow
+    Write-Host ""
+}
 
 if (-not $SkipHardwareCheck) {
     & "$PSScriptRoot\check_hardware.ps1"
