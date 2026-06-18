@@ -18,7 +18,7 @@ import sys
 import time
 import uuid
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Header, HTTPException
@@ -156,6 +156,10 @@ def create_app(settings: Settings) -> FastAPI:
             WEB_DIR / "index.html",
             headers={"Cache-Control": "no-store, must-revalidate", "Pragma": "no-cache"},
         )
+
+    @app.get("/favicon.ico", include_in_schema=False)
+    async def favicon():
+        return Response(status_code=204)
 
     @app.get("/health")
     async def health():
@@ -317,7 +321,7 @@ def create_app(settings: Settings) -> FastAPI:
         if not request.messages:
             raise HTTPException(status_code=400, detail="No messages to export")
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         ts_display = now.strftime("%Y-%m-%d %H:%M UTC")
         ts_file = now.strftime("%Y%m%d-%H%M%S")
 
