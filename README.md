@@ -1,13 +1,18 @@
 # OpenVINO Windows LLM
 
-A lightweight, **Windows-first local LLM server** built on **OpenVINO GenAI** for Intel
-PCs. It exposes an **OpenAI-compatible API** (so Open WebUI, n8n, LangChain, Continue,
-and your own agents just work) plus a built-in browser chat UI — targeting Intel
-**CPU, GPU, and NPU** through OpenVINO.
+**OpenVINO Windows LLM turns Intel Windows PCs into local AI workstations.** It wraps
+OpenVINO GenAI in a laptop-friendly, OpenAI-compatible server with streaming chat,
+model lifecycle management, Hugging Face-to-OpenVINO conversion helpers, a built-in
+browser UI, and direct targeting for Intel **CPU, GPU, NPU, and AUTO** devices.
+
+Use it when you want a practical local LLM stack for Windows without Docker, cloud
+APIs, llama.cpp/GGUF limitations, or the now-legacy IPEX-LLM workflow. It is designed
+for developers who want to connect Open WebUI, n8n, LangChain, Continue, custom
+agents, or their own apps to an OpenVINO-powered local inference endpoint.
 
 > **Status: working.** The server, OpenAI-compatible API, streaming, web UI, model
 > lifecycle (load/unload/delete), device discovery, conversion helper, and Windows
-> setup scripts are all implemented. The full test suite (69 tests) passes against a
+> setup scripts are all implemented. The full test suite (92 tests) passes against a
 > built-in mock engine, so the stack runs end-to-end on any OS. Real OpenVINO
 > inference runs on Windows/Intel hardware once you've converted a model.
 
