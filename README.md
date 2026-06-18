@@ -1,5 +1,11 @@
 # OpenVINO Windows LLM
 
+## Video walkthrough
+
+[▶ Watch the OpenVINO Windows LLM walkthrough](https://youtu.be/rya6rJhkQrw)
+
+---
+
 **OpenVINO Windows LLM turns Intel Windows PCs into local AI workstations.** It wraps
 OpenVINO GenAI in a laptop-friendly, OpenAI-compatible server with streaming chat,
 model lifecycle management, Hugging Face-to-OpenVINO conversion helpers, a built-in
@@ -265,7 +271,7 @@ runtime/
 web/index.html       Built-in chat UI (streaming, model picker, device selector, telemetry)
 setup/*.ps1          Windows setup, hardware check, dep install, convert wrapper
 models.json          Model catalog
-tests/               69 tests, run against the mock engine (no OpenVINO needed)
+tests/               92 tests, run against the mock engine (no OpenVINO needed)
 ```
 
 ---
@@ -274,7 +280,7 @@ tests/               69 tests, run against the mock engine (no OpenVINO needed)
 
 ```bash
 pip install -r requirements.txt -r requirements-dev.txt
-python -m pytest          # 69 tests, all on the mock engine — no Intel hardware required
+python -m pytest          # 92 tests, all on the mock engine — no Intel hardware required
 ruff check .
 ```
 
