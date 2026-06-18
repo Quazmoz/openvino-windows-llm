@@ -98,10 +98,16 @@ def format_missing_openvino() -> str:
     )
 
 
-def format_model_not_converted(model_name: str, model_dir: str, source_model: str) -> str:
+def format_model_not_converted(
+    model_name: str,
+    model_dir: str,
+    source_model: str,
+    weight_format: str = "fp16",
+) -> str:
     """Message shown when a model's OpenVINO IR directory is missing."""
+    resolved_weight_format = (weight_format or "fp16").strip() or "fp16"
     convert_hint = (
-        f"optimum-cli export openvino --model {source_model} --weight-format int4 "
+        f"optimum-cli export openvino --model {source_model} --weight-format {resolved_weight_format} "
         f'--trust-remote-code "{model_dir}"'
         if source_model
         else f'place a converted OpenVINO IR model in "{model_dir}"'
