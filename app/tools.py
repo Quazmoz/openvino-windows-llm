@@ -16,6 +16,9 @@ from typing import Any
 from app.openai_api import FunctionCall, ToolCall, ToolDefinition
 
 
+_JSON_FENCE_RE = re.compile(r"```(?:json)?\s*([\s\S]*?)\s*```", re.IGNORECASE)
+
+
 def format_tools_for_prompt(
     tools: list[ToolDefinition] | None,
     tool_choice: Any = None,
@@ -70,20 +73,109 @@ For multiple tool calls, use a JSON array:
 IMPORTANT: Output ONLY the JSON when calling tools, no other text."""
 
 
+def _arguments_to_json_string(arguments: Any) -> str:
+    """Return OpenAI-compatible JSON text for a tool call's arguments field."""
+    if arguments is None:
+        return "{}"
+    if isinstance(arguments, str):
+        text = arguments.strip()
+        if text:
+            try:
+                json.loads(text)
+                return text
+            except json.JSONDecodeError:
+                pass
+        return json.dumps(arguments, separators=(",", ":"))
+    return json.dumps(arguments, separators=(",", ":"))
+
+
+def _tool_items_from_json(value: Any) -> list[tuple[str, str]]:
+    """Extract ``(name, arguments_json)`` pairs from parsed JSON values."""
+    if isinstance(value, list):
+        items: list[tuple[str, str]] = []
+        for item in value:
+            items.extend(_tool_items_from_json(item))
+        return items
+
+    if not isinstance(value, dict):
+        return []
+
+    if "name" in value:
+        return [(str(value["name"]), _arguments_to_json_string(value.get("arguments", {})))]
+
+    # Tolerate OpenAI-shaped objects if a model emits them verbatim.
+    function = value.get("function")
+    if isinstance(function, dict) and "name" in function:
+        arguments = function.get("arguments", value.get("arguments", {}))
+        return [(str(function["name"]), _arguments_to_json_string(arguments))]
+
+    return []
+
+
+def _json_candidates(text: str) -> list[tuple[int, int, Any]]:
+    """Return parsed JSON candidates with their spans in the original text."""
+    candidates: list[tuple[int, int, Any]] = []
+
+    for match in _JSON_FENCE_RE.finditer(text):
+        raw = match.group(1).strip()
+        try:
+            candidates.append((match.start(), match.end(), json.loads(raw)))
+        except json.JSONDecodeError:
+            continue
+
+    decoder = json.JSONDecoder()
+    for idx, char in enumerate(text):
+        if char not in "{[":
+            continue
+        try:
+            parsed, end = decoder.raw_decode(text, idx)
+        except json.JSONDecodeError:
+            continue
+        candidates.append((idx, end, parsed))
+
+    # Earlier spans first; for the same start, prefer the outermost JSON object.
+    candidates.sort(key=lambda item: (item[0], -(item[1] - item[0])))
+    return candidates
+
+
+def _span_is_contained(span: tuple[int, int], accepted: list[tuple[int, int]]) -> bool:
+    start, end = span
+    return any(start >= accepted_start and end <= accepted_end for accepted_start, accepted_end in accepted)
+
+
+def _remove_spans(text: str, spans: list[tuple[int, int]]) -> str:
+    if not spans:
+        return text
+
+    merged: list[tuple[int, int]] = []
+    for start, end in sorted(spans):
+        if not merged or start > merged[-1][1]:
+            merged.append((start, end))
+        else:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+
+    chunks: list[str] = []
+    cursor = 0
+    for start, end in merged:
+        chunks.append(text[cursor:start])
+        cursor = end
+    chunks.append(text[cursor:])
+    return "".join(chunks)
+
+
 def parse_tool_calls(
     text: str,
     available_tools: list[ToolDefinition] | None = None,
 ) -> tuple[str, list[ToolCall]]:
     """Extract tool calls from model output.
 
-    Handles single JSON objects, JSON arrays, and fenced code blocks; validates
-    against the declared tool names; and deduplicates identical calls.
-
-    Returns ``(remaining_text, tool_calls)``.
+    Handles JSON objects, JSON arrays, OpenAI-shaped tool call objects, and fenced
+    code blocks. Parsing uses ``json.JSONDecoder`` instead of regex so nested
+    argument objects/arrays remain valid.
     """
     tool_calls: list[ToolCall] = []
     seen: set[str] = set()
-    remaining_text = text
+    accepted_spans: list[tuple[int, int]] = []
 
     valid_names = {t.function.name for t in available_tools} if available_tools else set()
 
@@ -103,53 +195,18 @@ def parse_tool_calls(
         )
         return True
 
-    # Strategy 1: full JSON arrays of calls.
-    array_pattern = r"\[\s*\{[^[\]]*\}\s*(?:,\s*\{[^[\]]*\}\s*)*\]"
-    for match in re.finditer(array_pattern, text, re.DOTALL):
-        try:
-            arr = json.loads(match.group(0))
-        except json.JSONDecodeError:
+    for start, end, parsed in _json_candidates(text):
+        if _span_is_contained((start, end), accepted_spans):
             continue
-        if isinstance(arr, list) and arr and all(isinstance(i, dict) and "name" in i for i in arr):
-            for item in arr:
-                args = item.get("arguments", {})
-                args_str = json.dumps(args) if isinstance(args, dict) else str(args)
-                add(item["name"], args_str)
-            remaining_text = remaining_text.replace(match.group(0), "").strip()
 
-    # Strategy 2: individual JSON objects (both key orders).
-    object_patterns = [
-        (r'\{\s*"name"\s*:\s*"([^"]+)"\s*,\s*"arguments"\s*:\s*(\{[^{}]*\})\s*\}', False),
-        (r'\{\s*"arguments"\s*:\s*(\{[^{}]*\})\s*,\s*"name"\s*:\s*"([^"]+)"\s*\}', True),
-    ]
-    for pattern, reversed_order in object_patterns:
-        for match in re.finditer(pattern, text, re.DOTALL):
-            try:
-                if reversed_order:
-                    fn_args, fn_name = match.group(1), match.group(2)
-                else:
-                    fn_name, fn_args = match.group(1), match.group(2)
-                json.loads(fn_args)  # validate
-            except (json.JSONDecodeError, IndexError):
-                continue
-            if add(fn_name, fn_args):
-                remaining_text = remaining_text.replace(match.group(0), "").strip()
+        added = False
+        for name, arguments in _tool_items_from_json(parsed):
+            if add(name, arguments):
+                added = True
+        if added:
+            accepted_spans.append((start, end))
 
-    # Strategy 3: fenced code blocks containing JSON.
-    for pattern in (r"```json\s*([\s\S]*?)\s*```", r"```\s*([\s\S]*?)\s*```"):
-        for match in re.finditer(pattern, text, re.DOTALL):
-            try:
-                parsed = json.loads(match.group(1).strip())
-            except json.JSONDecodeError:
-                continue
-            items = parsed if isinstance(parsed, list) else [parsed]
-            for item in items:
-                if isinstance(item, dict) and "name" in item:
-                    args = item.get("arguments", {})
-                    args_str = json.dumps(args) if isinstance(args, dict) else str(args)
-                    if add(item["name"], args_str):
-                        remaining_text = remaining_text.replace(match.group(0), "").strip()
-
+    remaining_text = _remove_spans(text, accepted_spans)
     remaining_text = re.sub(r"\s+", " ", remaining_text).strip()
     return remaining_text, tool_calls
 
