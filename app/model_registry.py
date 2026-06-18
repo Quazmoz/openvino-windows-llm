@@ -17,7 +17,9 @@ from pathlib import Path
 logger = logging.getLogger("ov-llm.registry")
 
 # Files that indicate a directory holds a converted OpenVINO IR model.
-_IR_MARKERS = ("openvino_model.xml", "openvino_language_model.xml", "config.json")
+# A generic config.json alone is not enough; Hugging Face source/cache
+# directories also contain config.json and would otherwise be misclassified.
+_IR_MARKERS = ("openvino_model.xml", "openvino_language_model.xml")
 
 _STATUS_LABELS = {
     "loaded": "Loaded",
