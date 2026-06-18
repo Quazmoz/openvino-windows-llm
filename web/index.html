@@ -1688,9 +1688,60 @@
         }
 
         function getSelectedModelMeta() { return availableModels.get(modelSelect.value) || null; }
+        function getModelHardwareRequirement(model) {
+            let bCount = 0.0;
+            const match = model.id.match(/[-_](\d+(?:\.\d+)?)([mbMB])/);
+            if (match) {
+                const value = parseFloat(match[1]);
+                const unit = match[2].toLowerCase();
+                if (unit === 'm') {
+                    bCount = value / 1000.0;
+                } else if (unit === 'b') {
+                    bCount = value;
+                }
+            } else {
+                if (model.id.includes('135m')) bCount = 0.135;
+                else if (model.id.includes('360m')) bCount = 0.36;
+                else if (model.id.includes('0.5b')) bCount = 0.5;
+                else if (model.id.includes('1.5b')) bCount = 1.5;
+                else if (model.id.includes('1b')) bCount = 1.0;
+                else if (model.id.includes('1.7b')) bCount = 1.7;
+                else if (model.id.includes('2b')) bCount = 2.0;
+                else if (model.id.includes('3b')) bCount = 3.0;
+                else if (model.id.includes('7b')) bCount = 7.0;
+                else if (model.id.includes('8b')) bCount = 8.0;
+                else if (model.id.includes('14b')) bCount = 14.0;
+                else if (model.id.includes('32b')) bCount = 32.0;
+                else if (model.id.includes('mini')) bCount = 3.8;
+            }
+
+            if (bCount === 0.0) {
+                return ">= 8GB RAM";
+            }
+
+            const isInt4 = (model.weight_format || '').toLowerCase().includes('int4');
+            const isInt8 = (model.weight_format || '').toLowerCase().includes('int8');
+            
+            let bytesPerParam = 2.0;
+            if (isInt4) bytesPerParam = 0.55;
+            else if (isInt8) bytesPerParam = 1.0;
+
+            const modelSizeBytes = bCount * bytesPerParam;
+            
+            if (modelSizeBytes <= 2.5) {
+                return ">= 8GB RAM";
+            } else if (modelSizeBytes <= 6.5) {
+                return ">= 16GB RAM";
+            } else if (modelSizeBytes <= 24.0) {
+                return ">= 32GB RAM";
+            } else {
+                return ">= 64GB RAM";
+            }
+        }
         function formatModelOptionLabel(model) {
-            if (model.is_loaded && model.device) return `${model.name} · ${model.status_label} (${model.device})`;
-            return `${model.name} · ${model.status_label}`;
+            const req = getModelHardwareRequirement(model);
+            if (model.is_loaded && model.device) return `${model.name} (${req}) · ${model.status_label} (${model.device})`;
+            return `${model.name} (${req}) · ${model.status_label}`;
         }
         function normalizeUiDevice(device) { return ['CPU', 'GPU', 'NPU'].includes(device) ? device : 'NPU'; }
         function modelLoadDevice() { return normalizeUiDevice(selectedDevice || defaultDevice); }
