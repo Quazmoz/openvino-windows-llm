@@ -10,6 +10,7 @@ don't load into memory at once.
 from __future__ import annotations
 
 import asyncio
+import collections
 import contextlib
 import gc
 import logging
@@ -65,6 +66,8 @@ class ModelManager:
         self.status_overrides: dict[str, dict] = {}
         # Cumulative per-model request metrics (since server start).
         self.metrics: dict[str, dict] = {}
+        # Bounded activity log for the UI (newest last).
+        self._events: collections.deque[dict] = collections.deque(maxlen=50)
         self._load_lock = asyncio.Lock()
         self._convert_lock = asyncio.Lock()
 
@@ -79,6 +82,21 @@ class ModelManager:
 
     def _clear_status(self, model_id: str) -> None:
         self.status_overrides.pop(model_id, None)
+
+    # --- activity events ---------------------------------------------------
+
+    def _emit(self, level: str, message: str) -> None:
+        """Append an event to the bounded activity log.
+
+        *level* is ``"info"``, ``"warning"``, or ``"error"``.
+        """
+        self._events.append(
+            {"timestamp": int(time.time()), "level": level, "message": message}
+        )
+
+    def recent_events(self) -> list[dict]:
+        """Return the activity log as a plain list (oldest first)."""
+        return list(self._events)
 
     # --- queries -----------------------------------------------------------
 
@@ -112,6 +130,11 @@ class ModelManager:
         m["prompt_tokens"] += int(prompt_tokens)
         m["completion_tokens"] += int(completion_tokens)
         m["total_latency_s"] += max(float(latency_s), 0.0)
+
+        cfg = self.catalog.get(model_id)
+        name = cfg.name if cfg else model_id
+        tps = round(completion_tokens / latency_s, 1) if latency_s > 0 else 0.0
+        self._emit("info", f"Generated {completion_tokens} tokens using {name} ({tps} t/s)")
 
     def metrics_summary(self) -> dict:
         """Per-model and aggregate request metrics for the status endpoint."""
@@ -239,6 +262,7 @@ class ModelManager:
                 self.devices[model_id] = engine.device
                 self._clear_status(model_id)
                 logger.info("Loaded '%s' on %s", model_id, engine.device)
+                self._emit("info", f"Loaded {cfg.name} on {engine.device}")
         except Exception as exc:  # noqa: BLE001 - surfaced to the UI as a status
             self.engines.pop(model_id, None)
             self.locks.pop(model_id, None)
@@ -246,6 +270,7 @@ class ModelManager:
             message = errors.format_model_load_error(exc)
             self._set_status(model_id, "error", error=message)
             logger.exception("Failed to load '%s': %s", model_id, message)
+            self._emit("error", f"Failed to load {cfg.name}: {message}")
 
     def schedule_load(self, model_id: str, device: str | None = None) -> asyncio.Task | None:
         if model_id not in self.catalog:
@@ -299,6 +324,7 @@ class ModelManager:
 
                 self._clear_status(model_id)
                 logger.info("Converted '%s' to %s", model_id, cfg.abs_path(BASE_DIR))
+                self._emit("info", f"Converted {cfg.name} to OpenVINO IR")
                 if load_after:
                     self.schedule_load(model_id, device)
         except asyncio.CancelledError:
@@ -307,10 +333,11 @@ class ModelManager:
                 with contextlib.suppress(Exception):
                     await proc.wait()
             raise
-        except Exception as exc:  # noqa: BLE001 - surfaced to the UI as a status
-            message = f"Conversion failed: {exc}"
+        except Exception as exc:  # noqa: BLE001 - surfaced to the UI as a statement/status
+            message = errors.format_model_convert_error(exc)
             self._set_status(model_id, "error", error=message)
             logger.exception("Failed to convert '%s': %s", model_id, message)
+            self._emit("error", f"Conversion failed for {cfg.name}")
 
     def schedule_convert(
         self,
@@ -351,9 +378,12 @@ class ModelManager:
         self._clear_status(model_id)
         if engine is None:
             return False
+        cfg = self.catalog.get(model_id)
+        name = cfg.name if cfg else model_id
         with contextlib.suppress(Exception):
             engine.close()
         gc.collect()
+        self._emit("info", f"Unloaded {name}")
         return True
 
     def delete(self, model_id: str) -> dict:
@@ -374,6 +404,9 @@ class ModelManager:
         self._clear_status(model_id)
         self.load_tasks.pop(model_id, None)
         self.convert_tasks.pop(model_id, None)
+        if deleted:
+            freed_gb = round(freed / (1024**3), 2)
+            self._emit("info", f"Deleted {cfg.name} ({freed_gb} GB freed)")
         return {"deleted": deleted, "freed_bytes": freed}
 
     def _ensure_within_models_dir(self, path: Path) -> None:
@@ -388,6 +421,8 @@ class ModelManager:
         self.catalog = registry.load_catalog(self.settings.models_file)
 
     async def startup(self) -> None:
+        mode = "mock engine" if self.force_mock else f"device={self.settings.device}"
+        self._emit("info", f"Server started ({mode}, {len(self.catalog)} models in catalog)")
         if self.settings.default_model:
             if self.settings.default_model in self.catalog:
                 self.schedule_load(self.settings.default_model)

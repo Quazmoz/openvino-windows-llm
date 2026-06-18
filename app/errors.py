@@ -42,6 +42,39 @@ def format_model_load_error(exc: BaseException) -> str:
     return str(exc)
 
 
+def format_model_convert_error(exc: BaseException) -> str:
+    """Return a concise, actionable message for a failed model conversion."""
+    text = str(exc)
+
+    # Check for Hugging Face gated repo / auth error
+    if any(kwd in text.lower() for kwd in ("gated", "restricted", "unauthorized", "401 client error")):
+        return (
+            "Access to this model is gated on Hugging Face. Please accept the model's license agreement "
+            "on huggingface.co, generate a token under Settings -> Tokens, add 'HF_TOKEN=your_token' to your "
+            ".env file, and restart the server."
+        )
+
+    if is_tls_certificate_error(exc):
+        bundle = os.environ.get("REQUESTS_CA_BUNDLE") or os.environ.get("SSL_CERT_FILE")
+        hint = f" Active CA bundle: {bundle}." if bundle else ""
+        return (
+            "HTTPS download failed while contacting huggingface.co — Python could not verify the "
+            "TLS certificate. On Windows, install python-certifi-win32, or set REQUESTS_CA_BUNDLE / "
+            "SSL_CERT_FILE to your organization's CA bundle, then retry." + hint
+        )
+
+    # Clean up long Optimum/subprocess tracebacks to focus on the root error
+    if "Traceback (most recent call last):" in text or "optimum-cli" in text:
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        if lines:
+            for line in reversed(lines):
+                if any(err in line.lower() for err in ("error", "exception", "failed", "oserror")) and ":" in line:
+                    return f"Conversion failed: {line}"
+            return f"Conversion failed: {lines[-1]}"
+
+    return text
+
+
 def format_missing_openvino() -> str:
     """Message shown when an OpenVINO-backed action is attempted without OpenVINO."""
     return (

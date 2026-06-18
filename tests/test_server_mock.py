@@ -366,3 +366,119 @@ def test_stream_cancellation_frees_the_model_lock():
         await manager.shutdown()
 
     asyncio.run(scenario())
+
+
+# --- Conversation export tests -----------------------------------------------
+
+
+def test_chat_export_returns_markdown(client):
+    """POST /v1/chat/export with a valid conversation returns a .md attachment."""
+    messages = [
+        {"role": "user", "content": "Hello there"},
+        {"role": "assistant", "content": "Hi! **How can I help?**"},
+    ]
+    resp = client.post("/v1/chat/export", json={"messages": messages})
+    assert resp.status_code == 200, resp.text
+    assert "text/markdown" in resp.headers["content-type"]
+    assert "attachment" in resp.headers.get("content-disposition", "")
+    assert "chat-export-" in resp.headers["content-disposition"]
+
+    body = resp.text
+    # Header present
+    assert "# Chat Export" in body
+    # User message rendered as blockquote
+    assert "> Hello there" in body
+    # Assistant content preserved verbatim
+    assert "Hi! **How can I help?**" in body
+
+
+def test_chat_export_empty_messages_returns_400(client):
+    """An empty messages list must be rejected."""
+    resp = client.post("/v1/chat/export", json={"messages": []})
+    assert resp.status_code == 400
+    assert "No messages" in resp.json()["detail"]
+
+
+def test_chat_export_includes_model_metadata(client):
+    """Model and device appear in the export header when provided."""
+    messages = [{"role": "user", "content": "test"}]
+    resp = client.post(
+        "/v1/chat/export",
+        json={"messages": messages, "model": "tinyllama-1.1b-chat-fp16", "device": "NPU"},
+    )
+    assert resp.status_code == 200
+    body = resp.text
+    assert "tinyllama-1.1b-chat-fp16" in body
+    assert "NPU" in body
+
+
+def test_chat_export_auth_protected(authed_client):
+    """Export must be rejected without a valid API key."""
+    resp = authed_client.post(
+        "/v1/chat/export",
+        json={"messages": [{"role": "user", "content": "hi"}]},
+    )
+    assert resp.status_code == 401
+
+
+# --- Activity event log tests -----------------------------------------------
+
+
+def test_startup_event_present(client):
+    """A fresh server should have a startup event in the activity log."""
+    body = client.get("/v1/system/status").json()
+    events = body.get("events", [])
+    assert any("Server started" in ev["message"] for ev in events)
+
+
+def test_events_appear_after_model_load(client):
+    """Loading a model emits an info event visible in /v1/system/status."""
+    _load_and_wait(client)
+    body = client.get("/v1/system/status").json()
+    events = body.get("events", [])
+    loaded = [ev for ev in events if "Loaded" in ev["message"] and "TinyLlama" in ev["message"]]
+    assert loaded, f"Expected a load event, got: {events}"
+    assert loaded[-1]["level"] == "info"
+
+
+def test_events_appear_after_model_unload(client):
+    """Unloading a model emits an info event."""
+    _load_and_wait(client)
+    client.post("/v1/models/unload", json={"model": MODEL_ID})
+    body = client.get("/v1/system/status").json()
+    events = body.get("events", [])
+    unloaded = [ev for ev in events if "Unloaded" in ev["message"]]
+    assert unloaded, f"Expected an unload event, got: {events}"
+
+
+def test_events_capped_at_max(client):
+    """The event log should never exceed 50 entries."""
+    manager = client.app.state.manager
+    for i in range(60):
+        manager._emit("info", f"Event {i}")
+    body = client.get("/v1/system/status").json()
+    events = body.get("events", [])
+    assert len(events) <= 50
+    # Oldest events should have been dropped (event 0..9 gone).
+    messages = [ev["message"] for ev in events]
+    assert "Event 0" not in messages
+    assert "Event 59" in messages
+
+
+def test_events_appear_after_generation(client):
+    """Generating a completion emits a generation event."""
+    _load_and_wait(client)
+    resp = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": MODEL_ID,
+            "messages": [{"role": "user", "content": "hello"}],
+            "stream": False,
+        },
+    )
+    assert resp.status_code == 200
+    body = client.get("/v1/system/status").json()
+    events = body.get("events", [])
+    generated = [ev for ev in events if "Generated" in ev["message"] and "tokens" in ev["message"]]
+    assert generated, f"Expected a generation event, got: {events}"
+    assert generated[-1]["level"] == "info"

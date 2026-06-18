@@ -143,3 +143,12 @@ class ModelUnloadRequest(BaseModel):
 
 class ModelDeleteRequest(BaseModel):
     model: str
+
+
+# --- Conversation export --------------------------------------------------
+
+
+class ChatExportRequest(BaseModel):
+    messages: list[ChatMessage]
+    model: str | None = None
+    device: str | None = None

@@ -18,10 +18,11 @@ import sys
 import time
 import uuid
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Header, HTTPException
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 
 from app import chat_format, model_manager, tools
 from app.config import BASE_DIR, VALID_DEVICES, Settings
@@ -30,6 +31,7 @@ from app.openai_api import (
     ChatCompletionRequest,
     ChatCompletionResponse,
     ChatCompletionResponseChoice,
+    ChatExportRequest,
     ChatMessage,
     ModelConvertRequest,
     ModelDeleteRequest,
@@ -290,7 +292,58 @@ def create_app(settings: Settings) -> FastAPI:
                 **disk_stats(settings.models_dir),
             },
             "metrics": manager.metrics_summary(),
+            "events": manager.recent_events(),
         }
+
+    # --- conversation export -----------------------------------------------
+
+    @app.post("/v1/chat/export", dependencies=auth)
+    async def export_chat(request: ChatExportRequest):
+        if not request.messages:
+            raise HTTPException(status_code=400, detail="No messages to export")
+
+        now = datetime.now(timezone.utc)
+        ts_display = now.strftime("%Y-%m-%d %H:%M UTC")
+        ts_file = now.strftime("%Y%m%d-%H%M%S")
+
+        lines: list[str] = []
+        lines.append("# Chat Export — OpenVINO LLM")
+        lines.append("")
+        meta_parts = [f"**Exported:** {ts_display}"]
+        if request.model:
+            meta_parts.append(f"**Model:** {request.model}")
+        if request.device:
+            meta_parts.append(f"**Device:** {request.device}")
+        lines.append(" · ".join(meta_parts))
+        lines.append("")
+        lines.append("---")
+        lines.append("")
+
+        for msg in request.messages:
+            role = (msg.role or "unknown").capitalize()
+            content = (msg.content or "").strip()
+            if msg.role == "user":
+                lines.append(f"### 🧑 {role}")
+                lines.append("")
+                for line in content.splitlines():
+                    lines.append(f"> {line}")
+            elif msg.role == "system":
+                lines.append(f"### ⚙️ {role}")
+                lines.append("")
+                lines.append(f"_{content}_")
+            else:
+                lines.append(f"### ✨ {role}")
+                lines.append("")
+                lines.append(content)
+            lines.append("")
+
+        body = "\n".join(lines)
+        filename = f"chat-export-{ts_file}.md"
+        return Response(
+            content=body,
+            media_type="text/markdown; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
 
     # --- chat completions --------------------------------------------------
 

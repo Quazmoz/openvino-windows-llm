@@ -1134,6 +1134,76 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
+
+        /* Activity Feed */
+        .activity-list {
+            max-height: 180px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            padding-right: 2px;
+        }
+
+        .activity-list::-webkit-scrollbar {
+            width: 3px;
+        }
+
+        .activity-list::-webkit-scrollbar-thumb {
+            background: var(--surface-3);
+            border-radius: 2px;
+        }
+
+        .activity-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
+            font-size: 11px;
+            line-height: 1.45;
+            color: var(--text-2);
+            animation: fade-in 0.25s ease;
+        }
+
+        .activity-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            flex-shrink: 0;
+            margin-top: 4px;
+        }
+
+        .activity-dot.info {
+            background: var(--green);
+            box-shadow: 0 0 4px var(--green-glow);
+        }
+
+        .activity-dot.warning {
+            background: var(--amber);
+            box-shadow: 0 0 4px var(--amber-glow);
+        }
+
+        .activity-dot.error {
+            background: var(--red);
+            box-shadow: 0 0 4px rgba(239, 68, 68, 0.3);
+        }
+
+        .activity-msg {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .activity-time {
+            flex-shrink: 0;
+            font-size: 10px;
+            color: var(--text-3);
+            white-space: nowrap;
+        }
+
+        .activity-empty {
+            font-size: 11px;
+            color: var(--text-3);
+            font-style: italic;
+        }
     </style>
 </head>
 
@@ -1219,6 +1289,14 @@
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M12 5v14" />
                         <path d="M5 12h14" />
+                    </svg>
+                </button>
+                <button class="icon-btn" id="export-chat-btn" title="Export conversation as Markdown" aria-label="Export conversation" disabled>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                        <polyline points="7 10 12 15 17 10" />
+                        <line x1="12" y1="15" x2="12" y2="3" />
                     </svg>
                 </button>
                 <button class="icon-btn" id="settings-toggle-btn" title="Toggle Settings" aria-label="Toggle Settings">
@@ -1334,6 +1412,15 @@
                         <span id="info-avg-latency">–</span>
                     </div>
                 </div>
+
+                <div class="sidebar-divider"></div>
+
+                <div class="setting-group stats-section">
+                    <h4>Activity</h4>
+                    <div class="activity-list" id="activity-list">
+                        <span class="activity-empty">No events yet</span>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -1415,6 +1502,7 @@
         const modelStatus = document.getElementById('model-status');
         const tokenCounter = document.getElementById('token-counter');
         const jumpBtn = document.getElementById('jump-btn');
+        const exportChatBtn = document.getElementById('export-chat-btn');
         updateSendButtonState();
 
         // Settings panel DOM refs
@@ -1830,6 +1918,11 @@
                 infoCompletionTokens.textContent = (totals.completion_tokens || 0).toLocaleString();
                 infoAvgLatency.textContent = totals.requests ? `${totals.avg_latency_ms} ms` : '–';
 
+                // Activity feed
+                if (data.events && data.events.length) {
+                    renderActivityFeed(data.events);
+                }
+
                 if (!isGenerating) setStatusPolling(loadingCount > 0 ? 1000 : 3000);
 
                 if (waitingForModelId) {
@@ -1886,6 +1979,51 @@
 
         statusInterval = setInterval(updateStatus, 3000);
         updateStatus();
+
+        // ── Activity Feed ─────────────────────────────────────
+        const activityList = document.getElementById('activity-list');
+
+        function relativeTime(epochSec) {
+            const diff = Math.max(0, Math.floor(Date.now() / 1000) - epochSec);
+            if (diff < 5) return 'just now';
+            if (diff < 60) return `${diff}s ago`;
+            if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+            if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+            return `${Math.floor(diff / 86400)}d ago`;
+        }
+
+        let lastEventCount = 0;
+        function renderActivityFeed(events) {
+            // Only re-render when the event count changes (avoids DOM thrashing).
+            if (events.length === lastEventCount) {
+                // Still update relative times on existing items.
+                activityList.querySelectorAll('.activity-time').forEach((el, i) => {
+                    const ev = events[i];
+                    if (ev) el.textContent = relativeTime(ev.timestamp);
+                });
+                return;
+            }
+            lastEventCount = events.length;
+            activityList.innerHTML = '';
+            events.forEach(ev => {
+                const item = document.createElement('div');
+                item.className = 'activity-item';
+                const dot = document.createElement('div');
+                dot.className = `activity-dot ${ev.level || 'info'}`;
+                const msg = document.createElement('span');
+                msg.className = 'activity-msg';
+                msg.textContent = ev.message;
+                const ts = document.createElement('span');
+                ts.className = 'activity-time';
+                ts.textContent = relativeTime(ev.timestamp);
+                item.appendChild(dot);
+                item.appendChild(msg);
+                item.appendChild(ts);
+                activityList.appendChild(item);
+            });
+            // Auto-scroll to latest.
+            activityList.scrollTop = activityList.scrollHeight;
+        }
 
         // ── Message Rendering ─────────────────────────────────
         function formatTime(date) { return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
@@ -1971,8 +2109,52 @@
             autoScroll = true;
             jumpBtn.classList.remove('show');
             showToast('New chat started');
+            updateExportButton();
         }
         newChatBtn.addEventListener('click', clearConversation);
+
+        function updateExportButton() {
+            const hasMessages = conversation.some(m => m.role === 'user' || m.role === 'assistant');
+            exportChatBtn.disabled = hasMessages ? false : true;
+        }
+
+        async function exportConversation() {
+            if (!conversation.length) { showToast('Nothing to export'); return; }
+            const model = getSelectedModelMeta();
+            const payload = {
+                messages: conversation,
+                model: model?.id || modelSelect.value || null,
+                device: model?.device || selectedDevice || null,
+            };
+            try {
+                const res = await fetch('/v1/chat/export', {
+                    method: 'POST',
+                    headers: authHeaders({ 'Content-Type': 'application/json' }),
+                    body: JSON.stringify(payload),
+                });
+                if (res.status === 401) { handleAuthRequired(); return; }
+                if (!res.ok) { const d = await res.json(); throw new Error(d.detail || `HTTP ${res.status}`); }
+
+                // Extract filename from Content-Disposition, or use a fallback.
+                const disposition = res.headers.get('Content-Disposition') || '';
+                const match = disposition.match(/filename="?([^"]+)"?/);
+                const filename = match ? match[1] : `chat-export-${Date.now()}.md`;
+
+                const blob = await res.blob();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                URL.revokeObjectURL(url);
+                showToast('Conversation exported');
+            } catch (err) {
+                showToast(`Export failed: ${err.message}`);
+            }
+        }
+        exportChatBtn.addEventListener('click', exportConversation);
 
         function fillInput(el) {
             userInput.value = el.textContent;
@@ -2121,6 +2303,7 @@
                     enhanceCodeBlocks(aiBubble);
                     conversation.push({ role: 'assistant', content: fullText });
                     saveConversation();
+                    updateExportButton();
                 } else if (!aiBubble.querySelector('.tool-call-card')) {
                     aiBubbleContent.innerHTML = `<span style="color:var(--text-3)">${aborted ? '(stopped)' : '(no response)'}</span>`;
                 }
@@ -2252,6 +2435,7 @@
         // ── Init ──────────────────────────────────────────────
         setSendButtonMode('send');
         restoreConversation();
+        updateExportButton();
     </script>
 </body>
 
