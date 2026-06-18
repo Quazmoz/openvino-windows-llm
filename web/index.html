@@ -593,7 +593,7 @@
         }
 
         .bubble {
-            max-width: 75%;
+            max-width: 100%;
             padding: 12px 16px;
             border-radius: var(--radius);
             line-height: 1.65;
@@ -2109,8 +2109,12 @@
             if (role === 'ai' && !isStreaming) enhanceCodeBlocks(bubble);
 
             const col = document.createElement('div');
-            col.style.cssText = 'display:flex;flex-direction:column;max-width:75%';
-            if (role === 'user') col.style.alignItems = 'flex-end';
+            col.style.cssText = 'display:flex;flex-direction:column;max-width:75%;flex-grow:1;';
+            if (role === 'user') {
+                col.style.alignItems = 'flex-end';
+            } else {
+                col.style.alignItems = 'flex-start';
+            }
             col.appendChild(bubble);
             if (role === 'ai') {
                 const copyBtn = document.createElement('button');
