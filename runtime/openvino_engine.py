@@ -191,7 +191,13 @@ class OpenVINOEngine(BaseEngine):
 
     def apply_chat_template(self, messages: list[dict], add_generation_prompt: bool = True) -> str:
         try:
-            return self._tokenizer.apply_chat_template(messages, add_generation_prompt)
+            try:
+                return self._tokenizer.apply_chat_template(
+                    messages,
+                    add_generation_prompt=add_generation_prompt,
+                )
+            except TypeError:
+                return self._tokenizer.apply_chat_template(messages, add_generation_prompt)
         except Exception as exc:  # model has no chat template, or signature differs
             logger.debug("apply_chat_template failed (%s); falling back to ChatML", exc)
             return chat_format.render_chatml(messages, add_generation_prompt)
