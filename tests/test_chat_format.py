@@ -1,8 +1,11 @@
 from app.chat_format import (
+    StopStreamer,
     build_prompt_within_budget,
     normalize_messages,
+    normalize_stop,
     render_chatml,
     responses_input_to_messages,
+    truncate_at_stop,
 )
 from app.openai_api import ChatMessage
 
@@ -92,3 +95,45 @@ def test_responses_input_string():
 def test_responses_input_list():
     out = responses_input_to_messages([{"role": "user", "content": "x"}])
     assert out == [{"role": "user", "content": "x"}]
+
+
+# --- stop sequences --------------------------------------------------------
+
+
+def test_normalize_stop_handles_str_list_and_none():
+    assert normalize_stop(None) == []
+    assert normalize_stop("") == []
+    assert normalize_stop("STOP") == ["STOP"]
+    assert normalize_stop(["a", "", "b", 3]) == ["a", "b"]  # drops empties / non-strings
+
+
+def test_truncate_at_stop_cuts_at_earliest_match():
+    text, hit = truncate_at_stop("hello END world STOP", ["STOP", "END"])
+    assert hit is True
+    assert text == "hello "  # earliest of the two wins, stop text excluded
+
+
+def test_truncate_at_stop_no_match_returns_input():
+    text, hit = truncate_at_stop("nothing to cut", ["ZZZ"])
+    assert hit is False
+    assert text == "nothing to cut"
+
+
+def test_stop_streamer_passthrough_without_stops():
+    s = StopStreamer([])
+    assert s.feed("abc") == "abc"
+    assert s.feed("def") == "def"
+    assert s.flush() == ""
+    assert s.stopped is False
+
+
+def test_stop_streamer_detects_sequence_split_across_chunks():
+    # "STOP" is split across three feeds; the streamer must withhold, detect it,
+    # emit only the text before it, and stop.
+    s = StopStreamer(["STOP"])
+    out = "".join(s.feed(p) for p in ["he", "llo ST", "OP and more"])
+    out += s.flush()
+    assert out == "hello "
+    assert s.stopped is True
+    # Once stopped, further input is ignored.
+    assert s.feed("extra") == ""

@@ -13,6 +13,7 @@ Both expose the same small interface:
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import queue
 import re
@@ -35,6 +36,8 @@ class GenParams:
     temperature: float = 0.7
     top_p: float = 1.0
     do_sample: bool = True
+    seed: int | None = None
+    stop: list[str] | None = None
 
 
 @dataclass
@@ -210,8 +213,18 @@ class OpenVINOEngine(BaseEngine):
             cfg.do_sample = True
             cfg.temperature = float(params.temperature)
             cfg.top_p = float(params.top_p)
+            if params.seed is not None:
+                # Attribute name varies across OpenVINO GenAI versions; best effort.
+                with contextlib.suppress(Exception):
+                    cfg.rng_seed = int(params.seed)
         else:
             cfg.do_sample = False
+        if params.stop:
+            # Let the runtime stop early when supported; the server also truncates
+            # defensively so correctness never depends on this attribute existing.
+            with contextlib.suppress(Exception):
+                cfg.stop_strings = set(params.stop)
+                cfg.include_stop_str_in_output = False
         return cfg
 
     def generate(self, prompt: str, params: GenParams) -> GenResult:

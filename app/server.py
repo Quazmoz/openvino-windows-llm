@@ -65,7 +65,8 @@ def _load_dotenv() -> None:
 
 
 def _params_for(request_max_tokens: int | None, temperature: float | None, top_p: float | None,
-                prompt_tokens: int, max_context_len: int) -> GenParams:
+                prompt_tokens: int, max_context_len: int, *,
+                stop: list[str] | None = None, seed: int | None = None) -> GenParams:
     available = max(max_context_len - prompt_tokens - 8, 16)
     requested = request_max_tokens or 512
     max_new = max(min(requested, available), 16)
@@ -75,6 +76,8 @@ def _params_for(request_max_tokens: int | None, temperature: float | None, top_p
         temperature=temp,
         top_p=1.0 if top_p is None else float(top_p),
         do_sample=temp > 0,
+        stop=stop or None,
+        seed=seed,
     )
 
 
@@ -286,6 +289,7 @@ def create_app(settings: Settings) -> FastAPI:
                 "models_dir": str(settings.models_dir.resolve()),
                 **disk_stats(settings.models_dir),
             },
+            "metrics": manager.metrics_summary(),
         }
 
     # --- chat completions --------------------------------------------------
@@ -304,7 +308,8 @@ def create_app(settings: Settings) -> FastAPI:
             engine, request.messages, max_prompt_len, system_override
         )
         params = _params_for(
-            request.max_tokens, request.temperature, request.top_p, prompt_tokens, max_context_len
+            request.max_tokens, request.temperature, request.top_p, prompt_tokens, max_context_len,
+            stop=chat_format.normalize_stop(request.stop), seed=request.seed,
         )
 
         if request.stream:
@@ -316,6 +321,7 @@ def create_app(settings: Settings) -> FastAPI:
 
     async def _complete_chat(engine, request, prompt, prompt_tokens, params, use_tools, max_prompt_len):
         MAX_RETRIES = 2
+        start = time.perf_counter()
         text = ""
         completion_tokens = 0
         current_prompt = prompt
@@ -347,7 +353,19 @@ def create_app(settings: Settings) -> FastAPI:
                 tool_calls = parsed
                 finish_reason = "tool_calls"
                 content = remaining or None
+        elif params.stop:
+            # Honor stop sequences (the runtime may not have applied them).
+            truncated, hit = chat_format.truncate_at_stop(text, params.stop)
+            if hit:
+                content = truncated
+                loop = asyncio.get_running_loop()
+                completion_tokens = await loop.run_in_executor(
+                    None, engine.count_tokens, truncated
+                )
 
+        manager.record_request(
+            engine.model_id, current_prompt_tokens, completion_tokens, time.perf_counter() - start
+        )
         return ChatCompletionResponse(
             id=f"chatcmpl-{uuid.uuid4().hex}",
             created=int(time.time()),
@@ -368,6 +386,7 @@ def create_app(settings: Settings) -> FastAPI:
 
     async def _stream_chat(engine, request, prompt, prompt_tokens, params, use_tools):
         request_id = f"chatcmpl-{uuid.uuid4().hex}"
+        start = time.perf_counter()
 
         def chunk(delta: dict, finish_reason=None) -> str:
             payload = {
@@ -407,15 +426,23 @@ def create_app(settings: Settings) -> FastAPI:
                 else:
                     yield chunk({"role": "assistant", "content": remaining or full_text})
             else:
-                # Real-time token streaming for normal chat.
+                # Real-time token streaming for normal chat, honoring stop sequences.
+                stopper = chat_format.StopStreamer(params.stop or [])
                 first = True
                 async for piece in stream_gen:
-                    full_text += piece
-                    delta = {"content": piece}
-                    if first:
-                        delta = {"role": "assistant", "content": piece}
+                    emit = stopper.feed(piece)
+                    if emit:
+                        full_text += emit
+                        delta = {"role": "assistant", "content": emit} if first else {"content": emit}
                         first = False
-                    yield chunk(delta)
+                        yield chunk(delta)
+                    if stopper.stopped:
+                        finish_reason = "stop"
+                        break
+                tail = stopper.flush()
+                if tail:
+                    full_text += tail
+                    yield chunk({"role": "assistant", "content": tail} if first else {"content": tail})
         except Exception as exc:  # noqa: BLE001 - report inline to the SSE client
             logger.exception("Generation failed: %s", exc)
             yield chunk({"content": f"\n\n[error: {exc}]"})
@@ -426,9 +453,13 @@ def create_app(settings: Settings) -> FastAPI:
 
         yield chunk({}, finish_reason=finish_reason)
 
+        loop = asyncio.get_running_loop()
+        completion_tokens = await loop.run_in_executor(None, engine.count_tokens, full_text)
+        manager.record_request(
+            engine.model_id, prompt_tokens, completion_tokens, time.perf_counter() - start
+        )
+
         if request.stream_options and request.stream_options.include_usage:
-            loop = asyncio.get_running_loop()
-            completion_tokens = await loop.run_in_executor(None, engine.count_tokens, full_text)
             usage_payload = {
                 "id": request_id,
                 "object": "chat.completion.chunk",
@@ -465,19 +496,106 @@ def create_app(settings: Settings) -> FastAPI:
         params = _params_for(
             request.max_output_tokens, request.temperature, 1.0, prompt_tokens, max_context_len
         )
-        result = await manager.generate(engine, prompt, params)
 
+        response_id = f"resp-{uuid.uuid4().hex}"
+        msg_id = f"msg-{uuid.uuid4().hex}"
+
+        if request.stream:
+            return StreamingResponse(
+                _stream_response(engine, request, prompt, prompt_tokens, params, response_id, msg_id),
+                media_type="text/event-stream",
+            )
+
+        start = time.perf_counter()
+        result = await manager.generate(engine, prompt, params)
+        manager.record_request(
+            engine.model_id, prompt_tokens, result.completion_tokens, time.perf_counter() - start
+        )
         return ResponseObject(
-            id=f"resp-{uuid.uuid4().hex}",
+            id=response_id,
             created_at=int(time.time()),
             model=request.model,
             output=[
                 ResponseOutputMessage(
-                    id=f"msg-{uuid.uuid4().hex}",
+                    id=msg_id,
                     content=[{"type": "output_text", "text": result.text}],
                 )
             ],
         )
+
+    async def _stream_response(engine, request, prompt, prompt_tokens, params, response_id, msg_id):
+        """SSE stream for the Responses API, using OpenAI Responses event names."""
+        created = int(time.time())
+        start = time.perf_counter()
+
+        def event(type_name: str, payload: dict) -> str:
+            return f"event: {type_name}\ndata: {json.dumps(payload)}\n\n"
+
+        def response_obj(text: str, status: str) -> dict:
+            return {
+                "id": response_id,
+                "object": "response",
+                "created_at": created,
+                "model": request.model,
+                "status": status,
+                "output": [
+                    {
+                        "type": "message",
+                        "id": msg_id,
+                        "status": status,
+                        "role": "assistant",
+                        "content": [{"type": "output_text", "text": text}],
+                    }
+                ],
+            }
+
+        yield event(
+            "response.created",
+            {"type": "response.created", "response": response_obj("", "in_progress")},
+        )
+
+        full_text = ""
+        stream_gen = manager.stream(engine, prompt, params)
+        try:
+            async for piece in stream_gen:
+                full_text += piece
+                yield event(
+                    "response.output_text.delta",
+                    {
+                        "type": "response.output_text.delta",
+                        "item_id": msg_id,
+                        "output_index": 0,
+                        "content_index": 0,
+                        "delta": piece,
+                    },
+                )
+        except Exception as exc:  # noqa: BLE001 - report inline to the SSE client
+            logger.exception("Responses generation failed: %s", exc)
+            yield event("response.error", {"type": "response.error", "message": str(exc)})
+        finally:
+            await stream_gen.aclose()
+
+        loop = asyncio.get_running_loop()
+        completion_tokens = await loop.run_in_executor(None, engine.count_tokens, full_text)
+        manager.record_request(
+            engine.model_id, prompt_tokens, completion_tokens, time.perf_counter() - start
+        )
+
+        yield event(
+            "response.output_text.done",
+            {
+                "type": "response.output_text.done",
+                "item_id": msg_id,
+                "output_index": 0,
+                "content_index": 0,
+                "text": full_text,
+            },
+        )
+        yield event(
+            "response.completed",
+            {"type": "response.completed", "response": response_obj(full_text, "completed")},
+        )
+        yield "data: [DONE]\n\n"
 
     return app
 

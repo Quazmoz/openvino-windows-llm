@@ -63,6 +63,8 @@ class ModelManager:
         self.load_tasks: dict[str, asyncio.Task] = {}
         self.convert_tasks: dict[str, asyncio.Task] = {}
         self.status_overrides: dict[str, dict] = {}
+        # Cumulative per-model request metrics (since server start).
+        self.metrics: dict[str, dict] = {}
         self._load_lock = asyncio.Lock()
         self._convert_lock = asyncio.Lock()
 
@@ -95,6 +97,50 @@ class ModelManager:
             for ov in self.status_overrides.values()
             if ov.get("status") in {"queued", "loading", "queued_convert", "converting"}
         )
+
+    # --- request metrics ---------------------------------------------------
+
+    def record_request(
+        self, model_id: str, prompt_tokens: int, completion_tokens: int, latency_s: float
+    ) -> None:
+        """Accumulate one served request's token + latency totals for a model."""
+        m = self.metrics.setdefault(
+            model_id,
+            {"requests": 0, "prompt_tokens": 0, "completion_tokens": 0, "total_latency_s": 0.0},
+        )
+        m["requests"] += 1
+        m["prompt_tokens"] += int(prompt_tokens)
+        m["completion_tokens"] += int(completion_tokens)
+        m["total_latency_s"] += max(float(latency_s), 0.0)
+
+    def metrics_summary(self) -> dict:
+        """Per-model and aggregate request metrics for the status endpoint."""
+        per_model: dict[str, dict] = {}
+        total_requests = total_prompt = total_completion = 0
+        total_latency = 0.0
+        for model_id, m in self.metrics.items():
+            reqs = m["requests"]
+            per_model[model_id] = {
+                "requests": reqs,
+                "prompt_tokens": m["prompt_tokens"],
+                "completion_tokens": m["completion_tokens"],
+                "avg_latency_ms": round(m["total_latency_s"] / reqs * 1000, 1) if reqs else 0.0,
+            }
+            total_requests += reqs
+            total_prompt += m["prompt_tokens"]
+            total_completion += m["completion_tokens"]
+            total_latency += m["total_latency_s"]
+        return {
+            "totals": {
+                "requests": total_requests,
+                "prompt_tokens": total_prompt,
+                "completion_tokens": total_completion,
+                "avg_latency_ms": round(total_latency / total_requests * 1000, 1)
+                if total_requests
+                else 0.0,
+            },
+            "per_model": per_model,
+        }
 
     def resolve_engine(self, model_id: str) -> BaseEngine:
         """Return the engine for a request, with sensible fallbacks.

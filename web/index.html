@@ -1275,6 +1275,16 @@
                 </div>
 
                 <div class="setting-group">
+                    <label for="settings-api-key">API Key</label>
+                    <input type="password" id="settings-api-key" autocomplete="off"
+                        placeholder="Only if the server sets OV_LLM_API_KEY">
+                    <p style="font-size: 11px; color: var(--text-3); margin-top: 6px; line-height: 1.5;">
+                        Sent as <code>Authorization: Bearer …</code> on every request. Stored only in this
+                        browser.
+                    </p>
+                </div>
+
+                <div class="setting-group">
                     <div class="setting-label-row">
                         <label for="settings-temperature">Temperature</label>
                         <span id="settings-temperature-val">0.7</span>
@@ -1306,6 +1316,22 @@
                         <span>Model Directory:</span>
                         <span id="info-models-dir"
                             style="word-break: break-all; text-align: right; font-size: 10px; color: var(--text-3); font-family: monospace;">-</span>
+                    </div>
+                </div>
+
+                <div class="setting-group stats-section">
+                    <h4>Request Metrics</h4>
+                    <div class="info-row">
+                        <span>Requests served:</span>
+                        <span id="info-requests">0</span>
+                    </div>
+                    <div class="info-row">
+                        <span>Completion tokens:</span>
+                        <span id="info-completion-tokens">0</span>
+                    </div>
+                    <div class="info-row">
+                        <span>Avg latency:</span>
+                        <span id="info-avg-latency">–</span>
                     </div>
                 </div>
             </div>
@@ -1357,6 +1383,9 @@
         let autoScroll = true;         // follow new tokens only when the user is at the bottom
         const availableModels = new Map();
         const STORAGE_KEY = 'ovllm.chat.v1';
+        const API_KEY_STORAGE = 'ovllm.apikey.v1';
+        let apiKey = localStorage.getItem(API_KEY_STORAGE) || '';
+        let authPromptShown = false;   // only auto-open settings once per 401 streak
         let queuedPrompt = null;
         let activeLoaderBubble = null;
 
@@ -1400,8 +1429,19 @@
         const infoEngineType = document.getElementById('info-engine-type');
         const infoLoadedDevice = document.getElementById('info-loaded-device');
         const infoModelsDir = document.getElementById('info-models-dir');
+        const settingsApiKey = document.getElementById('settings-api-key');
+        const infoRequests = document.getElementById('info-requests');
+        const infoCompletionTokens = document.getElementById('info-completion-tokens');
+        const infoAvgLatency = document.getElementById('info-avg-latency');
 
         // ── Helpers ───────────────────────────────────────────
+        // Build request headers, attaching the optional API key when one is set.
+        // The server requires it only when OV_LLM_API_KEY is configured.
+        function authHeaders(base = {}) {
+            const headers = { ...base };
+            if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+            return headers;
+        }
         // Render model output as markdown, then sanitize the HTML before insertion.
         // (Degrades gracefully if the marked / DOMPurify CDNs are unavailable.)
         function renderMarkdown(text) {
@@ -1656,7 +1696,7 @@
             updateModelUi();
             try {
                 const res = await fetch('/v1/models/load', {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json' }),
                     body: JSON.stringify({ model: modelId, device: modelLoadDevice() })
                 });
                 const data = await res.json();
@@ -1678,7 +1718,7 @@
             updateModelUi();
             try {
                 const res = await fetch('/v1/models/convert', {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json' }),
                     body: JSON.stringify({ model: modelId, device: modelLoadDevice(), load_after: true })
                 });
                 const data = await res.json();
@@ -1698,7 +1738,7 @@
             if (!model || !model.can_unload) { updateModelUi(); return; }
             try {
                 const res = await fetch('/v1/models/unload', {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json' }),
                     body: JSON.stringify({ model: modelId })
                 });
                 const data = await res.json();
@@ -1718,7 +1758,7 @@
             if (!window.confirm(`Delete local OpenVINO files for ${model.name}?\n\nThis frees disk space; you can re-convert later.`)) return;
             try {
                 const res = await fetch('/v1/models/delete', {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json' }),
                     body: JSON.stringify({ model: modelId })
                 });
                 const data = await res.json();
@@ -1736,7 +1776,8 @@
         // ── Status Polling ────────────────────────────────────
         async function updateStatus() {
             try {
-                const res = await fetch('/v1/system/status');
+                const res = await fetch('/v1/system/status', { headers: authHeaders() });
+                if (res.status === 401) { handleAuthRequired(); return; }
                 const data = await res.json();
 
                 memLabel.textContent = `${data.memory.used_percent}% RAM`;
@@ -1772,6 +1813,8 @@
                 renderModelOptions(modelEntries);
                 updateModelUi();
 
+                authPromptShown = false;  // a successful poll means the key (if any) is accepted
+
                 // Update sidebar stats
                 infoEngineType.textContent = isMock ? 'Mock engine (no OpenVINO)' : 'OpenVINO GenAI';
                 infoLoadedDevice.textContent = loadedEntry ? `${loadedEntry.device} (loaded)` : '-';
@@ -1780,6 +1823,12 @@
                 } else {
                     infoModelsDir.textContent = '-';
                 }
+
+                // Request metrics
+                const totals = (data.metrics && data.metrics.totals) || {};
+                infoRequests.textContent = totals.requests || 0;
+                infoCompletionTokens.textContent = (totals.completion_tokens || 0).toLocaleString();
+                infoAvgLatency.textContent = totals.requests ? `${totals.avg_latency_ms} ms` : '–';
 
                 if (!isGenerating) setStatusPolling(loadingCount > 0 ? 1000 : 3000);
 
@@ -1817,6 +1866,21 @@
                     activeLoaderBubble.firstElementChild.innerHTML = `<span style="color:var(--red)">⚠ Server went offline during model loading.</span>`;
                     activeLoaderBubble = null;
                 }
+            }
+        }
+
+        // Surfaced when the server rejects a request for want of a valid API key.
+        function handleAuthRequired() {
+            deviceChip.className = 'stat-chip offline';
+            deviceLabel.textContent = 'Auth required';
+            setModelStatus(apiKey ? 'API key rejected — check Settings' : 'API key required — open Settings', 'error');
+            updateSendButtonState();
+            if (!authPromptShown) {
+                authPromptShown = true;
+                settingsSidebar.classList.remove('hidden');
+                settingsToggleBtn.classList.add('active');
+                settingsApiKey.focus();
+                showToast(apiKey ? 'API key rejected' : 'This server requires an API key');
             }
         }
 
@@ -2074,7 +2138,7 @@
 
             try {
                 const resp = await fetch('/v1/chat/completions', {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json' }),
                     body: JSON.stringify({
                         model: modelSelect.value,
                         messages: messages,
@@ -2085,6 +2149,7 @@
                     }),
                     signal: currentAbort.signal
                 });
+                if (resp.status === 401) { handleAuthRequired(); throw new Error('API key required'); }
                 if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
 
                 const reader = resp.body.getReader();
@@ -2155,6 +2220,17 @@
 
         settingsSystemPrompt.addEventListener('change', () => {
             localStorage.setItem('ovllm.system_prompt.v1', settingsSystemPrompt.value);
+        });
+
+        // API key: persist to this browser and re-poll so auth state refreshes.
+        settingsApiKey.value = apiKey;
+        settingsApiKey.addEventListener('change', () => {
+            apiKey = settingsApiKey.value.trim();
+            if (apiKey) localStorage.setItem(API_KEY_STORAGE, apiKey);
+            else localStorage.removeItem(API_KEY_STORAGE);
+            authPromptShown = false;
+            showToast(apiKey ? 'API key saved' : 'API key cleared');
+            updateStatus();
         });
 
         // Restore saved settings

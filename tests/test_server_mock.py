@@ -5,6 +5,7 @@ the streaming bridge) without OpenVINO, so they run anywhere — including macOS
 """
 
 import asyncio
+import json
 import time
 
 import pytest
@@ -74,6 +75,18 @@ def test_index_constrains_long_model_status(client):
     assert "function setModelStatus" in body
 
 
+def test_index_has_api_key_and_metrics_ui(client):
+    body = client.get("/").text
+    # API-key support: input field, auth header helper, 401 handling.
+    assert 'id="settings-api-key"' in body
+    assert "function authHeaders" in body
+    assert "Authorization" in body
+    assert "handleAuthRequired" in body
+    # Metrics surface in the settings sidebar.
+    assert 'id="info-requests"' in body
+    assert "data.metrics" in body
+
+
 def test_devices_endpoint(client):
     body = client.get("/v1/devices").json()
     assert body["mock"] is True
@@ -135,6 +148,49 @@ def test_load_then_chat_completion(client):
     assert data["usage"]["completion_tokens"] > 0
 
 
+def test_chat_completion_stop_sequence_truncates(client):
+    _load_and_wait(client)
+    resp = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": MODEL_ID,
+            "messages": [{"role": "user", "content": "hi"}],
+            "stream": False,
+            "stop": ["You said"],
+            "seed": 42,
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    content = resp.json()["choices"][0]["message"]["content"]
+    assert "You said" not in content  # generation cut at the stop sequence
+    assert "Mock engine" in content  # text before the stop is preserved
+
+
+def test_chat_completion_streaming_honors_stop(client):
+    _load_and_wait(client)
+    with client.stream(
+        "POST",
+        "/v1/chat/completions",
+        json={
+            "model": MODEL_ID,
+            "messages": [{"role": "user", "content": "hi"}],
+            "stream": True,
+            "stop": ["You said"],
+        },
+    ) as resp:
+        assert resp.status_code == 200
+        body = "".join(resp.iter_text())
+
+    # Reassemble the streamed deltas and confirm the stop sequence never appears.
+    streamed = ""
+    for line in body.splitlines():
+        if line.startswith("data: ") and line != "data: [DONE]":
+            payload = json.loads(line[6:])
+            streamed += payload["choices"][0]["delta"].get("content") or "" if payload["choices"] else ""
+    assert "You said" not in streamed
+    assert '"finish_reason": "stop"' in body
+
+
 def test_chat_completion_streaming(client):
     _load_and_wait(client)
     with client.stream(
@@ -153,6 +209,64 @@ def test_chat_completion_streaming(client):
     assert "data: [DONE]" in body
     assert '"delta"' in body
     assert '"usage"' in body
+
+
+def test_responses_non_streaming(client):
+    _load_and_wait(client)
+    resp = client.post(
+        "/v1/responses",
+        json={"model": MODEL_ID, "input": "hello", "stream": False},
+    )
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["object"] == "response"
+    assert "Mock engine" in data["output"][0]["content"][0]["text"]
+
+
+def test_responses_streaming_emits_events(client):
+    _load_and_wait(client)
+    with client.stream(
+        "POST",
+        "/v1/responses",
+        json={"model": MODEL_ID, "input": "hello", "stream": True},
+    ) as resp:
+        assert resp.status_code == 200
+        assert resp.headers["content-type"].startswith("text/event-stream")
+        body = "".join(resp.iter_text())
+
+    assert "event: response.created" in body
+    assert "event: response.output_text.delta" in body
+    assert "event: response.completed" in body
+    assert "data: [DONE]" in body
+
+    # Reassemble the streamed deltas back into the full text.
+    streamed = ""
+    for line in body.splitlines():
+        if line.startswith("data: ") and line != "data: [DONE]":
+            payload = json.loads(line[6:])
+            if payload.get("type") == "response.output_text.delta":
+                streamed += payload["delta"]
+    assert "Mock engine" in streamed
+
+
+def test_metrics_accumulate_after_requests(client):
+    _load_and_wait(client)
+    # No requests served yet for this model.
+    before = client.get("/v1/system/status").json()["metrics"]
+    assert before["per_model"].get(MODEL_ID, {}).get("requests", 0) == 0
+
+    for _ in range(2):
+        client.post(
+            "/v1/chat/completions",
+            json={"model": MODEL_ID, "messages": [{"role": "user", "content": "hi"}]},
+        )
+
+    metrics = client.get("/v1/system/status").json()["metrics"]
+    per_model = metrics["per_model"][MODEL_ID]
+    assert per_model["requests"] == 2
+    assert per_model["completion_tokens"] > 0
+    assert per_model["avg_latency_ms"] >= 0
+    assert metrics["totals"]["requests"] >= 2
 
 
 def test_chat_on_unloaded_model_returns_409(client):

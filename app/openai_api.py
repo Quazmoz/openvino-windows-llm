@@ -63,6 +63,8 @@ class ChatCompletionRequest(BaseModel):
     stream_options: StreamOptions | None = None
     tools: list[ToolDefinition] | None = None
     tool_choice: Any | None = None  # "auto" | "none" | "required" | {type, function}
+    stop: str | list[str] | None = None  # stop sequence(s) that end generation
+    seed: int | None = None  # seed the sampler for reproducible output (best effort)
 
 
 class ChatCompletionMessage(BaseModel):

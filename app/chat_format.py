@@ -120,6 +120,79 @@ def build_prompt_within_budget(
     return prompt, count_tokens(prompt)
 
 
+# --- Stop sequences --------------------------------------------------------
+
+
+def normalize_stop(stop: str | list[str] | None) -> list[str]:
+    """Coerce the OpenAI ``stop`` field (string, list, or None) to a clean list."""
+    if stop is None:
+        return []
+    if isinstance(stop, str):
+        return [stop] if stop else []
+    return [s for s in stop if isinstance(s, str) and s]
+
+
+def truncate_at_stop(text: str, stop: list[str]) -> tuple[str, bool]:
+    """Cut ``text`` at the earliest occurrence of any stop sequence.
+
+    Returns ``(text, hit)`` where ``hit`` is True if a stop sequence was found
+    (and the stop sequence itself is excluded from the returned text).
+    """
+    earliest = -1
+    for s in stop:
+        idx = text.find(s)
+        if idx != -1 and (earliest == -1 or idx < earliest):
+            earliest = idx
+    if earliest == -1:
+        return text, False
+    return text[:earliest], True
+
+
+class StopStreamer:
+    """Incrementally emit streamed text, stopping at the first stop sequence.
+
+    A stop sequence can straddle two streamed chunks, so the streamer withholds
+    the last ``max_stop_len - 1`` characters until more text confirms they are
+    not the start of a stop sequence. Call :meth:`feed` per chunk and
+    :meth:`flush` once the stream ends.
+    """
+
+    def __init__(self, stop: list[str]) -> None:
+        self.stop = stop
+        self._maxlen = max((len(s) for s in stop), default=0)
+        self._buffer = ""
+        self.stopped = False
+
+    def feed(self, piece: str) -> str:
+        """Return the portion of ``piece`` that is safe to emit now."""
+        if not self.stop:
+            return piece
+        if self.stopped:
+            return ""
+        self._buffer += piece
+        text, hit = truncate_at_stop(self._buffer, self.stop)
+        if hit:
+            self.stopped = True
+            self._buffer = ""
+            return text
+        keep = self._maxlen - 1  # possible partial stop-match to re-check next time
+        if keep <= 0:
+            out, self._buffer = self._buffer, ""
+            return out
+        if len(self._buffer) > keep:
+            out = self._buffer[:-keep]
+            self._buffer = self._buffer[-keep:]
+            return out
+        return ""
+
+    def flush(self) -> str:
+        """Emit any safely-held remainder once the stream has ended."""
+        if self.stopped:
+            return ""
+        out, self._buffer = self._buffer, ""
+        return out
+
+
 def responses_input_to_messages(
     request_input: object,
     instructions: str | None = None,

@@ -57,8 +57,8 @@ local server with the UI, model conversion, catalog, and setup scripts all inclu
 ## What it does
 
 - Runs local LLMs on Windows through **OpenVINO GenAI** (CPU / GPU / NPU / AUTO)
-- Serves an **OpenAI-compatible API** — `/v1/chat/completions` (streaming + non-streaming),
-  `/v1/models`, `/v1/responses`
+- Serves an **OpenAI-compatible API** — `/v1/chat/completions` (streaming + non-streaming,
+  with `stop` sequences and `seed`), `/v1/models`, and `/v1/responses` (streaming + non-streaming)
 - Includes a **built-in browser chat UI** at `http://localhost:8000`
 - **Model lifecycle:** discover, load, unload, delete, with background loading and
   per-model locks so requests never block and two big models don't load at once
@@ -67,11 +67,12 @@ local server with the UI, model conversion, catalog, and setup scripts all inclu
 - **Actionable device errors** (e.g. "OpenVINO doesn't see the NPU — retry with `--device CPU`")
 - A **conversion helper** that exports Hugging Face models to OpenVINO IR
 - A chat UI with one-click catalog model conversion/loading plus a CPU / GPU / NPU device selector
+- **Per-model request metrics** (count, tokens, average latency) on `/v1/system/status`
+  and in the UI's settings panel
 - A **mock engine** that runs the entire stack (API, streaming, UI) on machines without
   OpenVINO — so you can develop/test on macOS or Linux and CI stays green everywhere
-- A **mock engine** that runs the entire stack (API, streaming, UI) on machines without
-  OpenVINO — so you can develop/test on macOS or Linux and CI stays green everywhere
-- Optional **API-key enforcement** for shared/LAN use
+- Optional **API-key enforcement** for shared/LAN use, honored by the built-in UI
+  (set the key in its settings panel)
 
 ### Non-goals
 
@@ -148,15 +149,19 @@ start_server.bat [args]            # activates the venv, passes args to python -
 GET  /                       Built-in chat UI
 GET  /health                 Liveness + mock/device/openvino/loaded-count
 GET  /v1/models              OpenAI-style model list (with load status)
-POST /v1/chat/completions    Chat (streaming SSE + non-streaming), tool calls
-POST /v1/responses           OpenAI Responses API (used by n8n)
+POST /v1/chat/completions    Chat (streaming SSE + non-streaming), tool calls, stop/seed
+POST /v1/responses           OpenAI Responses API (streaming SSE + non-streaming; used by n8n)
 POST /v1/models/convert      Background-convert a catalog model, optionally auto-loading it
 POST /v1/models/load         Background-load a converted model (optional device override)
 POST /v1/models/unload       Unload a model and free memory
 POST /v1/models/delete       Delete a model's on-disk IR directory (frees disk)
 GET  /v1/devices             OpenVINO device discovery + details
-GET  /v1/system/status       CPU / RAM / disk / device / model telemetry
+GET  /v1/system/status       CPU / RAM / disk / device / model telemetry + request metrics
 ```
+
+`/v1/chat/completions` accepts OpenAI `stop` (string or array) and `seed`. Stop sequences are
+applied to both streamed and non-streamed output; `seed` makes sampled output reproducible on
+real OpenVINO hardware (the mock engine is already deterministic).
 
 ### Connecting Open WebUI
 
@@ -329,9 +334,10 @@ If you bind to the LAN: use a trusted private network, add firewall rules intent
 
 **Done** — FastAPI server, `/health`, device discovery, `models.json` + registry,
 `LLMPipeline` wrapper + mock engine, `/v1/models`, streaming + non-streaming
-`/v1/chat/completions`, `/v1/responses`, model load/unload/delete, system status,
-tool-call shim, optional API-key auth, built-in chat UI, conversion helper, Windows
-setup scripts, 69 passing tests.
+`/v1/chat/completions` (with `stop`/`seed`), streaming + non-streaming `/v1/responses`,
+model load/unload/convert/delete, system status with per-model request metrics,
+tool-call shim, optional API-key auth (honored by the built-in UI), built-in chat UI,
+conversion helper, Windows setup scripts, 92 passing tests.
 
 **Next**
 
