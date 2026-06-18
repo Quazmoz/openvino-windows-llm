@@ -19,7 +19,9 @@ def test_parse_device_expression_accepts_simple_and_composite():
         ("AUTO:NPU,GPU,CPU", "AUTO:NPU,GPU,CPU"),
         ("AUTO:GPU,NPU,CPU", "AUTO:GPU,NPU,CPU"),
         ("MULTI:GPU,CPU", "MULTI:GPU,CPU"),
+        ("MULTI:NPU,GPU,CPU", "MULTI:NPU,GPU,CPU"),
         ("HETERO:GPU,CPU", "HETERO:GPU,CPU"),
+        ("HETERO:NPU,GPU,CPU", "HETERO:NPU,GPU,CPU"),
         ("GPU.0", "GPU.0"),
     ]
     for raw, normalized in valid:
@@ -29,12 +31,16 @@ def test_parse_device_expression_accepts_simple_and_composite():
 def test_parse_device_expression_rejects_invalid_values():
     invalid = [
         "",
+        "   ",  # whitespace-only
         "BOGUS",
         "AUTO:",
         "AUTO:BOGUS,CPU",
         "MULTI:NPU,BOGUS",
         "HETERO:",
         "AUTO:NPU,,CPU",
+        "MULTI:",
+        "HETERO:,",
+        "AUTO:NPU GPU CPU",  # space-separated, not comma-separated
     ]
     for raw in invalid:
         try:
