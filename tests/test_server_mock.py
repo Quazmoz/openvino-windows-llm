@@ -482,3 +482,59 @@ def test_events_appear_after_generation(client):
     generated = [ev for ev in events if "Generated" in ev["message"] and "tokens" in ev["message"]]
     assert generated, f"Expected a generation event, got: {events}"
     assert generated[-1]["level"] == "info"
+
+
+def test_cors_middleware_headers():
+    settings = Settings(
+        models_file=BASE_DIR / "models.json",
+        models_dir=BASE_DIR / "models" / "openvino",
+        cors_origins="http://localhost:3000",
+        force_mock=True,
+    )
+    app = create_app(settings)
+    with TestClient(app) as c:
+        headers = {"Origin": "http://localhost:3000"}
+        resp = c.get("/health", headers=headers)
+        assert resp.status_code == 200
+        assert resp.headers.get("access-control-allow-origin") == "http://localhost:3000"
+
+
+def test_auto_convert_triggered_on_load(monkeypatch):
+    settings = Settings(
+        models_file=BASE_DIR / "models.json",
+        models_dir=BASE_DIR / "models" / "openvino",
+        force_mock=False,
+        auto_convert=True,
+    )
+    manager = ModelManager(settings)
+
+    downloaded_states = [False, True]
+
+    def mock_is_downloaded(cfg, base_dir):
+        if downloaded_states:
+            return downloaded_states.pop(0)
+        return True
+
+    import app.model_registry as registry
+    monkeypatch.setattr(registry, "is_downloaded", mock_is_downloaded)
+
+    class FakeEngine:
+        model_id = "smollm2-135m-fp16"
+        device = "CPU"
+        def close(self): pass
+
+    monkeypatch.setattr(manager, "_build_engine", lambda mid, dev: FakeEngine())
+
+    convert_calls = []
+    async def mock_convert_task(model_id, device, load_after):
+        convert_calls.append((model_id, device, load_after))
+
+    monkeypatch.setattr(manager, "_convert_task", mock_convert_task)
+
+    async def run_scenario():
+        await manager._load_task("smollm2-135m-fp16", "CPU")
+
+    asyncio.run(run_scenario())
+
+    assert len(convert_calls) == 1
+    assert convert_calls[0] == ("smollm2-135m-fp16", "CPU", False)

@@ -1614,7 +1614,7 @@
                 const actionLabel = model.can_convert ? 'Conversion failed' : 'Load failed';
                 card.innerHTML = `
                     <div class="action-card-title" style="color:var(--red)">${actionLabel}</div>
-                    <p class="action-card-text">${model.error || 'An error occurred during preparation.'}</p>
+                    <p class="action-card-text">${escapeHtml(model.error || 'An error occurred during preparation.')}</p>
                     <button class="action-btn" onclick="triggerModelPrimaryAction('${model.id}')">
                         Retry Preparation
                     </button>
@@ -1942,7 +1942,7 @@
                         if (queuedPrompt && activeLoaderBubble) {
                             queuedPrompt = null;
                             activeLoaderBubble.firstElementChild.innerHTML = `
-                                <span style="color:var(--red)">⚠ Failed to prepare model: ${wm.error || 'Unknown error'}</span>
+                                <span style="color:var(--red)">⚠ Failed to prepare model: ${escapeHtml(wm.error || 'Unknown error')}</span>
                             `;
                             activeLoaderBubble = null;
                         }

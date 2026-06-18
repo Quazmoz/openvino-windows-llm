@@ -22,6 +22,7 @@ from datetime import datetime, timezone
 
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response, StreamingResponse
 
 from app import chat_format, model_manager, tools
@@ -121,6 +122,17 @@ def create_app(settings: Settings) -> FastAPI:
     app.state.settings = settings
     app.state.manager = manager
 
+    # Configure CORS middleware
+    origins = [orig.strip() for orig in settings.cors_origins.split(",") if orig.strip()]
+    if origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=origins,
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+
     # --- auth (optional) ---------------------------------------------------
 
     def require_api_key(authorization: str | None = Header(default=None)) -> None:
@@ -147,12 +159,15 @@ def create_app(settings: Settings) -> FastAPI:
 
     @app.get("/health")
     async def health():
+        loading_count = manager.loading_count()
         return {
-            "status": "ok",
+            "status": "ok" if loading_count == 0 else "busy",
             "mock": manager.force_mock,
             "device": settings.device,
             "openvino": device_check.is_openvino_available(),
             "models_loaded": len(manager.engines),
+            "loading_count": loading_count,
+            "any_busy": manager.any_busy(),
         }
 
     # --- models ------------------------------------------------------------
@@ -674,6 +689,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--mock", action="store_true", help="Force the mock engine (no OpenVINO)")
     parser.add_argument("--list", action="store_true", help="List catalog models and exit")
     parser.add_argument("--check-devices", action="store_true", help="Show OpenVINO devices and exit")
+    parser.add_argument("--auto-convert", action="store_true", help="Auto-convert/download models on startup or load")
     args = parser.parse_args(argv)
 
     if args.list:
@@ -707,6 +723,7 @@ def main(argv: list[str] | None = None) -> int:
         "port": args.port,
         "default_model": args.model,
         "force_mock": True if args.mock else None,
+        "auto_convert": True if args.auto_convert else None,
     }
     resolved = base.replace(**overrides)
 

@@ -42,6 +42,8 @@ class Settings:
     default_model: str | None = None
     api_key: str | None = None
     force_mock: bool = False
+    auto_convert: bool = False
+    cors_origins: str = "*"
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -55,6 +57,8 @@ class Settings:
             default_model=(os.environ.get("OV_LLM_MODEL") or "").strip() or None,
             api_key=(os.environ.get("OV_LLM_API_KEY") or "").strip() or None,
             force_mock=_bool_env("OV_LLM_MOCK"),
+            auto_convert=_bool_env("OV_LLM_AUTO_CONVERT"),
+            cors_origins=os.environ.get("OV_LLM_CORS_ORIGINS", "*"),
         )
 
     def replace(self, **changes) -> Settings:

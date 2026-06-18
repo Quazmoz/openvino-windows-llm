@@ -248,11 +248,23 @@ class ModelManager:
                     if not device_check.is_device_available(device, available):
                         raise RuntimeError(errors.format_device_error(device, available))
                     if not registry.is_downloaded(cfg, BASE_DIR):
-                        raise RuntimeError(
-                            errors.format_model_not_converted(
-                                cfg.name, str(cfg.abs_path(BASE_DIR)), cfg.source_model
+                        if self.settings.auto_convert:
+                            logger.info(
+                                "Model '%s' not found locally. Auto-convert is enabled. Starting conversion...",
+                                model_id,
                             )
-                        )
+                            await self._convert_task(model_id, device, load_after=False)
+                            self._set_status(model_id, "loading")
+                            if not registry.is_downloaded(cfg, BASE_DIR):
+                                raise RuntimeError(
+                                    f"Auto-conversion failed for '{cfg.name}'. Please check logs."
+                                )
+                        else:
+                            raise RuntimeError(
+                                errors.format_model_not_converted(
+                                    cfg.name, str(cfg.abs_path(BASE_DIR)), cfg.source_model
+                                )
+                            )
 
                 loop = asyncio.get_running_loop()
                 engine = await loop.run_in_executor(None, self._build_engine, model_id, device)

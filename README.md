@@ -292,11 +292,12 @@ $env:REQUESTS_CA_BUNDLE = "C:\path\to\company-root-ca.pem"
 $env:SSL_CERT_FILE       = "C:\path\to\company-root-ca.pem"
 ```
 
-### Gated models (Llama, etc.)
+### Gated models (Llama, Gemma, etc.)
 
-1. Accept the model license on Hugging Face
-2. Create a token at https://huggingface.co/settings/tokens
-3. `setx HF_TOKEN hf_your_token_here` (or set it in `.env`) before converting
+1. **Accept the model license** on Hugging Face (e.g. [google/gemma-2-2b-it](https://huggingface.co/google/gemma-2-2b-it)).
+2. **Create a token** at https://huggingface.co/settings/tokens.
+3. **Configure the token**: Set it in `.env` (`HF_TOKEN=hf_...`) or shell env before converting.
+   - *Note: Running `setup.bat` will automatically copy a cached CLI token if you previously ran `huggingface-cli login`, or prompt you to paste one.*
 
 ### Device errors
 

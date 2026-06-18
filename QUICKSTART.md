@@ -47,6 +47,13 @@ To run real AI inference locally, convert a model from Hugging Face into the loc
 .\setup\convert_model.ps1 -Id tinyllama-1.1b-chat-fp16
 ```
 
+> [!IMPORTANT]
+> **Converting Gated Models (e.g. Gemma 2, Llama 3.2, Llama 3.1)**:
+> 1. **Accept License Terms**: Visit the model's repository on [Hugging Face](https://huggingface.co) and accept the license terms.
+> 2. **Set Access Token**: Generate a token in [Hugging Face Settings](https://huggingface.co/settings/tokens) and configure it in your `.env` file (`HF_TOKEN=your_token`).
+> 
+> *Tip: The setup script (`setup.bat`) automatically checks for an active Hugging Face CLI cache token to copy to `.env` or prompts you to enter one interactively.*
+
 ---
 
 ## 4. Run Local Inference
