@@ -9,7 +9,8 @@
 **OpenVINO Windows LLM turns Intel Windows PCs into local AI workstations.** It wraps
 OpenVINO GenAI in a laptop-friendly, OpenAI-compatible server with streaming chat,
 model lifecycle management, Hugging Face-to-OpenVINO conversion helpers, a built-in
-browser UI, and direct targeting for Intel **CPU, GPU, NPU, and AUTO** devices.
+browser UI, direct targeting for Intel **CPU, GPU, NPU, and AUTO** devices, and
+experimental OpenVINO advanced device routing.
 
 Use it when you want a practical local LLM stack for Windows without Docker, cloud
 APIs, llama.cpp/GGUF limitations, or the now-legacy IPEX-LLM workflow. It is designed
@@ -18,7 +19,7 @@ agents, or their own apps to an OpenVINO-powered local inference endpoint.
 
 > **Status: working.** The server, OpenAI-compatible API, streaming, web UI, model
 > lifecycle (load/unload/delete), device discovery, conversion helper, and Windows
-> setup scripts are all implemented. The full test suite (92 tests) passes against a
+> setup scripts are all implemented. The mock-backed test suite passes against a
 > built-in mock engine, so the stack runs end-to-end on any OS. Real OpenVINO
 > inference runs on Windows/Intel hardware once you've converted a model.
 
@@ -68,6 +69,8 @@ local server with the UI, model conversion, catalog, and setup scripts all inclu
 ## What it does
 
 - Runs local LLMs on Windows through **OpenVINO GenAI** (CPU / GPU / NPU / AUTO)
+- Supports experimental OpenVINO device expressions such as `AUTO:NPU,GPU,CPU`
+  and `AUTO:GPU,NPU,CPU`
 - Serves an **OpenAI-compatible API** — `/v1/chat/completions` (streaming + non-streaming,
   with `stop` sequences and `seed`), `/v1/models`, and `/v1/responses` (streaming + non-streaming)
 - Includes a **built-in browser chat UI** at `http://localhost:8000`
@@ -77,7 +80,7 @@ local server with the UI, model conversion, catalog, and setup scripts all inclu
   with malformed-call retry
 - **Actionable device errors** (e.g. "OpenVINO doesn't see the NPU — retry with `--device CPU`")
 - A **conversion helper** that exports Hugging Face models to OpenVINO IR
-- A chat UI with one-click catalog model conversion/loading plus a CPU / GPU / NPU device selector
+- A chat UI with one-click catalog model conversion/loading plus simple and advanced device selectors
 - **Per-model request metrics** (count, tokens, average latency) on `/v1/system/status`
   and in the UI's settings panel
 - A **mock engine** that runs the entire stack (API, streaming, UI) on machines without
@@ -144,7 +147,7 @@ If you don't have Intel hardware or are developing on macOS/Linux, run the serve
 start_server.bat [args]            # activates the venv, passes args to python -m app.server
 
   --model <id>        Model id from models.json to auto-load on startup
-  --device <dev>      CPU | GPU | NPU | AUTO
+  --device <dev>      CPU | GPU | NPU | AUTO | AUTO:NPU,GPU,CPU | ...
   --host <host>       Bind host (default 127.0.0.1)
   --port <port>       Bind port (default 8000)
   --mock              Force the mock engine (no OpenVINO needed)
@@ -190,7 +193,7 @@ Copy `.env.example` to `.env`, or set environment variables directly:
 ```powershell
 $env:OV_LLM_HOST        = "127.0.0.1"
 $env:OV_LLM_PORT        = "8000"
-$env:OV_LLM_DEVICE      = "NPU"                 # CPU | GPU | NPU | AUTO
+$env:OV_LLM_DEVICE      = "NPU"                 # CPU | GPU | NPU | AUTO | AUTO:NPU,GPU,CPU
 $env:OV_LLM_MODEL       = "tinyllama-1.1b-chat-fp16" # auto-load on startup (blank = none)
 $env:OV_LLM_MODELS_FILE = "models.json"
 $env:OV_LLM_MODELS_DIR  = "models\openvino"
@@ -201,6 +204,51 @@ $env:HF_TOKEN           = "hf_..."              # only for converting gated mode
 
 CLI flags override environment values. Paths resolve against the repo root regardless of
 your working directory.
+
+---
+
+## Device modes: CPU, GPU, NPU, AUTO, and experimental multi-device routing
+
+The server passes the selected device string directly to `openvino_genai.LLMPipeline`.
+Simple targets run on one OpenVINO target:
+
+- `CPU`, `GPU`, `NPU`: load and run on that target.
+- `AUTO`: let OpenVINO choose a suitable available target.
+- `AUTO:NPU,GPU,CPU`: prioritize NPU, then GPU, then CPU.
+- `AUTO:GPU,NPU,CPU`: prioritize GPU, then NPU, then CPU.
+
+Experimental targets are accepted for users who want to test OpenVINO's advanced
+routing modes on their own hardware:
+
+- `MULTI:NPU,GPU,CPU`: may help throughput for concurrent inference workloads, but
+  may not improve one chat request.
+- `HETERO:NPU,GPU,CPU`: graph partitioning across devices; it can be slower if
+  cross-device transfer overhead dominates.
+
+LLM token generation does not necessarily scale additively across NPU + GPU + CPU.
+Treat advanced modes as routing/fallback experiments and benchmark your hardware.
+
+Examples:
+
+```powershell
+.\start_server.bat --model tinyllama-1.1b-chat-fp16 --device AUTO:NPU,GPU,CPU
+.\start_server.bat --model tinyllama-1.1b-chat-fp16 --device AUTO:GPU,NPU,CPU
+.\start_server.bat --model tinyllama-1.1b-chat-fp16 --device MULTI:NPU,GPU,CPU
+```
+
+Benchmark the same model across targets:
+
+```powershell
+python scripts\benchmark_devices.py tinyllama-1.1b-chat-fp16
+python scripts\benchmark_devices.py tinyllama-1.1b-chat-fp16 --experimental --json .tmp\device-benchmark.json
+```
+
+When passing a custom list that includes composite targets, semicolons avoid
+ambiguity with the commas inside OpenVINO device priorities:
+
+```powershell
+python scripts\benchmark_devices.py tinyllama-1.1b-chat-fp16 --devices "CPU;GPU;AUTO:NPU,GPU,CPU"
+```
 
 ---
 
@@ -320,6 +368,11 @@ Check what your machine exposes:
 ```
 
 If `NPU` doesn't work, retry with `--device CPU` while you sort out drivers.
+For advanced targets, run the benchmark script before assuming a faster path:
+
+```powershell
+python scripts\benchmark_devices.py tinyllama-1.1b-chat-fp16 --experimental
+```
 
 ### First-run conversion is slow
 
@@ -349,12 +402,13 @@ If you bind to the LAN: use a trusted private network, add firewall rules intent
 `/v1/chat/completions` (with `stop`/`seed`), streaming + non-streaming `/v1/responses`,
 model load/unload/convert/delete, system status with per-model request metrics,
 tool-call shim, optional API-key auth (honored by the built-in UI), built-in chat UI,
-conversion helper, Windows setup scripts, 92 passing tests.
+conversion helper, advanced OpenVINO device routing, benchmark tooling, Windows
+setup scripts, and a passing mock-backed test suite.
 
 **Next**
 
 - [ ] Auto-download + convert a catalog model on first load (drop the manual step)
-- [ ] CPU / GPU / NPU benchmark numbers on real Intel hardware
+- [ ] Hardware benchmark table with CPU / GPU / NPU / AUTO / MULTI results from real Intel systems
 - [ ] Documented model ↔ device compatibility matrix and known driver issues
 - [ ] Open WebUI and n8n validation write-ups
 - [ ] Support/diagnostics bundle command

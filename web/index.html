@@ -193,7 +193,11 @@
         }
 
         #device-select {
-            width: 76px;
+            width: 78px;
+        }
+
+        #device-select.has-advanced-value {
+            width: 190px;
         }
 
         #model-select:hover,
@@ -218,6 +222,27 @@
             pointer-events: none;
             color: var(--text-3);
             font-size: 10px;
+        }
+
+        .device-warning {
+            display: none;
+            position: absolute;
+            right: 0;
+            top: calc(100% + 8px);
+            z-index: 20;
+            width: min(360px, 72vw);
+            padding: 8px 10px;
+            border: 1px solid rgba(245, 158, 11, 0.35);
+            border-radius: var(--radius-sm);
+            background: rgba(24, 20, 14, 0.96);
+            color: #f5d48c;
+            font-size: 11px;
+            line-height: 1.35;
+            box-shadow: var(--shadow-md);
+        }
+
+        .device-select-wrap.show-warning .device-warning {
+            display: block;
         }
 
         .icon-btn {
@@ -1255,8 +1280,18 @@
                         <option value="NPU">NPU</option>
                         <option value="GPU">GPU</option>
                         <option value="CPU">CPU</option>
+                        <option value="AUTO">AUTO</option>
+                        <optgroup label="Advanced / Experimental">
+                            <option value="AUTO:NPU,GPU,CPU">AUTO:NPU,GPU,CPU</option>
+                            <option value="AUTO:GPU,NPU,CPU">AUTO:GPU,NPU,CPU</option>
+                            <option value="MULTI:NPU,GPU,CPU">MULTI:NPU,GPU,CPU</option>
+                            <option value="HETERO:NPU,GPU,CPU">HETERO:NPU,GPU,CPU</option>
+                        </optgroup>
                     </select>
                     <span class="device-arrow">▾</span>
+                    <span class="device-warning" id="device-warning">
+                        Advanced OpenVINO device modes may improve portability or throughput, but they do not guarantee faster single-prompt generation. Benchmark your hardware.
+                    </span>
                 </div>
                 <div class="btn-group">
                     <button class="icon-btn" id="load-model-btn" title="Load selected model"
@@ -1483,6 +1518,13 @@
         const STOP_ICON = '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>';
         const LOAD_ICON = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 5v14l11-7z"/></svg>';
         const CONVERT_ICON = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>';
+        const SIMPLE_DEVICE_OPTIONS = ['NPU', 'GPU', 'CPU', 'AUTO'];
+        const DEFAULT_ADVANCED_DEVICE_OPTIONS = [
+            'AUTO:NPU,GPU,CPU',
+            'AUTO:GPU,NPU,CPU',
+            'MULTI:NPU,GPU,CPU',
+            'HETERO:NPU,GPU,CPU',
+        ];
 
         // ── DOM Refs ──────────────────────────────────────────
         const chatInner = document.getElementById('chat-inner');
@@ -1492,6 +1534,7 @@
         const sendBtn = document.getElementById('send-btn');
         const modelSelect = document.getElementById('model-select');
         const deviceSelect = document.getElementById('device-select');
+        const deviceWarning = document.getElementById('device-warning');
         const loadModelBtn = document.getElementById('load-model-btn');
         const unloadModelBtn = document.getElementById('unload-model-btn');
         const deleteModelBtn = document.getElementById('delete-model-btn');
@@ -1743,8 +1786,58 @@
             if (model.is_loaded && model.device) return `${model.name} (${req}) · ${model.status_label} (${model.device})`;
             return `${model.name} (${req}) · ${model.status_label}`;
         }
-        function normalizeUiDevice(device) { return ['CPU', 'GPU', 'NPU'].includes(device) ? device : 'NPU'; }
+        function normalizeUiDevice(device) {
+            const value = String(device || '').trim().toUpperCase();
+            return value || 'NPU';
+        }
+        function isAdvancedDevice(device) { return normalizeUiDevice(device).includes(':'); }
         function modelLoadDevice() { return normalizeUiDevice(selectedDevice || defaultDevice); }
+        function deviceSuggestionValue(item) {
+            return normalizeUiDevice(typeof item === 'string' ? item : item?.device);
+        }
+        function appendDeviceOption(parent, value, label, title) {
+            const opt = document.createElement('option');
+            opt.value = value;
+            opt.textContent = label || value;
+            if (title) opt.title = title;
+            parent.appendChild(opt);
+        }
+        function renderDeviceOptions(dev = {}) {
+            const selected = modelLoadDevice();
+            const advanced = new Map();
+            DEFAULT_ADVANCED_DEVICE_OPTIONS.forEach(value => advanced.set(value, { experimental: value.startsWith('MULTI:') || value.startsWith('HETERO:') }));
+            (dev.suggestions || []).forEach(item => {
+                const value = deviceSuggestionValue(item);
+                if (!value || SIMPLE_DEVICE_OPTIONS.includes(value)) return;
+                advanced.set(value, {
+                    experimental: !!item.experimental,
+                    note: item.note || '',
+                });
+            });
+            if (!SIMPLE_DEVICE_OPTIONS.includes(selected)) {
+                advanced.set(selected, advanced.get(selected) || { experimental: isAdvancedDevice(selected), note: '' });
+            }
+
+            deviceSelect.innerHTML = '';
+            SIMPLE_DEVICE_OPTIONS.forEach(value => appendDeviceOption(deviceSelect, value));
+            if (advanced.size) {
+                const group = document.createElement('optgroup');
+                group.label = 'Advanced / Experimental';
+                advanced.forEach((meta, value) => {
+                    const suffix = meta.experimental ? ' experimental' : '';
+                    appendDeviceOption(group, value, value, `${value}${suffix}${meta.note ? ` - ${meta.note}` : ''}`);
+                });
+                deviceSelect.appendChild(group);
+            }
+            deviceSelect.value = selected;
+            updateDeviceWarning();
+        }
+        function updateDeviceWarning() {
+            const advanced = isAdvancedDevice(selectedDevice);
+            deviceSelect.classList.toggle('has-advanced-value', advanced);
+            deviceSelect.parentElement.classList.toggle('show-warning', advanced);
+            deviceWarning.setAttribute('aria-hidden', advanced ? 'false' : 'true');
+        }
 
         function renderModelOptions(models) {
             const previousValue = modelSelect.value;
@@ -1935,7 +2028,7 @@
                 isMock = !!dev.mock;
                 defaultDevice = normalizeUiDevice(dev.default || 'NPU');
                 selectedDevice = normalizeUiDevice(selectedDevice || defaultDevice);
-                deviceSelect.value = selectedDevice;
+                renderDeviceOptions(dev);
                 const busy = !!dev.busy;
                 const loadingCount = data.models.loading_count || 0;
                 const modelEntries = data.models.available || [];
@@ -2263,6 +2356,7 @@
             if (newDevice === selectedDevice) return;
             selectedDevice = newDevice;
             localStorage.setItem('ovllm.device.v1', selectedDevice);
+            updateDeviceWarning();
             updateModelUi();
             // If the selected model is loaded on a different device, auto-switch
             const model = getSelectedModelMeta();

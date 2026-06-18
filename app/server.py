@@ -26,7 +26,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response, StreamingResponse
 
 from app import chat_format, model_manager, tools
-from app.config import BASE_DIR, VALID_DEVICES, Settings
+from app.config import BASE_DIR, Settings
 from app.openai_api import (
     ChatCompletionMessage,
     ChatCompletionRequest,
@@ -62,6 +62,15 @@ def _load_dotenv() -> None:
     if env_path.exists():
         load_dotenv(env_path)
         logger.info("Loaded environment from %s", env_path)
+
+
+def _normalize_device_or_400(device: str | None) -> str | None:
+    if device is None:
+        return None
+    try:
+        return device_check.validate_device_expression(device)
+    except device_check.DeviceValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 # --- Generation helpers ----------------------------------------------------
@@ -198,10 +207,9 @@ def create_app(settings: Settings) -> FastAPI:
     async def load_model(req: ModelLoadRequest):
         if req.model not in manager.catalog:
             raise HTTPException(status_code=404, detail=f"Unknown model '{req.model}'")
-        if req.device and device_check.normalize_device(req.device) not in VALID_DEVICES:
-            raise HTTPException(status_code=400, detail=f"Invalid device '{req.device}'")
+        device = _normalize_device_or_400(req.device)
 
-        task = manager.schedule_load(req.model, req.device)
+        task = manager.schedule_load(req.model, device)
         entry = manager.catalog_entry(req.model)
         if task is None and entry["is_loaded"]:
             return {"status": "loaded", "message": f"{entry['name']} is already loaded.", "model": entry}
@@ -215,13 +223,12 @@ def create_app(settings: Settings) -> FastAPI:
     async def convert_model(req: ModelConvertRequest):
         if req.model not in manager.catalog:
             raise HTTPException(status_code=404, detail=f"Unknown model '{req.model}'")
-        if req.device and device_check.normalize_device(req.device) not in VALID_DEVICES:
-            raise HTTPException(status_code=400, detail=f"Invalid device '{req.device}'")
+        device = _normalize_device_or_400(req.device)
         cfg = manager.catalog[req.model]
         if not cfg.source_model:
             raise HTTPException(status_code=400, detail=f"Model '{req.model}' has no source model configured")
 
-        task = manager.schedule_convert(req.model, req.device, load_after=req.load_after)
+        task = manager.schedule_convert(req.model, device, load_after=req.load_after)
         entry = manager.catalog_entry(req.model)
         if task is None and entry["is_downloaded"]:
             return {"status": entry["status"], "message": f"{entry['name']} is already converted.", "model": entry}
@@ -281,23 +288,30 @@ def create_app(settings: Settings) -> FastAPI:
 
     @app.get("/v1/devices", dependencies=auth)
     async def devices():
+        available = device_check.available_devices()
         return {
             "default_device": settings.device,
             "openvino_available": device_check.is_openvino_available(),
             "mock": manager.force_mock,
+            "available": available,
             "devices": device_check.device_details(),
+            "suggestions": device_check.suggested_device_targets(available),
+            "supported_examples": device_check.supported_device_examples(),
         }
 
     @app.get("/v1/system/status", dependencies=auth)
     async def system_status():
         entries = manager.catalog_entries()
+        available = device_check.available_devices()
         return {
             "memory": memory_stats(),
             "cpu": cpu_stats(),
             "device": {
                 "default": settings.device,
                 "mock": manager.force_mock,
-                "available": device_check.available_devices(),
+                "available": available,
+                "suggestions": device_check.suggested_device_targets(available),
+                "loaded": dict(manager.devices),
                 "busy": manager.any_busy(),
             },
             "models": {
@@ -687,7 +701,10 @@ def main(argv: list[str] | None = None) -> int:
 
     parser = argparse.ArgumentParser(description="OpenVINO Windows LLM server")
     parser.add_argument("--model", help="Model id to auto-load on startup (from models.json)")
-    parser.add_argument("--device", choices=list(VALID_DEVICES), help="Inference device")
+    parser.add_argument(
+        "--device",
+        help="Inference device expression, e.g. CPU, GPU, NPU, AUTO, AUTO:NPU,GPU,CPU",
+    )
     parser.add_argument("--host", help="Bind host (default 127.0.0.1)")
     parser.add_argument("--port", type=int, help="Bind port (default 8000)")
     parser.add_argument("--mock", action="store_true", help="Force the mock engine (no OpenVINO)")
@@ -716,13 +733,27 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Devices: {', '.join(available) if available else '(none detected)'}")
         for d in device_check.device_details():
             print(f"  {d['device']}: {d['full_name']}")
+        suggestions = device_check.suggested_device_targets(available)
+        if suggestions:
+            print("Suggested advanced targets:")
+            for item in suggestions:
+                suffix = " (experimental)" if item["experimental"] else ""
+                print(f"  {item['device']}{suffix}: {item['note']}")
         return 0
 
     if args.mock:
         os.environ["OV_LLM_MOCK"] = "1"
 
+    if args.device is not None:
+        try:
+            device = device_check.validate_device_expression(args.device)
+        except device_check.DeviceValidationError as exc:
+            parser.error(str(exc))
+    else:
+        device = None
+
     overrides = {
-        "device": device_check.normalize_device(args.device) if args.device else None,
+        "device": device,
         "host": args.host,
         "port": args.port,
         "default_model": args.model,

@@ -11,10 +11,12 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from runtime.device_check import normalize_device
+
 # Repository root: .../openvino-windows-llm  (parent of the app/ package).
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-VALID_DEVICES = ("CPU", "GPU", "NPU", "AUTO")
+VALID_DEVICES = ("CPU", "GPU", "NPU", "AUTO")  # Simple UI/default choices; parser accepts more.
 
 _TRUTHY = {"1", "true", "yes", "on"}
 
@@ -50,7 +52,7 @@ class Settings:
         return cls(
             host=os.environ.get("OV_LLM_HOST", "127.0.0.1"),
             port=int(os.environ.get("OV_LLM_PORT", "8000")),
-            device=os.environ.get("OV_LLM_DEVICE", "NPU").upper(),
+            device=normalize_device(os.environ.get("OV_LLM_DEVICE", "NPU")),
             models_file=_resolve(os.environ.get("OV_LLM_MODELS_FILE", "models.json")),
             models_dir=_resolve(os.environ.get("OV_LLM_MODELS_DIR", "models/openvino")),
             cache_dir=_resolve(os.environ.get("OV_LLM_CACHE_DIR", "models/cache")),

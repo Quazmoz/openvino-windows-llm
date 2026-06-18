@@ -10,6 +10,8 @@ from __future__ import annotations
 import os
 import ssl
 
+from runtime import device_check
+
 
 def is_tls_certificate_error(exc: BaseException) -> bool:
     """True if anywhere in the exception chain is a TLS cert-verification failure."""
@@ -113,6 +115,7 @@ def format_model_not_converted(model_name: str, model_dir: str, source_model: st
 def format_device_error(device: str, available: list[str]) -> str:
     """Message shown when the requested device is unavailable to OpenVINO."""
     avail = ", ".join(available) if available else "none detected"
+    examples = ", ".join(device_check.supported_device_examples())
     extra = ""
     if device == "NPU":
         extra = (
@@ -122,5 +125,6 @@ def format_device_error(device: str, available: list[str]) -> str:
     elif device == "GPU":
         extra = " Confirm the Intel GPU driver is installed, then retry, or fall back to --device CPU."
     return (
-        f"OpenVINO device '{device}' is not available. Detected devices: {avail}.{extra}"
+        f"OpenVINO device '{device}' is not available. Detected devices: {avail}. "
+        f"Supported examples: {examples}.{extra}"
     )

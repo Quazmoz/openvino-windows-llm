@@ -6,6 +6,7 @@ from app.model_registry import (
     load_catalog,
     make_catalog_entry,
 )
+from runtime.device_check import parse_device_expression
 
 
 def _write_catalog(tmp_path, data):
@@ -35,11 +36,11 @@ def test_load_catalog_parses_entries(tmp_path):
     assert cfg.recommended_device == "NPU"
 
 
-def test_shipped_catalog_is_npu_fp16_only():
+def test_shipped_catalog_is_fp16_with_supported_recommended_devices():
     catalog = load_catalog(BASE_DIR / "models.json")
     assert catalog
     assert all(cfg.weight_format == "fp16" for cfg in catalog.values())
-    assert all(cfg.recommended_device == "NPU" for cfg in catalog.values())
+    assert all(parse_device_expression(cfg.recommended_device) for cfg in catalog.values())
 
 
 def test_load_catalog_missing_file_returns_empty(tmp_path):

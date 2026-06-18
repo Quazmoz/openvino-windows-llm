@@ -72,6 +72,32 @@ Open **http://localhost:8000** to chat!
 
 ---
 
+## Device modes: CPU, GPU, NPU, AUTO, and experimental multi-device routing
+
+Use `CPU`, `GPU`, or `NPU` to run on one target. `AUTO` lets OpenVINO choose an
+available target, while `AUTO:NPU,GPU,CPU` and `AUTO:GPU,NPU,CPU` set explicit
+fallback priorities.
+
+```powershell
+.\start_server.bat --model tinyllama-1.1b-chat-fp16 --device AUTO:NPU,GPU,CPU
+.\start_server.bat --model tinyllama-1.1b-chat-fp16 --device AUTO:GPU,NPU,CPU
+```
+
+`MULTI` and `HETERO` are experimental. They may help some throughput or graph
+partitioning cases, but they do not guarantee faster single-prompt generation:
+
+```powershell
+.\start_server.bat --model tinyllama-1.1b-chat-fp16 --device MULTI:NPU,GPU,CPU
+```
+
+Benchmark your own hardware before choosing an advanced mode:
+
+```powershell
+python scripts\benchmark_devices.py tinyllama-1.1b-chat-fp16 --experimental
+```
+
+---
+
 ## Useful Commands
 
 - **List catalog models**: `.\start_server.bat --list`

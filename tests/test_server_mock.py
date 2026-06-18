@@ -64,6 +64,9 @@ def test_index_includes_device_selector(client):
     body = client.get("/").text
     assert 'id="device-select"' in body
     assert '<option value="NPU">NPU</option>' in body
+    assert '<option value="AUTO">AUTO</option>' in body
+    assert '<optgroup label="Advanced / Experimental">' in body
+    assert '<option value="AUTO:NPU,GPU,CPU">AUTO:NPU,GPU,CPU</option>' in body
     assert "/v1/models/convert" in body
     assert "Convert & load selected model" in body or "Convert and load selected model" in body
 
@@ -92,6 +95,9 @@ def test_devices_endpoint(client):
     assert body["mock"] is True
     assert body["default_device"] == "NPU"
     assert "devices" in body
+    assert "available" in body
+    assert "suggestions" in body
+    assert "AUTO:NPU,GPU,CPU" in body["supported_examples"]
 
 
 def test_load_model_uses_requested_device(client):
@@ -107,6 +113,33 @@ def test_load_model_uses_requested_device(client):
             return
         time.sleep(0.05)
     raise AssertionError("model did not load in time")
+
+
+def test_load_model_accepts_composite_device_in_mock_mode(client):
+    target = "AUTO:NPU,GPU,CPU"
+    resp = client.post("/v1/models/load", json={"model": MODEL_ID, "device": target})
+    assert resp.status_code == 200, resp.text
+
+    deadline = time.time() + 10
+    while time.time() < deadline:
+        body = client.get("/v1/system/status").json()
+        entry = next(m for m in body["models"]["available"] if m["id"] == MODEL_ID)
+        if entry["is_loaded"]:
+            assert entry["device"] == target
+            assert body["device"]["loaded"][MODEL_ID] == target
+            return
+        time.sleep(0.05)
+    raise AssertionError("model did not load in time")
+
+
+def test_load_model_rejects_invalid_device(client):
+    resp = client.post("/v1/models/load", json={"model": MODEL_ID, "device": "AUTO:NPU,,CPU"})
+    assert resp.status_code == 400
+    assert "Supported examples" in resp.json()["detail"]
+
+    resp = client.post("/v1/models/load", json={"model": MODEL_ID, "device": ""})
+    assert resp.status_code == 400
+    assert "empty" in resp.json()["detail"]
 
 
 def test_convert_model_endpoint_schedules_background_task(client):
@@ -129,6 +162,35 @@ def test_convert_model_endpoint_schedules_background_task(client):
     assert body["status"] == "converting"
     assert body["model"]["is_loading"] is True
     assert calls == [("qwen2.5-1.5b-fp16", "NPU", True)]
+
+
+def test_convert_model_accepts_normalized_composite_device(client):
+    manager = client.app.state.manager
+    calls = []
+
+    def fake_schedule_convert(model_id, device=None, *, load_after=True):
+        calls.append((model_id, device, load_after))
+        manager._set_status(model_id, "queued_convert")
+        return object()
+
+    manager.schedule_convert = fake_schedule_convert
+    resp = client.post(
+        "/v1/models/convert",
+        json={"model": "qwen2.5-1.5b-fp16", "device": "auto:npu, gpu, cpu", "load_after": True},
+    )
+
+    assert resp.status_code == 200, resp.text
+    assert calls == [("qwen2.5-1.5b-fp16", "AUTO:NPU,GPU,CPU", True)]
+
+
+def test_convert_model_rejects_invalid_device(client):
+    resp = client.post(
+        "/v1/models/convert",
+        json={"model": "qwen2.5-1.5b-fp16", "device": "MULTI:NPU,BOGUS", "load_after": True},
+    )
+
+    assert resp.status_code == 400
+    assert "BOGUS" in resp.json()["detail"]
 
 
 def test_load_then_chat_completion(client):
@@ -500,6 +562,7 @@ def test_cors_middleware_headers():
 
 
 def test_auto_convert_triggered_on_load(monkeypatch):
+    monkeypatch.setattr("runtime.device_check.is_openvino_available", lambda: True)
     settings = Settings(
         models_file=BASE_DIR / "models.json",
         models_dir=BASE_DIR / "models" / "openvino",

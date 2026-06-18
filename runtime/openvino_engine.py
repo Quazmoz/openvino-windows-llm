@@ -278,7 +278,9 @@ def build_plugin_config(
     """Device-specific OpenVINO plugin config.
 
     The NPU plugin compiles to static shapes and benefits from an explicit prompt
-    length bound; CPU/GPU/AUTO use defaults.
+    length bound. Composite targets such as ``AUTO:NPU,GPU,CPU`` intentionally
+    use OpenVINO GenAI defaults because plugin-option behavior can differ across
+    routed devices.
     """
     device = normalize_device(device)
     config: dict = {}

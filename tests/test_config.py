@@ -64,6 +64,12 @@ def test_from_env_parses_overrides(clean_env):
     assert s.cors_origins == "http://localhost:3000,http://localhost:8080"
 
 
+def test_from_env_normalizes_composite_device(clean_env):
+    clean_env.setenv("OV_LLM_DEVICE", " auto:npu, gpu, cpu ")
+    s = Settings.from_env()
+    assert s.device == "AUTO:NPU,GPU,CPU"
+
+
 def test_from_env_blank_optional_values_become_none(clean_env):
     clean_env.setenv("OV_LLM_MODEL", "   ")
     clean_env.setenv("OV_LLM_API_KEY", "")
