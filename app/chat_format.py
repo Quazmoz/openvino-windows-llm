@@ -24,26 +24,62 @@ ApplyTemplate = Callable[[list[dict]], str]
 CountTokens = Callable[[str], int]
 
 
+def _content_to_text(content: object) -> str:
+    """Convert OpenAI-style message content into text.
+
+    Chat Completions usually sends content as a string, but the Responses API and
+    some OpenAI-compatible clients send a list of content parts. Preserve textual
+    parts instead of rendering Python reprs such as ``[{'type': 'input_text', ...}]``.
+    """
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, dict):
+                for key in ("text", "content", "value"):
+                    value = item.get(key)
+                    if isinstance(value, str):
+                        parts.append(value)
+                        break
+        if parts:
+            return "\n".join(parts)
+    return str(content)
+
+
 def normalize_messages(
     messages: list[ChatMessage],
     system_override: str = "",
 ) -> list[dict]:
     """Convert request messages into ``{role, content}`` dicts.
 
-    If ``system_override`` is provided it replaces any leading system message
-    (used to inject the tool-calling instructions).
+    If ``system_override`` is provided, it is appended to any leading system
+    message instead of replacing it. This preserves caller-provided instructions
+    while still injecting server-side tool-calling instructions.
     """
     out: list[dict] = []
     msgs = list(messages)
     has_leading_system = bool(msgs) and msgs[0].role == "system"
 
     if system_override:
-        out.append({"role": "system", "content": system_override})
         if has_leading_system:
-            msgs = msgs[1:]  # the override supersedes the caller's system prompt
+            original_system = _content_to_text(msgs[0].content).strip()
+            combined_system = (
+                f"{original_system}\n\n{system_override.strip()}"
+                if original_system
+                else system_override.strip()
+            )
+            out.append({"role": "system", "content": combined_system})
+            msgs = msgs[1:]
+        else:
+            out.append({"role": "system", "content": system_override})
 
     for m in msgs:
-        content = m.content or ""
+        content = _content_to_text(m.content)
 
         if m.role == "tool":
             label = f" (call {m.tool_call_id})" if m.tool_call_id else ""
@@ -208,7 +244,10 @@ def responses_input_to_messages(
         for msg in request_input:
             if isinstance(msg, dict):
                 out.append(
-                    {"role": msg.get("role", "user"), "content": str(msg.get("content", ""))}
+                    {
+                        "role": str(msg.get("role", "user")),
+                        "content": _content_to_text(msg.get("content", "")),
+                    }
                 )
     else:
         raise ValueError("Responses 'input' must be a string or a list of messages")
