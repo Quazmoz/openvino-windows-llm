@@ -6,9 +6,11 @@ an empty / "unavailable" result instead of raising.
 
 from __future__ import annotations
 
+import atexit
 import importlib.util
 import logging
 import re
+import threading
 from dataclasses import dataclass
 
 logger = logging.getLogger("ov-llm.device")
@@ -121,14 +123,44 @@ def _is_physical_token(device: str) -> bool:
     return bool(_PHYSICAL_RE.fullmatch(device))
 
 
+_core_lock = threading.Lock()
+_core_instance = None
+_cached_devices: list[str] | None = None
+_cached_details: list[dict] | None = None
+
+
+def cleanup_cached_core() -> None:
+    """Clear the globally cached OpenVINO Core instance to release resources."""
+    global _core_instance
+    _core_instance = None
+
+
+atexit.register(cleanup_cached_core)
+
+
+def _get_core():
+    """Get or create the global thread-safe openvino.Core instance."""
+    global _core_instance
+    if _core_instance is None:
+        with _core_lock:
+            if _core_instance is None:
+                import openvino as ov
+                _core_instance = ov.Core()
+    return _core_instance
+
+
 def available_devices() -> list[str]:
     """List OpenVINO device names (e.g. ['CPU', 'GPU', 'NPU']); [] if unavailable."""
+    global _cached_devices
+    if _cached_devices is not None:
+        return _cached_devices
+
     if importlib.util.find_spec("openvino") is None:
         return []
     try:
-        import openvino as ov
-
-        return list(ov.Core().available_devices)
+        core = _get_core()
+        _cached_devices = list(core.available_devices)
+        return _cached_devices
     except Exception as exc:  # pragma: no cover - depends on local OpenVINO/drivers
         logger.warning("OpenVINO device discovery failed: %s", exc)
         return []
@@ -136,12 +168,14 @@ def available_devices() -> list[str]:
 
 def device_details() -> list[dict]:
     """List devices with their human-readable full names."""
+    global _cached_details
+    if _cached_details is not None:
+        return _cached_details
+
     if importlib.util.find_spec("openvino") is None:
         return []
     try:
-        import openvino as ov
-
-        core = ov.Core()
+        core = _get_core()
         details = []
         for dev in core.available_devices:
             try:
@@ -149,7 +183,8 @@ def device_details() -> list[dict]:
             except Exception:
                 full = dev
             details.append({"device": dev, "full_name": str(full)})
-        return details
+        _cached_details = details
+        return _cached_details
     except Exception as exc:  # pragma: no cover
         logger.warning("OpenVINO device discovery failed: %s", exc)
         return []

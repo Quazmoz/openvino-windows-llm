@@ -81,9 +81,9 @@ def gpu_stats() -> dict | None:
         return None
 
     try:
-        import openvino as ov
-        core = ov.Core()
-        devices = core.available_devices
+        from runtime.device_check import _get_core, available_devices
+        core = _get_core()
+        devices = available_devices()
         gpu_device = next((d for d in devices if d.startswith("GPU")), None)
         if not gpu_device:
             return None
