@@ -45,8 +45,8 @@ def test_run_degrades_gracefully_without_hardware(tmp_path):
     """A full run against a catalog model id must not download or require hardware.
 
     With ``openvino_genai`` unavailable every device is reported as a failure and
-    the process exits 0; if it happens to be installed, the missing local model
-    simply fails to load — still no network and still exit 0.
+    the process exits 0; if it happens to be installed **and** the model exists
+    locally, the run may actually succeed — both outcomes are valid.
     """
     out = tmp_path / "bench.json"
     code = bench.main(
@@ -63,6 +63,9 @@ def test_run_degrades_gracefully_without_hardware(tmp_path):
     assert len(results) == 1
     entry = results[0]
     assert entry["device"] == "CPU"
-    # No real hardware/model here, so this is expected to fail rather than crash.
-    assert entry["success"] is False
-    assert entry["error"]
+    # On machines with real OpenVINO + a local model, the run may succeed.
+    # On CI or machines without hardware, it fails gracefully.
+    if entry["success"]:
+        assert entry.get("error") in (None, "")
+    else:
+        assert entry["error"]

@@ -25,7 +25,9 @@ def test_normalize_system_override_replaces_leading_system():
         ChatMessage(role="user", content="hello"),
     ]
     out = normalize_messages(msgs, system_override="TOOLS")
-    assert out[0] == {"role": "system", "content": "TOOLS"}
+    # The override is appended to the original system prompt, preserving both
+    # user-provided instructions and server-injected tool-calling instructions.
+    assert out[0] == {"role": "system", "content": "original\n\nTOOLS"}
     assert {"role": "system", "content": "original"} not in out
     assert out[-1]["content"] == "hello"
 
