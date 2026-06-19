@@ -145,6 +145,17 @@ class ModelDeleteRequest(BaseModel):
     model: str
 
 
+class ModelRegisterRequest(BaseModel):
+    model_id: str
+    name: str
+    source_model: str
+    weight_format: str = "int4"
+    recommended_device: str = "NPU"
+    max_context_len: int = 2048
+    max_output_tokens: int = 512
+    description: str | None = None
+
+
 # --- Conversation export --------------------------------------------------
 
 

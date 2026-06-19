@@ -455,6 +455,31 @@ class ModelManager:
     def reload_catalog(self) -> None:
         self.catalog = registry.load_catalog(self.settings.models_file)
 
+    def register_model(self, req: Any) -> registry.ModelConfig:
+        """Register a new custom model in the catalog and save to models.json."""
+        if req.model_id in self.catalog:
+            raise ValueError(f"Model ID '{req.model_id}' is already registered in the catalog.")
+
+        # Build new config
+        cfg = registry.ModelConfig(
+            id=req.model_id,
+            name=req.name,
+            description=req.description or f"Custom model registered via Web UI. Source: {req.source_model}",
+            backend="openvino-genai",
+            model_path=f"models/openvino/{req.model_id}",
+            source_model=req.source_model,
+            weight_format=req.weight_format,
+            recommended_device=req.recommended_device,
+            max_context_len=req.max_context_len,
+            max_output_tokens=req.max_output_tokens,
+        )
+
+        self.catalog[req.model_id] = cfg
+        registry.save_catalog(self.settings.models_file, self.catalog)
+        self._emit("info", f"Registered new custom model: {cfg.name} ({cfg.id})")
+        return cfg
+
+
     async def startup(self) -> None:
         mode = "mock engine" if self.force_mock else f"device={self.settings.device}"
         self._emit("info", f"Server started ({mode}, {len(self.catalog)} models in catalog)")

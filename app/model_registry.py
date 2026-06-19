@@ -168,3 +168,23 @@ def make_catalog_entry(
         "can_delete": (not loaded) and downloaded and not is_busy_state,
         "error": error,
     }
+
+
+def save_catalog(models_file: Path, catalog: dict[str, ModelConfig]) -> None:
+    """Save the catalog dictionary to models.json."""
+    data = {}
+    for model_id, cfg in catalog.items():
+        data[model_id] = {
+            "name": cfg.name,
+            "description": cfg.description,
+            "backend": cfg.backend,
+            "model_path": cfg.model_path,
+            "source_model": cfg.source_model,
+            "weight_format": cfg.weight_format,
+            "recommended_device": cfg.recommended_device,
+            "max_context_len": cfg.max_context_len,
+            "max_output_tokens": cfg.max_output_tokens,
+        }
+    with open(models_file, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+

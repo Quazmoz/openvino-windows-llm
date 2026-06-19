@@ -38,6 +38,7 @@ from app.openai_api import (
     ModelConvertRequest,
     ModelDeleteRequest,
     ModelLoadRequest,
+    ModelRegisterRequest,
     ModelUnloadRequest,
     ResponseObject,
     ResponseOutputMessage,
@@ -279,6 +280,18 @@ def create_app(settings: Settings) -> FastAPI:
                 }
             )
         return {"object": "list", "data": data}
+
+    @app.post("/v1/models/register", dependencies=auth)
+    async def register_model(req: ModelRegisterRequest):
+        try:
+            cfg = manager.register_model(req)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {
+            "status": "registered",
+            "message": f"Successfully registered {cfg.name}.",
+            "model": manager.catalog_entry(cfg.id),
+        }
 
     @app.post("/v1/models/load", dependencies=auth)
     async def load_model(req: ModelLoadRequest):

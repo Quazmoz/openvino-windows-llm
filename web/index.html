@@ -1244,6 +1244,159 @@
             color: var(--text-3);
             font-style: italic;
         }
+
+        /* Modal Styles */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(8, 16, 22, 0.8);
+            backdrop-filter: blur(8px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            opacity: 1;
+            transition: opacity 0.3s ease;
+        }
+
+        .modal-overlay.hidden {
+            display: none !important;
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .modal-card {
+            background: var(--surface-1);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            width: min(520px, 90vw);
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: var(--shadow);
+            animation: modal-in 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex;
+            flex-direction: column;
+        }
+
+        @keyframes modal-in {
+            from {
+                opacity: 0;
+                transform: scale(0.95) translateY(12px);
+            }
+            to {
+                opacity: 1;
+                transform: scale(1) translateY(0);
+            }
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .modal-header h3 {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-1);
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+        }
+
+        .modal-form {
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            flex: 1;
+        }
+
+        .form-group-row {
+            display: flex;
+            gap: 16px;
+        }
+
+        .form-group label {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-2);
+        }
+
+        .form-group input,
+        .form-group select {
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            color: var(--text-1);
+            font-family: inherit;
+            font-size: 13px;
+            padding: 10px 12px;
+            border-radius: var(--radius-sm);
+            outline: none;
+            transition: all 0.2s;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px var(--primary-glow);
+        }
+
+        .modal-footer {
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+            margin-top: 8px;
+        }
+
+        .btn-cancel {
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            color: var(--text-2);
+            padding: 10px 20px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-cancel:hover {
+            background: var(--surface-3);
+            border-color: var(--border-hover);
+            color: var(--text-1);
+        }
+
+        .btn-submit {
+            background: linear-gradient(135deg, #0ea5e9, #6366f1);
+            border: none;
+            color: white;
+            padding: 10px 24px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            box-shadow: 0 4px 12px rgba(14, 165, 233, 0.25);
+        }
+
+        .btn-submit:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 16px rgba(14, 165, 233, 0.4);
+            filter: brightness(1.08);
+        }
     </style>
 </head>
 
@@ -1342,6 +1495,12 @@
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M12 5v14" />
                         <path d="M5 12h14" />
+                    </svg>
+                </button>
+                <button class="icon-btn" id="add-model-btn" title="Add Custom Model" aria-label="Add Custom Model">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="12" y1="5" x2="12" y2="19" />
+                        <line x1="5" y1="12" x2="19" y2="12" />
                     </svg>
                 </button>
                 <button class="icon-btn" id="export-chat-btn" title="Export conversation as Markdown" aria-label="Export conversation" disabled>
@@ -1511,6 +1670,66 @@
 
     <div id="toast"></div>
 
+    <div id="custom-model-modal" class="modal-overlay hidden">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3>Add Custom Model</h3>
+                <button id="close-modal-btn" class="close-btn" title="Close modal">&times;</button>
+            </div>
+            <form id="custom-model-form" class="modal-form" onsubmit="return false;">
+                <div class="form-group">
+                    <label for="custom-source-model">Hugging Face Repo ID</label>
+                    <input type="text" id="custom-source-model" required placeholder="e.g. HuggingFaceTB/SmolLM2-135M-Instruct">
+                </div>
+                <div class="form-group">
+                    <label for="custom-model-id">Model ID (Unique Identifier)</label>
+                    <input type="text" id="custom-model-id" required placeholder="e.g. smollm2-135m-int4">
+                </div>
+                <div class="form-group">
+                    <label for="custom-model-name">Display Name</label>
+                    <input type="text" id="custom-model-name" required placeholder="e.g. SmolLM2 135M Instruct INT4">
+                </div>
+                <div class="form-group-row">
+                    <div class="form-group">
+                        <label for="custom-weight-format">Weight Format</label>
+                        <select id="custom-weight-format">
+                            <option value="int4">INT4 (Recommended for NPU)</option>
+                            <option value="int8">INT8</option>
+                            <option value="fp16">FP16</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="custom-recommended-device">Recommended Device</label>
+                        <select id="custom-recommended-device">
+                            <option value="NPU">NPU</option>
+                            <option value="CPU">CPU</option>
+                            <option value="GPU">GPU</option>
+                            <option value="AUTO">AUTO</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group-row">
+                    <div class="form-group">
+                        <label for="custom-max-context-len">Max Context Length</label>
+                        <input type="number" id="custom-max-context-len" required value="2048">
+                    </div>
+                    <div class="form-group">
+                        <label for="custom-max-output-tokens">Max Output Tokens</label>
+                        <input type="number" id="custom-max-output-tokens" required value="512">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="custom-description">Description</label>
+                    <input type="text" id="custom-description" placeholder="Optional description...">
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn-cancel" id="cancel-modal-btn">Cancel</button>
+                    <button type="submit" class="btn-submit" id="submit-modal-btn">Register & Convert</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <script>
         // ── State ─────────────────────────────────────────────
         let conversation = [];
@@ -1568,6 +1787,21 @@
         const jumpBtn = document.getElementById('jump-btn');
         const exportChatBtn = document.getElementById('export-chat-btn');
         updateSendButtonState();
+
+        // Custom model modal DOM refs
+        const addModelBtn = document.getElementById('add-model-btn');
+        const customModelModal = document.getElementById('custom-model-modal');
+        const closeModalBtn = document.getElementById('close-modal-btn');
+        const cancelModalBtn = document.getElementById('cancel-modal-btn');
+        const customModelForm = document.getElementById('custom-model-form');
+        const customSourceModel = document.getElementById('custom-source-model');
+        const customModelId = document.getElementById('custom-model-id');
+        const customModelName = document.getElementById('custom-model-name');
+        const customWeightFormat = document.getElementById('custom-weight-format');
+        const customRecommendedDevice = document.getElementById('custom-recommended-device');
+        const customMaxContextLen = document.getElementById('custom-max-context-len');
+        const customMaxOutputTokens = document.getElementById('custom-max-output-tokens');
+        const customDescription = document.getElementById('custom-description');
 
         // Settings panel DOM refs
         const settingsToggleBtn = document.getElementById('settings-toggle-btn');
@@ -2372,6 +2606,73 @@
         });
         unloadModelBtn.addEventListener('click', () => { const m = getSelectedModelMeta(); if (m) requestModelUnload(m.id); });
         deleteModelBtn.addEventListener('click', () => { const m = getSelectedModelMeta(); if (m) requestModelDelete(m.id); });
+
+        // ── Custom Model Modal Event Listeners ─────────────────
+        addModelBtn.addEventListener('click', () => {
+            customModelModal.classList.remove('hidden');
+            customSourceModel.focus();
+        });
+        closeModalBtn.addEventListener('click', () => customModelModal.classList.add('hidden'));
+        cancelModalBtn.addEventListener('click', () => customModelModal.classList.add('hidden'));
+        customModelModal.addEventListener('click', e => {
+            if (e.target === customModelModal) customModelModal.classList.add('hidden');
+        });
+
+        // Autocomplete Model ID and Name on input
+        function updateAutofilledFields() {
+            const val = customSourceModel.value.trim();
+            if (!val) return;
+            const parts = val.split('/');
+            const rawName = parts[parts.length - 1] || '';
+            if (!rawName) return;
+
+            const cleanId = rawName.toLowerCase().replace(/[^a-z0-9_.-]/g, '-').replace(/-+/g, '-');
+            const weight = customWeightFormat.value;
+            customModelId.value = `${cleanId}-${weight}`;
+
+            let displayName = rawName.replace(/[-_]/g, ' ');
+            displayName = displayName.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+            customModelName.value = `${displayName} ${weight.toUpperCase()}`;
+        }
+        customSourceModel.addEventListener('input', updateAutofilledFields);
+        customWeightFormat.addEventListener('change', updateAutofilledFields);
+
+        // Submit form
+        customModelForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const body = {
+                model_id: customModelId.value.trim(),
+                name: customModelName.value.trim(),
+                source_model: customSourceModel.value.trim(),
+                weight_format: customWeightFormat.value,
+                recommended_device: customRecommendedDevice.value,
+                max_context_len: parseInt(customMaxContextLen.value, 10),
+                max_output_tokens: parseInt(customMaxOutputTokens.value, 10),
+                description: customDescription.value.trim() || null
+            };
+            try {
+                const res = await fetch('/v1/models/register', {
+                    method: 'POST',
+                    headers: authHeaders({ 'Content-Type': 'application/json' }),
+                    body: JSON.stringify(body)
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+                showToast(`Registered custom model: ${body.name}`);
+                customModelModal.classList.add('hidden');
+                customModelForm.reset();
+
+                // Select the model
+                waitingForModelId = body.model_id;
+                await updateStatus();
+
+                // Start conversion
+                await requestModelConvert(body.model_id);
+            } catch (err) {
+                showToast(`Failed to register model: ${err.message}`);
+            }
+        });
+
         modelSelect.addEventListener('change', updateModelUi);
         deviceSelect.addEventListener('change', async () => {
             const newDevice = normalizeUiDevice(deviceSelect.value);
