@@ -179,6 +179,7 @@ class OpenVINOEngine(BaseEngine):
         self.model_id = model_id
         self.model_path = str(model_path)
         self.device = normalize_device(device)
+        self._closed = False
 
         config = dict(plugin_config or {})
         logger.info("Loading '%s' on %s from %s", model_id, self.device, self.model_path)
@@ -189,7 +190,12 @@ class OpenVINOEngine(BaseEngine):
         self._tokenizer = self._pipe.get_tokenizer()
         logger.info("Model '%s' ready on %s", model_id, self.device)
 
+    def _check_closed(self) -> None:
+        if self._closed:
+            raise RuntimeError(f"Engine for '{self.model_id}' is closed")
+
     def apply_chat_template(self, messages: list[dict], add_generation_prompt: bool = True) -> str:
+        self._check_closed()
         try:
             try:
                 return self._tokenizer.apply_chat_template(
@@ -203,6 +209,7 @@ class OpenVINOEngine(BaseEngine):
             return chat_format.render_chatml(messages, add_generation_prompt)
 
     def count_tokens(self, text: str) -> int:
+        self._check_closed()
         try:
             ids = self._tokenizer.encode(text).input_ids
             try:
@@ -234,11 +241,13 @@ class OpenVINOEngine(BaseEngine):
         return cfg
 
     def generate(self, prompt: str, params: GenParams) -> GenResult:
+        self._check_closed()
         result = self._pipe.generate(prompt, self._build_config(params))
         text = _result_text(result)
         return GenResult(text=text, completion_tokens=self.count_tokens(text))
 
     def stream(self, prompt: str, params: GenParams) -> StreamHandle:
+        self._check_closed()
         handle = StreamHandle()
         cfg = self._build_config(params)
         pipe = self._pipe
@@ -259,6 +268,10 @@ class OpenVINOEngine(BaseEngine):
         return handle
 
     def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        logger.info("Closing engine for '%s'", self.model_id)
         self._pipe = None
         self._tokenizer = None
 

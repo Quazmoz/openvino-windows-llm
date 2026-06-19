@@ -601,3 +601,35 @@ def test_auto_convert_triggered_on_load(monkeypatch):
 
     assert len(convert_calls) == 1
     assert convert_calls[0] == ("smollm2-135m-fp16", "CPU", False)
+
+
+def test_health_endpoints_live_and_ready(client):
+    resp_live = client.get("/health/live")
+    assert resp_live.status_code == 200
+    assert resp_live.json() == {"status": "ok"}
+
+    resp_ready = client.get("/health/ready")
+    assert resp_ready.status_code == 200
+    assert resp_ready.json() == {"status": "ready"}
+
+    manager = client.app.state.manager
+    manager._set_status(MODEL_ID, "loading")
+    try:
+        resp_busy = client.get("/health/ready")
+        assert resp_busy.status_code == 503
+        assert resp_busy.json()["status"] == "busy"
+    finally:
+        manager._clear_status(MODEL_ID)
+
+
+def test_request_id_propagation_and_header(client):
+    custom_id = "test-req-12345"
+    resp = client.get("/health", headers={"X-Request-ID": custom_id})
+    assert resp.status_code == 200
+    assert resp.headers.get("X-Request-ID") == custom_id
+
+    resp_auto = client.get("/health")
+    assert resp_auto.status_code == 200
+    assert "X-Request-ID" in resp_auto.headers
+    assert resp_auto.headers["X-Request-ID"].startswith("req-")
+

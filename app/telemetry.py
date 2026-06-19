@@ -69,3 +69,67 @@ def cpu_stats() -> dict:
     if psutil is None:
         return {"percent": 0.0}
     return {"percent": psutil.cpu_percent(interval=None)}
+
+
+def gpu_stats() -> dict | None:
+    """Return GPU memory usage statistics if an Intel/AMD GPU is available via OpenVINO.
+
+    Returns a dict with total, free, and used memory in GB, or None if unavailable/fails.
+    """
+    import importlib.util
+    if importlib.util.find_spec("openvino") is None:
+        return None
+
+    try:
+        import openvino as ov
+        core = ov.Core()
+        devices = core.available_devices
+        gpu_device = next((d for d in devices if d.startswith("GPU")), None)
+        if not gpu_device:
+            return None
+
+        try:
+            total_bytes = core.get_property(gpu_device, "GPU_DEVICE_TOTAL_MEM_SIZE")
+        except Exception:
+            total_bytes = None
+
+        try:
+            stats = core.get_property(gpu_device, "GPU_MEMORY_STATISTICS")
+        except Exception:
+            stats = {}
+
+        result = {
+            "device": gpu_device,
+            "full_name": str(core.get_property(gpu_device, "FULL_DEVICE_NAME")),
+        }
+
+        if total_bytes is not None:
+            result["total_gb"] = round(total_bytes / (1024**3), 2)
+
+        formatted_stats = {}
+        for k, v in stats.items():
+            if isinstance(v, int):
+                formatted_stats[k] = v
+                if any(x in k.lower() for x in ("size", "bytes", "free", "used", "total", "allocated", "limit")):
+                    formatted_stats[f"{k}_gb"] = round(v / (1024**3), 2)
+            else:
+                formatted_stats[k] = v
+
+        if formatted_stats:
+            result["statistics"] = formatted_stats
+
+        for key in ("used", "allocated"):
+            for k in list(formatted_stats.keys()):
+                if k.lower() == key and isinstance(formatted_stats[k], int):
+                    result["used_gb"] = round(formatted_stats[k] / (1024**3), 2)
+        for key in ("free", "available"):
+            for k in list(formatted_stats.keys()):
+                if k.lower() == key and isinstance(formatted_stats[k], int):
+                    result["free_gb"] = round(formatted_stats[k] / (1024**3), 2)
+
+        return result
+    except Exception as exc:
+        logger = logging.getLogger("ov-llm.telemetry")
+        logger.debug("Failed to query GPU telemetry: %s", exc)
+        return None
+

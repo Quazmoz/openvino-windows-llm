@@ -20,8 +20,9 @@ import uuid
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 
+import contextvars
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response, StreamingResponse
 
@@ -43,16 +44,34 @@ from app.openai_api import (
     ResponseRequest,
     UsageInfo,
 )
-from app.telemetry import cpu_stats, disk_stats, memory_stats
+from app.rate_limit import RateLimitMiddleware
+from app.telemetry import cpu_stats, disk_stats, memory_stats, gpu_stats
 from runtime import device_check
 from runtime.openvino_engine import BaseEngine, GenParams
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
+request_id_var = contextvars.ContextVar("request_id", default="")
+
+class RequestIDFilter(logging.Filter):
+    def filter(self, record):
+        record.request_id = request_id_var.get() or "-"
+        return True
+
+# Configure logging to console with Request ID support
+root_logger = logging.getLogger()
+handler = logging.StreamHandler(sys.stdout)
+handler.setFormatter(logging.Formatter(
+    fmt="%(asctime)s [%(levelname)s] [%(request_id)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S"
+))
+handler.addFilter(RequestIDFilter())
+for h in list(root_logger.handlers):
+    root_logger.removeHandler(h)
+root_logger.addHandler(handler)
+root_logger.setLevel(logging.INFO)
+
 logger = logging.getLogger("ov-llm.server")
+START_TIME = time.time()
+
 
 WEB_DIR = BASE_DIR / "web"
 
@@ -115,6 +134,7 @@ def _resolve_or_400(manager: model_manager.ModelManager, model_id: str) -> BaseE
 
 def create_app(settings: Settings) -> FastAPI:
     manager = model_manager.ModelManager(settings)
+    settings.validate(manager.catalog)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -131,6 +151,47 @@ def create_app(settings: Settings) -> FastAPI:
     app.state.settings = settings
     app.state.manager = manager
 
+    # Rate limiting middleware
+    if settings.rate_limit > 0:
+        app.add_middleware(RateLimitMiddleware, requests_per_minute=settings.rate_limit)
+
+    # Request ID and structured request/response logging middleware
+    @app.middleware("http")
+    async def request_id_and_logging_middleware(request: Request, call_next):
+        request_id = request.headers.get("X-Request-ID")
+        if not request_id:
+            request_id = f"req-{uuid.uuid4().hex[:12]}"
+        
+        token = request_id_var.set(request_id)
+        request.state.request_id = request_id
+        
+        start_time = time.perf_counter()
+        try:
+            response = await call_next(request)
+        except Exception as exc:
+            duration = (time.perf_counter() - start_time) * 1000
+            logger.error(
+                "HTTP %s %s failed - Error: %s - Latency: %.2fms",
+                request.method,
+                request.url.path,
+                str(exc),
+                duration,
+            )
+            raise
+        finally:
+            request_id_var.reset(token)
+            
+        duration = (time.perf_counter() - start_time) * 1000
+        logger.info(
+            "HTTP %s %s - Status: %d - Latency: %.2fms",
+            request.method,
+            request.url.path,
+            response.status_code,
+            duration,
+        )
+        response.headers["X-Request-ID"] = request_id
+        return response
+
     # Configure CORS middleware
     origins = [orig.strip() for orig in settings.cors_origins.split(",") if orig.strip()]
     if origins:
@@ -141,6 +202,7 @@ def create_app(settings: Settings) -> FastAPI:
             allow_methods=["*"],
             allow_headers=["*"],
         )
+
 
     # --- auth (optional) ---------------------------------------------------
 
@@ -175,6 +237,8 @@ def create_app(settings: Settings) -> FastAPI:
         loading_count = manager.loading_count()
         return {
             "status": "ok" if loading_count == 0 else "busy",
+            "version": app.version,
+            "uptime_seconds": int(time.time() - START_TIME),
             "mock": manager.force_mock,
             "device": settings.device,
             "openvino": device_check.is_openvino_available(),
@@ -182,6 +246,19 @@ def create_app(settings: Settings) -> FastAPI:
             "loading_count": loading_count,
             "any_busy": manager.any_busy(),
         }
+
+    @app.get("/health/live")
+    async def health_live():
+        return {"status": "ok"}
+
+    @app.get("/health/ready")
+    async def health_ready(response: Response):
+        loading_count = manager.loading_count()
+        if loading_count > 0:
+            response.status_code = 503
+            return {"status": "busy", "message": "Models are loading"}
+        return {"status": "ready"}
+
 
     # --- models ------------------------------------------------------------
 
@@ -306,6 +383,7 @@ def create_app(settings: Settings) -> FastAPI:
         return {
             "memory": memory_stats(),
             "cpu": cpu_stats(),
+            "gpu": gpu_stats(),
             "device": {
                 "default": settings.device,
                 "mock": manager.force_mock,
@@ -399,8 +477,9 @@ def create_app(settings: Settings) -> FastAPI:
         )
 
         if request.stream:
+            req_id = request_id_var.get()
             return StreamingResponse(
-                _stream_chat(engine, request, prompt, prompt_tokens, params, use_tools),
+                _stream_chat(engine, request, prompt, prompt_tokens, params, use_tools, req_id),
                 media_type="text/event-stream",
             )
         return await _complete_chat(engine, request, prompt, prompt_tokens, params, use_tools, max_prompt_len)
@@ -470,97 +549,102 @@ def create_app(settings: Settings) -> FastAPI:
             ),
         )
 
-    async def _stream_chat(engine, request, prompt, prompt_tokens, params, use_tools):
-        request_id = f"chatcmpl-{uuid.uuid4().hex}"
-        start = time.perf_counter()
-
-        def chunk(delta: dict, finish_reason=None) -> str:
-            payload = {
-                "id": request_id,
-                "object": "chat.completion.chunk",
-                "created": int(time.time()),
-                "model": request.model,
-                "choices": [{"index": 0, "delta": delta, "finish_reason": finish_reason}],
-            }
-            return f"data: {json.dumps(payload)}\n\n"
-
-        full_text = ""
-        finish_reason = "stop"
-        stream_gen = manager.stream(engine, prompt, params)
+    async def _stream_chat(engine, request, prompt, prompt_tokens, params, use_tools, req_id):
+        token = request_id_var.set(req_id)
         try:
-            if use_tools:
-                # Tool detection needs the full output, so buffer then decide.
-                async for piece in stream_gen:
-                    full_text += piece
-                remaining, parsed = tools.parse_tool_calls(full_text, request.tools)
-                if parsed:
-                    finish_reason = "tool_calls"
-                    yield chunk({"role": "assistant", "content": None})
-                    for i, tc in enumerate(parsed):
-                        yield chunk(
-                            {
-                                "tool_calls": [
-                                    {
-                                        "index": i,
-                                        "id": tc.id,
-                                        "type": "function",
-                                        "function": {"name": tc.function.name, "arguments": tc.function.arguments},
-                                    }
-                                ]
-                            }
-                        )
+            request_id = f"chatcmpl-{uuid.uuid4().hex}"
+            start = time.perf_counter()
+
+            def chunk(delta: dict, finish_reason=None) -> str:
+                payload = {
+                    "id": request_id,
+                    "object": "chat.completion.chunk",
+                    "created": int(time.time()),
+                    "model": request.model,
+                    "choices": [{"index": 0, "delta": delta, "finish_reason": finish_reason}],
+                }
+                return f"data: {json.dumps(payload)}\n\n"
+
+            full_text = ""
+            finish_reason = "stop"
+            stream_gen = manager.stream(engine, prompt, params)
+            try:
+                if use_tools:
+                    # Tool detection needs the full output, so buffer then decide.
+                    async for piece in stream_gen:
+                        full_text += piece
+                    remaining, parsed = tools.parse_tool_calls(full_text, request.tools)
+                    if parsed:
+                        finish_reason = "tool_calls"
+                        yield chunk({"role": "assistant", "content": None})
+                        for i, tc in enumerate(parsed):
+                            yield chunk(
+                                {
+                                    "tool_calls": [
+                                        {
+                                            "index": i,
+                                            "id": tc.id,
+                                            "type": "function",
+                                            "function": {"name": tc.function.name, "arguments": tc.function.arguments},
+                                        }
+                                    ]
+                                }
+                            )
+                    else:
+                        yield chunk({"role": "assistant", "content": remaining or full_text})
                 else:
-                    yield chunk({"role": "assistant", "content": remaining or full_text})
-            else:
-                # Real-time token streaming for normal chat, honoring stop sequences.
-                stopper = chat_format.StopStreamer(params.stop or [])
-                first = True
-                async for piece in stream_gen:
-                    emit = stopper.feed(piece)
-                    if emit:
-                        full_text += emit
-                        delta = {"role": "assistant", "content": emit} if first else {"content": emit}
-                        first = False
-                        yield chunk(delta)
-                    if stopper.stopped:
-                        finish_reason = "stop"
-                        break
-                tail = stopper.flush()
-                if tail:
-                    full_text += tail
-                    yield chunk({"role": "assistant", "content": tail} if first else {"content": tail})
-        except Exception as exc:  # noqa: BLE001 - report inline to the SSE client
-            logger.exception("Generation failed: %s", exc)
-            yield chunk({"content": f"\n\n[error: {exc}]"})
+                    # Real-time token streaming for normal chat, honoring stop sequences.
+                    stopper = chat_format.StopStreamer(params.stop or [])
+                    first = True
+                    async for piece in stream_gen:
+                        emit = stopper.feed(piece)
+                        if emit:
+                            full_text += emit
+                            delta = {"role": "assistant", "content": emit} if first else {"content": emit}
+                            first = False
+                            yield chunk(delta)
+                        if stopper.stopped:
+                            finish_reason = "stop"
+                            break
+                    tail = stopper.flush()
+                    if tail:
+                        full_text += tail
+                        yield chunk({"role": "assistant", "content": tail} if first else {"content": tail})
+            except Exception as exc:  # noqa: BLE001 - report inline to the SSE client
+                logger.exception("Generation failed: %s", exc)
+                yield chunk({"content": f"\n\n[error: {exc}]"})
+            finally:
+                # Promptly stop the worker + release the model lock if the client
+                # disconnected, instead of waiting for the generator to be GC'd.
+                await stream_gen.aclose()
+
+            yield chunk({}, finish_reason=finish_reason)
+
+            loop = asyncio.get_running_loop()
+            completion_tokens = await loop.run_in_executor(None, engine.count_tokens, full_text)
+            manager.record_request(
+                engine.model_id, prompt_tokens, completion_tokens, time.perf_counter() - start
+            )
+
+            if request.stream_options and request.stream_options.include_usage:
+                usage_payload = {
+                    "id": request_id,
+                    "object": "chat.completion.chunk",
+                    "created": int(time.time()),
+                    "model": request.model,
+                    "choices": [],
+                    "usage": {
+                        "prompt_tokens": prompt_tokens,
+                        "completion_tokens": completion_tokens,
+                        "total_tokens": prompt_tokens + completion_tokens,
+                    },
+                }
+                yield f"data: {json.dumps(usage_payload)}\n\n"
+
+            yield "data: [DONE]\n\n"
         finally:
-            # Promptly stop the worker + release the model lock if the client
-            # disconnected, instead of waiting for the generator to be GC'd.
-            await stream_gen.aclose()
+            request_id_var.reset(token)
 
-        yield chunk({}, finish_reason=finish_reason)
-
-        loop = asyncio.get_running_loop()
-        completion_tokens = await loop.run_in_executor(None, engine.count_tokens, full_text)
-        manager.record_request(
-            engine.model_id, prompt_tokens, completion_tokens, time.perf_counter() - start
-        )
-
-        if request.stream_options and request.stream_options.include_usage:
-            usage_payload = {
-                "id": request_id,
-                "object": "chat.completion.chunk",
-                "created": int(time.time()),
-                "model": request.model,
-                "choices": [],
-                "usage": {
-                    "prompt_tokens": prompt_tokens,
-                    "completion_tokens": completion_tokens,
-                    "total_tokens": prompt_tokens + completion_tokens,
-                },
-            }
-            yield f"data: {json.dumps(usage_payload)}\n\n"
-
-        yield "data: [DONE]\n\n"
 
     # --- responses API (n8n) ----------------------------------------------
 
