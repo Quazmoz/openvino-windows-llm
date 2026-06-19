@@ -224,7 +224,8 @@
             font-size: 10px;
         }
 
-        .device-warning {
+        .device-warning,
+        .device-info {
             display: none;
             position: absolute;
             right: 0;
@@ -232,16 +233,29 @@
             z-index: 20;
             width: min(360px, 72vw);
             padding: 8px 10px;
-            border: 1px solid rgba(245, 158, 11, 0.35);
             border-radius: var(--radius-sm);
-            background: rgba(24, 20, 14, 0.96);
-            color: #f5d48c;
             font-size: 11px;
             line-height: 1.35;
             box-shadow: var(--shadow-md);
         }
 
+        .device-warning {
+            border: 1px solid rgba(245, 158, 11, 0.35);
+            background: rgba(24, 20, 14, 0.96);
+            color: #f5d48c;
+        }
+
+        .device-info {
+            border: 1px solid rgba(96, 165, 250, 0.35);
+            background: rgba(14, 18, 28, 0.96);
+            color: #93bbf5;
+        }
+
         .device-select-wrap.show-warning .device-warning {
+            display: block;
+        }
+
+        .device-select-wrap.show-info .device-info {
             display: block;
         }
 
@@ -1292,6 +1306,9 @@
                     <span class="device-warning" id="device-warning">
                         Advanced OpenVINO device modes may improve portability or throughput, but they do not guarantee faster single-prompt generation. Benchmark your hardware.
                     </span>
+                    <span class="device-info" id="device-info">
+                        ⚠️ AUTO mode uses the listed device order as a <strong>preference hint</strong>, not a strict guarantee. OpenVINO selects the best device based on model compatibility and hardware capabilities. NPU may be chosen first for INT4 models even when GPU is listed higher.
+                    </span>
                 </div>
                 <div class="btn-group">
                     <button class="icon-btn" id="load-model-btn" title="Load selected model"
@@ -1535,6 +1552,7 @@
         const modelSelect = document.getElementById('model-select');
         const deviceSelect = document.getElementById('device-select');
         const deviceWarning = document.getElementById('device-warning');
+        const deviceInfo = document.getElementById('device-info');
         const loadModelBtn = document.getElementById('load-model-btn');
         const unloadModelBtn = document.getElementById('unload-model-btn');
         const deleteModelBtn = document.getElementById('delete-model-btn');
@@ -1834,9 +1852,13 @@
         }
         function updateDeviceWarning() {
             const advanced = isAdvancedDevice(selectedDevice);
+            const isAutoComposite = advanced && selectedDevice.startsWith('AUTO:');
+            const isExperimental = advanced && !isAutoComposite;
             deviceSelect.classList.toggle('has-advanced-value', advanced);
-            deviceSelect.parentElement.classList.toggle('show-warning', advanced);
-            deviceWarning.setAttribute('aria-hidden', advanced ? 'false' : 'true');
+            deviceSelect.parentElement.classList.toggle('show-warning', isExperimental);
+            deviceSelect.parentElement.classList.toggle('show-info', isAutoComposite);
+            deviceWarning.setAttribute('aria-hidden', isExperimental ? 'false' : 'true');
+            deviceInfo.setAttribute('aria-hidden', isAutoComposite ? 'false' : 'true');
         }
 
         function renderModelOptions(models) {

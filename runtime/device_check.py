@@ -199,16 +199,16 @@ def suggested_device_targets(available: list[str] | None = None) -> list[dict[st
             suggestions.append({"device": device, "experimental": experimental, "note": note})
 
     if {"NPU", "GPU", "CPU"}.issubset(bases):
-        add("AUTO:NPU,GPU,CPU", experimental=False, note="Prioritize NPU, then GPU, then CPU.")
-        add("AUTO:GPU,NPU,CPU", experimental=False, note="Prioritize GPU, then NPU, then CPU.")
+        add("AUTO:NPU,GPU,CPU", experimental=False, note="Auto-select best device (prefers NPU > GPU > CPU). Actual device chosen by model compatibility.")
+        add("AUTO:GPU,NPU,CPU", experimental=False, note="Auto-select best device (prefers GPU > NPU > CPU). Actual device chosen by model compatibility.")
         add("MULTI:NPU,GPU,CPU", experimental=True, note="Experimental throughput routing.")
         add("HETERO:NPU,GPU,CPU", experimental=True, note="Experimental graph partitioning.")
     elif {"GPU", "CPU"}.issubset(bases):
-        add("AUTO:GPU,CPU", experimental=False, note="Prioritize GPU, then CPU.")
+        add("AUTO:GPU,CPU", experimental=False, note="Auto-select best device (prefers GPU > CPU). Actual device chosen by model compatibility.")
         add("MULTI:GPU,CPU", experimental=True, note="Experimental throughput routing.")
         add("HETERO:GPU,CPU", experimental=True, note="Experimental graph partitioning.")
     elif {"NPU", "CPU"}.issubset(bases):
-        add("AUTO:NPU,CPU", experimental=False, note="Prioritize NPU, then CPU.")
+        add("AUTO:NPU,CPU", experimental=False, note="Auto-select best device (prefers NPU > CPU). Actual device chosen by model compatibility.")
         add("MULTI:NPU,CPU", experimental=True, note="Experimental throughput routing.")
     return suggestions
 
