@@ -21,9 +21,9 @@ agents, or their own apps to an OpenVINO-powered local inference endpoint.
 > lifecycle (load/unload/delete), device discovery, conversion helper, and Windows
 > setup scripts are all implemented. The mock-backed test suite passes against a
 > built-in mock engine, so the stack runs end-to-end on any OS. Real OpenVINO
-> inference runs on Windows/Intel hardware once you've converted a model. Basic
-> Ubuntu support is experimental, targeted only at Ubuntu, and should be validated
-> on CPU first; Ubuntu GPU/NPU use depends on compatible Intel Linux drivers.
+> inference runs on Windows/Intel hardware once you've converted a model.
+> Experimental Linux support now covers Ubuntu and Fedora, should be validated on
+> CPU first, and depends on compatible Intel Linux drivers for GPU/NPU use.
 
 ---
 
@@ -48,7 +48,7 @@ For the shortest setup path, see [QUICKSTART.md](QUICKSTART.md).
 Quick links:
 
 - [Windows Quickstart](#windows-quickstart)
-- [Experimental Ubuntu Quickstart](#experimental-ubuntu-quickstart)
+- [Experimental Linux Quickstart](#experimental-linux-quickstart)
 - [Device support notes](docs/DEVICE_SUPPORT.md)
 
 This is the successor to the older [`npu-windows`](https://github.com/Quazmoz/npu-windows)
@@ -77,7 +77,7 @@ local server with the UI, model conversion, catalog, and setup scripts all inclu
 ## What it does
 
 - Runs local LLMs on Windows through **OpenVINO GenAI** (CPU / GPU / NPU / AUTO)
-- Includes experimental Ubuntu setup/launcher scripts for CPU-first validation
+- Includes experimental Ubuntu and Fedora setup/launcher scripts for CPU-first validation
 - Supports experimental OpenVINO device expressions such as `AUTO:NPU,GPU,CPU`
   and `AUTO:GPU,NPU,CPU`
 - Serves an **OpenAI-compatible API** — `/v1/chat/completions` (streaming + non-streaming,
@@ -152,16 +152,31 @@ If you don't have Intel hardware or are developing on macOS/Linux, run the serve
 .\start_server.bat --mock
 ```
 
-### Experimental Ubuntu Quickstart
+### Experimental Linux Quickstart
 
-Linux support is experimental and currently targeted only for Ubuntu. CPU is the
-recommended first validation path. Ubuntu GPU/NPU use is hardware/driver-dependent
+Linux support is experimental and currently covers Ubuntu and Fedora. CPU is the
+recommended first validation path. Linux GPU/NPU use is hardware/driver-dependent
 and should be treated as experimental.
+
+Ubuntu prerequisites:
+
+```bash
+sudo apt update
+sudo apt install -y python3 python3-venv python3-pip git
+```
+
+Fedora prerequisites:
+
+```bash
+sudo dnf install -y python3 python3-pip python3-devel git
+```
+
+Then clone and set up:
 
 ```bash
 git clone https://github.com/Quazmoz/openvino-windows-llm.git
 cd openvino-windows-llm
-chmod +x setup.sh start_server.sh setup/*.sh
+chmod +x setup.sh start_server.sh setup/*.sh setup/linux/*.sh
 ./setup.sh --minimal
 ./start_server.sh --mock
 ./start_server.sh --model tinyllama-1.1b-chat-fp16 --device CPU
@@ -170,10 +185,11 @@ chmod +x setup.sh start_server.sh setup/*.sh
 Use `./setup.sh` without `--minimal` when you want local model-conversion tools, then:
 
 ```bash
-./setup/convert_model.sh --id tinyllama-1.1b-chat-fp16
+./setup/linux/convert_model.sh --id tinyllama-1.1b-chat-fp16
 ```
 
-See [docs/UBUNTU.md](docs/UBUNTU.md) for Ubuntu install notes and troubleshooting.
+See [docs/LINUX.md](docs/LINUX.md), [docs/UBUNTU.md](docs/UBUNTU.md), and
+[docs/FEDORA.md](docs/FEDORA.md) for Linux install notes and troubleshooting.
 
 ---
 
@@ -181,7 +197,7 @@ See [docs/UBUNTU.md](docs/UBUNTU.md) for Ubuntu install notes and troubleshootin
 
 ```text
 start_server.bat [args]            # Windows: activates the venv, passes args to python -m app.server
-./start_server.sh [args]           # Ubuntu experimental: same CLI args
+./start_server.sh [args]           # Linux experimental: same CLI args
 
   --model <id>        Model id from models.json to auto-load on startup
   --device <dev>      CPU | GPU | NPU | AUTO | AUTO:NPU,GPU,CPU | ...
@@ -254,7 +270,7 @@ Simple targets run on one OpenVINO target:
 - `AUTO:NPU,GPU,CPU`: prioritize NPU, then GPU, then CPU.
 - `AUTO:GPU,NPU,CPU`: prioritize GPU, then NPU, then CPU.
 
-On Ubuntu, start with `CPU`. Ubuntu GPU/NPU paths are experimental and require
+On Linux, start with `CPU`. Linux GPU/NPU paths are experimental and require
 compatible Intel Linux drivers; if OpenVINO does not list a device, the app cannot
 use it. See [docs/DEVICE_SUPPORT.md](docs/DEVICE_SUPPORT.md).
 
@@ -358,12 +374,19 @@ runtime/
   device_check.py    OpenVINO device discovery + validation
 
 web/index.html       Built-in chat UI (streaming, model picker, device selector, telemetry)
-setup.sh             Experimental Ubuntu setup entrypoint
-start_server.sh      Experimental Ubuntu launcher
-setup/*.ps1          Windows setup, hardware check, dep install, convert wrapper
-setup/*.sh           Experimental Ubuntu setup, hardware check, dep install, convert wrapper
+setup.bat            Windows setup entrypoint
+setup.sh             Experimental Linux setup entrypoint
+start_server.bat     Windows launcher
+start_server.sh      Experimental Linux launcher
+setup/windows/       Windows setup, hardware check, dep install, convert helpers
+setup/linux/         Linux setup, hardware check, dep install, convert helpers
+setup/*.ps1          Compatibility wrappers for older Windows setup paths
+setup/*.sh           Compatibility wrappers for older Linux setup paths
+docs/WINDOWS.md      Windows setup notes
+docs/LINUX.md        Experimental Linux overview
 docs/UBUNTU.md       Experimental Ubuntu setup and troubleshooting
-docs/DEVICE_SUPPORT.md  Windows and experimental Ubuntu device support notes
+docs/FEDORA.md       Experimental Fedora setup and troubleshooting
+docs/DEVICE_SUPPORT.md  Windows and experimental Linux device support notes
 models.json          Model catalog
 tests/               Mock-backed tests (no OpenVINO hardware needed)
 ```
@@ -413,7 +436,7 @@ Check what your machine exposes:
 .\start_server.bat --check-devices
 ```
 
-On Ubuntu experimental:
+On Linux experimental:
 
 ```bash
 ./start_server.sh --check-devices
@@ -455,7 +478,7 @@ If you bind to the LAN: use a trusted private network, add firewall rules intent
 model load/unload/convert/delete, system status with per-model request metrics,
 tool-call shim, optional API-key auth (honored by the built-in UI), built-in chat UI,
 conversion helper, advanced OpenVINO device routing, benchmark tooling, Windows
-setup scripts, experimental Ubuntu scripts/docs, and a passing mock-backed test suite.
+setup scripts, experimental Linux scripts/docs, and a passing mock-backed test suite.
 
 **Next**
 

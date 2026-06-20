@@ -1,6 +1,6 @@
 # Device Support Notes
 
-This project is Windows-first. Ubuntu support is experimental and currently targets Ubuntu only.
+This project is Windows-first. Linux support is experimental and currently supports Ubuntu and Fedora.
 
 ## Target Matrix
 
@@ -8,6 +8,7 @@ This project is Windows-first. Ubuntu support is experimental and currently targ
 |---|---|---|---|
 | Windows | Supported | Supported if OpenVINO sees it | Primary target with compatible Intel hardware/drivers |
 | Ubuntu experimental | Basic target | Experimental and driver-dependent | Experimental and driver-dependent |
+| Fedora experimental | Basic target | Experimental and driver-dependent | Experimental and driver-dependent |
 
 ## Device Discovery
 
@@ -23,7 +24,7 @@ On Windows, you can use:
 .\start_server.bat --check-devices
 ```
 
-On Ubuntu, you can use:
+On Linux, you can use:
 
 ```bash
 ./start_server.sh --check-devices

@@ -1,6 +1,6 @@
 # Quickstart
 
-This is the shortest path to get the server running. Windows remains the primary, stable target. Ubuntu support is experimental and currently targets Ubuntu only.
+This is the shortest path to get the server running. Windows remains the primary, stable target. Linux support is experimental and currently supports Ubuntu and Fedora.
 
 ## Windows Quickstart
 
@@ -59,25 +59,37 @@ Open **http://localhost:8000** in your browser.
 .\start_server.bat --model tinyllama-1.1b-chat-fp16 --device CPU
 ```
 
-## Experimental Ubuntu Quickstart
+## Experimental Linux Quickstart
 
-Linux support is experimental and currently targets Ubuntu only. CPU inference is the recommended first validation path. Ubuntu GPU/NPU support is hardware/driver-dependent and experimental.
+Linux support is experimental and currently supports Ubuntu and Fedora. CPU inference is the recommended first validation path. Linux GPU/NPU support is hardware/driver-dependent and experimental.
 
 ### Requirements
 
-- **OS**: Ubuntu 22.04 or 24.04 expected
+- **OS**: Ubuntu 22.04/24.04 or Fedora 40+ expected
 - **Python**: 3.11, 3.12, or 3.13
 - **Hardware**: CPU first; Intel GPU/NPU only with compatible Linux drivers
 
 ### 1. Install & Setup
 
+Ubuntu:
+
 ```bash
 sudo apt update
 sudo apt install -y python3 python3-venv python3-pip git
+```
 
+Fedora:
+
+```bash
+sudo dnf install -y python3 python3-pip python3-devel git
+```
+
+Then:
+
+```bash
 git clone https://github.com/Quazmoz/openvino-windows-llm.git
 cd openvino-windows-llm
-chmod +x setup.sh start_server.sh setup/*.sh
+chmod +x setup.sh start_server.sh setup/*.sh setup/linux/*.sh
 ./setup.sh --minimal
 ```
 
@@ -99,7 +111,7 @@ Install conversion dependencies, then export TinyLlama:
 
 ```bash
 ./setup.sh
-./setup/convert_model.sh --id tinyllama-1.1b-chat-fp16
+./setup/linux/convert_model.sh --id tinyllama-1.1b-chat-fp16
 ```
 
 ### 4. Run Local Inference
@@ -118,7 +130,7 @@ Use `CPU`, `GPU`, or `NPU` to run on one target. `AUTO` lets OpenVINO choose an 
 .\start_server.bat --model tinyllama-1.1b-chat-fp16 --device AUTO:GPU,NPU,CPU
 ```
 
-Ubuntu uses the same CLI arguments:
+Linux uses the same CLI arguments:
 
 ```bash
 ./start_server.sh --model tinyllama-1.1b-chat-fp16 --device CPU

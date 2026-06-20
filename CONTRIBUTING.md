@@ -23,23 +23,37 @@ cd openvino-windows-llm
 ```
 
 ### 2. Set Up Your Environment
-Run the first-time setup script. If you plan to convert models, use the `-WithConvert` flag:
+Run the first-time setup script for your platform:
 
 ```powershell
-# Runtime server dependencies only:
+# Windows: runtime and conversion dependencies
 .\setup.bat
 
-# With model-conversion tools (requires optimum-intel):
-.\setup.bat -WithConvert
+# Windows: runtime dependencies only
+.\setup.bat -Minimal
 ```
 
-This will create a Python virtual environment under `.venv/` and install all required packages.
+```bash
+# Linux: Ubuntu/Fedora runtime dependencies only
+./setup.sh --minimal
+
+# Linux: include model-conversion tools
+./setup.sh
+```
+
+This will create a Python virtual environment under `.venv/` and install the requested packages.
 
 ### 3. Run the Development Server
 You can run the server in **Mock Mode** on any operating system (including macOS and Linux) to develop or test the API/UI without requiring Intel hardware:
 
 ```powershell
 .\start_server.bat --mock
+```
+
+On Linux:
+
+```bash
+./start_server.sh --mock
 ```
 
 To run with a real OpenVINO model on Intel hardware (CPU/GPU/NPU):
