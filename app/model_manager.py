@@ -18,6 +18,7 @@ import shutil
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 from app import errors
 from app import model_registry as registry
@@ -510,7 +511,7 @@ class ModelManager:
             try:
                 await asyncio.wait_for(self._drain_event.wait(), timeout=10.0)
                 logger.info("All in-flight requests drained.")
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 logger.warning("Timeout waiting for in-flight requests to drain. Proceeding with shutdown.")
 
         for model_id in list(self.engines):

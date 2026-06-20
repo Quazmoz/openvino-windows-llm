@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextvars
 import json
 import logging
 import os
@@ -20,7 +21,6 @@ import uuid
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 
-import contextvars
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -46,7 +46,7 @@ from app.openai_api import (
     UsageInfo,
 )
 from app.rate_limit import RateLimitMiddleware
-from app.telemetry import cpu_stats, disk_stats, memory_stats, gpu_stats
+from app.telemetry import cpu_stats, disk_stats, gpu_stats, memory_stats
 from runtime import device_check
 from runtime.openvino_engine import BaseEngine, GenParams
 

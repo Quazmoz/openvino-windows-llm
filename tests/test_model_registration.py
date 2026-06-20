@@ -1,11 +1,12 @@
 import json
+
 import pytest
 from fastapi.testclient import TestClient
 
 from app.config import Settings
-from app.openai_api import ModelRegisterRequest
 from app.model_manager import ModelManager
 from app.model_registry import load_catalog
+from app.openai_api import ModelRegisterRequest
 from app.server import create_app
 
 

@@ -15,7 +15,6 @@ from typing import Any
 
 from app.openai_api import FunctionCall, ToolCall, ToolDefinition
 
-
 _JSON_FENCE_RE = re.compile(r"```(?:json)?\s*([\s\S]*?)\s*```", re.IGNORECASE)
 
 

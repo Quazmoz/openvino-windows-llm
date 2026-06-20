@@ -14,8 +14,10 @@ def pytest_configure(config):
     (ROOT / ".tmp").mkdir(parents=True, exist_ok=True)
 
 
-import pytest
-from runtime.device_check import cleanup_cached_core
+import pytest  # noqa: E402
+
+from runtime.device_check import cleanup_cached_core  # noqa: E402
+
 
 @pytest.fixture(autouse=True)
 def cleanup_ov_core():
