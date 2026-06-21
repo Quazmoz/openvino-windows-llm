@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 # --- Chat messages ---------------------------------------------------------
 
@@ -146,13 +146,18 @@ class ModelDeleteRequest(BaseModel):
 
 
 class ModelRegisterRequest(BaseModel):
-    model_id: str
-    name: str
-    source_model: str
-    weight_format: str = "int4"
-    recommended_device: str = "NPU"
-    max_context_len: int = 2048
-    max_output_tokens: int = 512
+    model_id: str = Field(
+        min_length=1,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]*$",
+        description="Filesystem-safe model identifier, for example smollm2-135m-int4.",
+    )
+    name: str = Field(min_length=1, max_length=160)
+    source_model: str = Field(min_length=1, max_length=240)
+    weight_format: str = Field(default="int4", pattern=r"^(int4|int8|fp16)$")
+    recommended_device: str = Field(default="NPU", min_length=1, max_length=64)
+    max_context_len: int = Field(default=2048, ge=128, le=262144)
+    max_output_tokens: int = Field(default=512, ge=1, le=65536)
     description: str | None = None
 
 

@@ -90,6 +90,24 @@ def test_index_has_api_key_and_metrics_ui(client):
     assert "data.metrics" in body
 
 
+def test_index_has_responsive_and_accessible_ui_polish(client):
+    body = client.get("/").text
+    assert "--shadow-md" in body
+    assert "@media (max-width: 700px)" in body
+    assert ".icon-btn:focus-visible" in body
+    assert ".copy-btn:focus-visible" in body
+    assert ".bubble pre:focus-within .code-copy" in body
+
+
+def test_index_escapes_dynamic_model_card_content(client):
+    body = client.get("/").text
+    assert "const safeName = escapeHtml(model.name)" in body
+    assert "data-model-action" in body
+    assert "onclick=\"triggerModelPrimaryAction" not in body
+    assert "return window.DOMPurify ? DOMPurify.sanitize(raw) : escapeHtml(text || '')" in body
+    assert "submitModalBtn.disabled = true" in body
+
+
 def test_devices_endpoint(client):
     body = client.get("/v1/devices").json()
     assert body["mock"] is True
@@ -632,4 +650,3 @@ def test_request_id_propagation_and_header(client):
     assert resp_auto.status_code == 200
     assert "X-Request-ID" in resp_auto.headers
     assert resp_auto.headers["X-Request-ID"].startswith("req-")
-

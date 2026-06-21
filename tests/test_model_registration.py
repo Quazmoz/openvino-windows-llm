@@ -130,3 +130,15 @@ def test_register_endpoint_duplicate_returns_400(client):
     resp2 = client.post("/v1/models/register", json=payload)
     assert resp2.status_code == 400
     assert "already registered" in resp2.json()["detail"]
+
+
+def test_register_endpoint_rejects_unsafe_model_id(client):
+    payload = {
+        "model_id": "../escape hatch",
+        "name": "Unsafe Model",
+        "source_model": "org/unsafe",
+    }
+
+    resp = client.post("/v1/models/register", json=payload)
+    assert resp.status_code == 422
+    assert "model_id" in resp.text

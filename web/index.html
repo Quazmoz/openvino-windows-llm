@@ -47,6 +47,7 @@
             --radius: 12px;
             --radius-sm: 8px;
             --shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+            --shadow-md: 0 10px 28px rgba(0, 0, 0, 0.32);
         }
 
         html,
@@ -80,6 +81,7 @@
             display: flex;
             align-items: center;
             gap: 10px;
+            min-width: 0;
         }
 
         .logo-icon {
@@ -113,6 +115,7 @@
             display: flex;
             align-items: center;
             gap: 10px;
+            min-width: 0;
         }
 
         .stat-chip {
@@ -173,6 +176,7 @@
         .model-select-wrap,
         .device-select-wrap {
             position: relative;
+            min-width: 0;
         }
 
         #model-select,
@@ -289,6 +293,20 @@
         .icon-btn:disabled {
             opacity: 0.45;
             cursor: not-allowed;
+        }
+
+        .icon-btn:focus-visible,
+        .chip:focus-visible,
+        .action-btn:focus-visible,
+        .btn-cancel:focus-visible,
+        .btn-submit:focus-visible,
+        .close-btn:focus-visible,
+        #jump-btn:focus-visible,
+        #send-btn:focus-visible,
+        .copy-btn:focus-visible,
+        .code-copy:focus-visible {
+            outline: 2px solid var(--primary);
+            outline-offset: 2px;
         }
 
         .btn-group {
@@ -833,6 +851,10 @@
             color: var(--text-1);
         }
 
+        .copy-btn:focus-visible {
+            opacity: 1;
+        }
+
         #input-area {
             position: relative;
             padding: 16px 20px;
@@ -1031,6 +1053,10 @@
             opacity: 1;
         }
 
+        .bubble pre:focus-within .code-copy {
+            opacity: 1;
+        }
+
         .code-copy:hover {
             color: var(--text-1);
             border-color: var(--border-hover);
@@ -1096,6 +1122,102 @@
             }
             .device-select-wrap {
                 flex-shrink: 0;
+            }
+        }
+
+        @media (max-width: 700px) {
+            #app {
+                grid-template-rows: auto minmax(0, 1fr) auto;
+            }
+            .logo-sub {
+                display: none;
+            }
+            .header-right {
+                display: grid;
+                grid-template-columns: 1fr auto auto auto auto auto auto;
+                align-items: center;
+            }
+            .model-select-wrap {
+                grid-column: 1 / -1;
+                order: -1;
+            }
+            .device-select-wrap {
+                grid-column: span 2;
+            }
+            #device-select,
+            #device-select.has-advanced-value {
+                width: 100%;
+                max-width: none;
+            }
+            .stat-chip {
+                justify-content: center;
+                min-height: 34px;
+                white-space: nowrap;
+            }
+            .btn-group {
+                display: contents;
+            }
+            .icon-btn {
+                width: 34px;
+                height: 34px;
+            }
+            #settings-sidebar {
+                position: absolute;
+                inset: 0 0 0 auto;
+                width: min(320px, 92vw);
+                box-shadow: var(--shadow);
+            }
+            #settings-sidebar.hidden {
+                margin-right: min(-320px, -92vw);
+            }
+            #chat-area {
+                padding: 16px 0;
+            }
+            .chat-inner {
+                padding: 0 12px;
+                gap: 16px;
+            }
+            .empty-state {
+                padding: 56px 12px;
+            }
+            .avatar {
+                display: none;
+            }
+            .msg-row,
+            .msg-row.user {
+                flex-direction: column;
+                gap: 4px;
+            }
+            .msg-row .bubble {
+                border-radius: var(--radius-sm);
+            }
+            .msg-row.ai .bubble,
+            .msg-row.user .bubble {
+                border-bottom-left-radius: var(--radius-sm);
+                border-bottom-right-radius: var(--radius-sm);
+            }
+            #input-area {
+                padding: 12px;
+            }
+            .footer-meta {
+                flex-direction: column;
+                gap: 6px;
+            }
+            .footer-right {
+                justify-content: space-between;
+                flex: 0 1 auto;
+            }
+            .form-group-row,
+            .modal-footer {
+                flex-direction: column;
+            }
+            .modal-footer button {
+                width: 100%;
+            }
+            #toast {
+                max-width: calc(100vw - 24px);
+                white-space: normal;
+                text-align: center;
             }
         }
 
@@ -1392,10 +1514,17 @@
             box-shadow: 0 4px 12px rgba(14, 165, 233, 0.25);
         }
 
-        .btn-submit:hover {
+        .btn-submit:hover:not(:disabled) {
             transform: translateY(-1px);
             box-shadow: 0 6px 16px rgba(14, 165, 233, 0.4);
             filter: brightness(1.08);
+        }
+
+        .btn-submit:disabled {
+            background: var(--surface-3);
+            color: var(--text-3);
+            cursor: not-allowed;
+            box-shadow: none;
         }
     </style>
 </head>
@@ -1794,6 +1923,7 @@
         const closeModalBtn = document.getElementById('close-modal-btn');
         const cancelModalBtn = document.getElementById('cancel-modal-btn');
         const customModelForm = document.getElementById('custom-model-form');
+        const submitModalBtn = document.getElementById('submit-modal-btn');
         const customSourceModel = document.getElementById('custom-source-model');
         const customModelId = document.getElementById('custom-model-id');
         const customModelName = document.getElementById('custom-model-name');
@@ -1831,8 +1961,9 @@
         // Render model output as markdown, then sanitize the HTML before insertion.
         // (Degrades gracefully if the marked / DOMPurify CDNs are unavailable.)
         function renderMarkdown(text) {
-            const raw = window.marked ? marked.parse(text || '') : escapeHtml(text || '');
-            return window.DOMPurify ? DOMPurify.sanitize(raw) : raw;
+            if (!window.marked) return escapeHtml(text || '');
+            const raw = marked.parse(text || '');
+            return window.DOMPurify ? DOMPurify.sanitize(raw) : escapeHtml(text || '');
         }
         function escapeHtml(text) { return String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
         // Syntax-highlight code blocks and add a per-block copy button (once each).
@@ -1887,16 +2018,19 @@
             card.classList.remove('hidden');
             
             const loadDevice = modelLoadDevice();
+            const safeName = escapeHtml(model.name);
+            const safeDevice = escapeHtml(model.device || '');
+            const safeLoadDevice = escapeHtml(loadDevice);
             
             if (model.is_loaded) {
                 card.innerHTML = `
-                    <div class="action-card-title">Model Ready: <span style="color:var(--green)">${model.name}</span></div>
-                    <p class="action-card-text">Loaded on <strong>${model.device}</strong>. Type a message below or click a suggestion to start chatting!</p>
+                    <div class="action-card-title">Model Ready: <span style="color:var(--green)">${safeName}</span></div>
+                    <p class="action-card-text">Loaded on <strong>${safeDevice}</strong>. Type a message below or click a suggestion to start chatting!</p>
                 `;
             } else if (model.is_loading) {
                 const actionText = model.status === 'converting' 
-                    ? `Converting <strong>${model.name}</strong> to OpenVINO IR...` 
-                    : `Loading <strong>${model.name}</strong> into memory...`;
+                    ? `Converting <strong>${safeName}</strong> to OpenVINO IR...` 
+                    : `Loading <strong>${safeName}</strong> into memory...`;
                 const subText = model.status === 'converting'
                     ? 'This downloads the weights from Hugging Face and exports them. It may take 1-5 minutes.'
                     : 'Bringing model onto the selected device...';
@@ -1913,26 +2047,30 @@
                 card.innerHTML = `
                     <div class="action-card-title" style="color:var(--red)">${actionLabel}</div>
                     <p class="action-card-text">${escapeHtml(model.error || 'An error occurred during preparation.')}</p>
-                    <button class="action-btn" onclick="triggerModelPrimaryAction('${model.id}')">
+                    <button class="action-btn" data-model-action>
                         Retry Preparation
                     </button>
                 `;
             } else if (model.status === 'ready_to_load') {
                 card.innerHTML = `
-                    <div class="action-card-title">Model Converted: <span>${model.name}</span></div>
+                    <div class="action-card-title">Model Converted: <span>${safeName}</span></div>
                     <p class="action-card-text">The model is ready on disk. Load it to begin chatting.</p>
-                    <button class="action-btn" onclick="triggerModelPrimaryAction('${model.id}')">
-                        ${LOAD_ICON} Load on ${loadDevice}
+                    <button class="action-btn" data-model-action>
+                        ${LOAD_ICON} Load on ${safeLoadDevice}
                     </button>
                 `;
             } else {
                 card.innerHTML = `
-                    <div class="action-card-title">Model Available: <span>${model.name}</span></div>
+                    <div class="action-card-title">Model Available: <span>${safeName}</span></div>
                     <p class="action-card-text">This model needs to be prepared (converted to OpenVINO IR) first.</p>
-                    <button class="action-btn" onclick="triggerModelPrimaryAction('${model.id}')">
-                        ${CONVERT_ICON} Convert & Load on ${loadDevice}
+                    <button class="action-btn" data-model-action>
+                        ${CONVERT_ICON} Convert & Load on ${safeLoadDevice}
                     </button>
                 `;
+            }
+            const actionBtn = card.querySelector('[data-model-action]');
+            if (actionBtn) {
+                actionBtn.addEventListener('click', () => triggerModelPrimaryAction(model.id));
             }
         }
 
@@ -1959,7 +2097,7 @@
             activeLoaderBubble.firstElementChild.innerHTML = `
                 <div class="model-loader-status" style="display:flex;align-items:center;gap:10px;padding:4px 0;color:var(--amber);">
                     <div class="spinner"></div>
-                    <span>${actionText} <strong>${selectedModel.name}</strong> on <strong>${loadDevice}</strong>... This may take a moment.</span>
+                    <span>${escapeHtml(actionText)} <strong>${escapeHtml(selectedModel.name)}</strong> on <strong>${escapeHtml(loadDevice)}</strong>... This may take a moment.</span>
                 </div>
             `;
             scrollToBottom(true);
@@ -2495,6 +2633,7 @@
         // ── Conversation persistence (survives reloads) ───────
         function saveConversation() {
             try { localStorage.setItem(STORAGE_KEY, JSON.stringify(conversation)); } catch { }
+            updateExportButton();
         }
         function restoreConversation() {
             let saved;
@@ -2650,6 +2789,9 @@
                 max_output_tokens: parseInt(customMaxOutputTokens.value, 10),
                 description: customDescription.value.trim() || null
             };
+            const previousSubmitText = submitModalBtn.textContent;
+            submitModalBtn.disabled = true;
+            submitModalBtn.textContent = 'Registering...';
             try {
                 const res = await fetch('/v1/models/register', {
                     method: 'POST',
@@ -2670,6 +2812,9 @@
                 await requestModelConvert(body.model_id);
             } catch (err) {
                 showToast(`Failed to register model: ${err.message}`);
+            } finally {
+                submitModalBtn.disabled = false;
+                submitModalBtn.textContent = previousSubmitText;
             }
         });
 
