@@ -142,3 +142,16 @@ def test_register_endpoint_rejects_unsafe_model_id(client):
     resp = client.post("/v1/models/register", json=payload)
     assert resp.status_code == 422
     assert "model_id" in resp.text
+
+
+def test_register_endpoint_rejects_invalid_recommended_device(client):
+    payload = {
+        "model_id": "bad-device-model",
+        "name": "Bad Device Model",
+        "source_model": "org/bad-device",
+        "recommended_device": "BANANA",
+    }
+
+    resp = client.post("/v1/models/register", json=payload)
+    assert resp.status_code == 422
+    assert "recommended_device" in resp.text

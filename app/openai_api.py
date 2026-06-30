@@ -9,7 +9,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from runtime import device_check
 
 # --- Chat messages ---------------------------------------------------------
 
@@ -159,6 +161,14 @@ class ModelRegisterRequest(BaseModel):
     max_context_len: int = Field(default=2048, ge=128, le=262144)
     max_output_tokens: int = Field(default=512, ge=1, le=65536)
     description: str | None = None
+
+    @field_validator("recommended_device")
+    @classmethod
+    def validate_recommended_device(cls, value: str) -> str:
+        try:
+            return device_check.validate_device_expression(value)
+        except device_check.DeviceValidationError as exc:
+            raise ValueError(str(exc)) from exc
 
 
 # --- Benchmark requests ---------------------------------------------------
