@@ -97,6 +97,13 @@ class Settings:
         if self.rate_limit < 0:
             warnings.append(f"Rate limit {self.rate_limit} is negative; treating as disabled (0)")
 
+        if self.host.strip() in {"0.0.0.0", "::"} and not self.api_key:
+            warnings.append(
+                f"OV_LLM_HOST is set to {self.host!r}, which can expose the server beyond "
+                "localhost, but OV_LLM_API_KEY is not set. Set OV_LLM_API_KEY before "
+                "exposing the server beyond a trusted local machine/network."
+            )
+
         for warning in warnings:
             logger.warning("Config: %s", warning)
         return warnings

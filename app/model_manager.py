@@ -86,7 +86,6 @@ class ModelManager:
             if self._active_generations == 0:
                 self._drain_event.set()
 
-
     # --- status helpers ----------------------------------------------------
 
     def _set_status(self, model_id: str, status: str, error: str | None = None) -> None:
@@ -106,9 +105,7 @@ class ModelManager:
 
         *level* is ``"info"``, ``"warning"``, or ``"error"``.
         """
-        self._events.append(
-            {"timestamp": int(time.time()), "level": level, "message": message}
-        )
+        self._events.append({"timestamp": int(time.time()), "level": level, "message": message})
 
     def recent_events(self) -> list[dict]:
         """Return the activity log as a plain list (oldest first)."""
@@ -303,7 +300,6 @@ class ModelManager:
         finally:
             self.load_tasks.pop(model_id, None)
 
-
     def schedule_load(self, model_id: str, device: str | None = None) -> asyncio.Task | None:
         if model_id not in self.catalog:
             logger.warning("Refusing to load unknown model '%s'", model_id)
@@ -366,7 +362,9 @@ class ModelManager:
                         return
 
                     if not cfg.source_model:
-                        raise RuntimeError(f"{cfg.name} has no Hugging Face source model configured.")
+                        raise RuntimeError(
+                            f"{cfg.name} has no Hugging Face source model configured."
+                        )
 
                     self._set_status(model_id, "converting")
                     proc = await asyncio.create_subprocess_exec(
@@ -382,7 +380,9 @@ class ModelManager:
                     stdout, stderr = await proc.communicate()
                     if proc.returncode != 0:
                         output = (stderr or stdout).decode(errors="replace").strip()
-                        raise RuntimeError(output or f"Conversion exited with code {proc.returncode}")
+                        raise RuntimeError(
+                            output or f"Conversion exited with code {proc.returncode}"
+                        )
 
                     self._clear_status(model_id)
                     logger.info("Converted '%s' to %s", model_id, cfg.abs_path(BASE_DIR))
@@ -402,7 +402,6 @@ class ModelManager:
                 self._emit("error", f"Conversion failed for {cfg.name}")
         finally:
             self.convert_tasks.pop(model_id, None)
-
 
     def schedule_convert(
         self,
@@ -494,7 +493,8 @@ class ModelManager:
         cfg = registry.ModelConfig(
             id=req.model_id,
             name=req.name,
-            description=req.description or f"Custom model registered via Web UI. Source: {req.source_model}",
+            description=req.description
+            or f"Custom model registered via Web UI. Source: {req.source_model}",
             backend="openvino-genai",
             model_path=f"models/openvino/{req.model_id}",
             source_model=req.source_model,
@@ -508,7 +508,6 @@ class ModelManager:
         registry.save_catalog(self.settings.models_file, self.catalog)
         self._emit("info", f"Registered new custom model: {cfg.name} ({cfg.id})")
         return cfg
-
 
     async def startup(self) -> None:
         mode = "mock engine" if self.force_mock else f"device={self.settings.device}"
@@ -536,12 +535,16 @@ class ModelManager:
 
         # Gracefully wait for in-flight requests to complete
         if self._active_generations > 0:
-            logger.info("Waiting for %d in-flight generation requests to drain...", self._active_generations)
+            logger.info(
+                "Waiting for %d in-flight generation requests to drain...", self._active_generations
+            )
             try:
                 await asyncio.wait_for(self._drain_event.wait(), timeout=10.0)
                 logger.info("All in-flight requests drained.")
             except TimeoutError:
-                logger.warning("Timeout waiting for in-flight requests to drain. Proceeding with shutdown.")
+                logger.warning(
+                    "Timeout waiting for in-flight requests to drain. Proceeding with shutdown."
+                )
 
         for model_id in list(self.engines):
             self.unload(model_id)

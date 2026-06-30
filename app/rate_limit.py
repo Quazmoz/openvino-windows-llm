@@ -54,7 +54,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         if len(window) >= self.rpm:
             retry_after = int(window[0] + self.window - now) + 1
-            logger.warning("Rate limit exceeded for %s (%d/%d rpm)", client_ip, len(window), self.rpm)
+            logger.warning(
+                "Rate limit exceeded for %s (%d/%d rpm)", client_ip, len(window), self.rpm
+            )
             return Response(
                 content=f'{{"detail":"Rate limit exceeded. Try again in {retry_after}s."}}',
                 status_code=429,

@@ -61,7 +61,9 @@ def format_model_convert_error(exc: BaseException) -> str:
             f"Please visit {model_url} to accept the model agreement, then try converting again."
         )
 
-    if any(kwd in text.lower() for kwd in ("gated", "restricted", "unauthorized", "401 client error")):
+    if any(
+        kwd in text.lower() for kwd in ("gated", "restricted", "unauthorized", "401 client error")
+    ):
         return (
             "Access to this model is gated on Hugging Face. Please accept the model's license agreement "
             "on huggingface.co, generate a token under Settings -> Tokens, add 'HF_TOKEN=your_token' to your "
@@ -82,7 +84,10 @@ def format_model_convert_error(exc: BaseException) -> str:
         lines = [line.strip() for line in text.splitlines() if line.strip()]
         if lines:
             for line in reversed(lines):
-                if any(err in line.lower() for err in ("error", "exception", "failed", "oserror")) and ":" in line:
+                if (
+                    any(err in line.lower() for err in ("error", "exception", "failed", "oserror"))
+                    and ":" in line
+                ):
                     return f"Conversion failed: {line}"
             return f"Conversion failed: {lines[-1]}"
 
@@ -129,7 +134,9 @@ def format_device_error(device: str, available: list[str]) -> str:
             "If the NPU still fails, fall back to --device CPU."
         )
     elif device == "GPU":
-        extra = " Confirm the Intel GPU driver is installed, then retry, or fall back to --device CPU."
+        extra = (
+            " Confirm the Intel GPU driver is installed, then retry, or fall back to --device CPU."
+        )
     return (
         f"OpenVINO device '{device}' is not available. Detected devices: {avail}. "
         f"Supported examples: {examples}.{extra}"

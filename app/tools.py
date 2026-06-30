@@ -48,7 +48,9 @@ def format_tools_for_prompt(
             tools_json = [t for t in tools_json if t["function"]["name"] == forced_tool]
 
     if forced_tool:
-        instruction = f"You MUST call the '{forced_tool}' function. Do not respond with anything else."
+        instruction = (
+            f"You MUST call the '{forced_tool}' function. Do not respond with anything else."
+        )
     elif tool_choice == "required":
         instruction = "You MUST call at least one of the available tools. Do not respond without calling a tool."
     else:
@@ -139,7 +141,9 @@ def _json_candidates(text: str) -> list[tuple[int, int, Any]]:
 
 def _span_is_contained(span: tuple[int, int], accepted: list[tuple[int, int]]) -> bool:
     start, end = span
-    return any(start >= accepted_start and end <= accepted_end for accepted_start, accepted_end in accepted)
+    return any(
+        start >= accepted_start and end <= accepted_end for accepted_start, accepted_end in accepted
+    )
 
 
 def _remove_spans(text: str, spans: list[tuple[int, int]]) -> str:
@@ -221,6 +225,6 @@ def detect_incomplete_tool_call(text: str) -> bool:
 def get_retry_prompt() -> str:
     return (
         "Your previous response contained a malformed tool call. Please try again.\n"
-        'Output ONLY valid JSON in this format:\n'
+        "Output ONLY valid JSON in this format:\n"
         '{"name": "function_name", "arguments": {"param": "value"}}'
     )

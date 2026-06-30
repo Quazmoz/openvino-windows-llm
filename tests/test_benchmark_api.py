@@ -96,10 +96,13 @@ def test_benchmark_validation_errors(tmp_path):
 def test_benchmark_routes_are_api_key_protected(tmp_path):
     with make_client(tmp_path, api_key="sk-secret") as client:
         assert client.get("/v1/benchmarks").status_code == 401
-        assert client.get(
-            "/v1/benchmarks",
-            headers={"Authorization": "Bearer sk-secret"},
-        ).status_code == 200
+        assert (
+            client.get(
+                "/v1/benchmarks",
+                headers={"Authorization": "Bearer sk-secret"},
+            ).status_code
+            == 200
+        )
 
 
 def test_scoring_prefers_successful_balanced_result():

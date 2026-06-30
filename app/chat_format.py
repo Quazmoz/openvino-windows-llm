@@ -158,7 +158,9 @@ def build_prompt_within_budget(
 
     dropped = len(rest) - best_k
     if dropped > 0:
-        logger.info("Sliding window dropped %d older turn(s) to fit %d tokens", dropped, max_prompt_len)
+        logger.info(
+            "Sliding window dropped %d older turn(s) to fit %d tokens", dropped, max_prompt_len
+        )
 
     final = system + rest[-best_k:]
     prompt = apply_template(final)

@@ -78,11 +78,13 @@ def gpu_stats() -> dict | None:
     Returns a dict with total, free, and used memory in GB, or None if unavailable/fails.
     """
     import importlib.util
+
     if importlib.util.find_spec("openvino") is None:
         return None
 
     try:
         from runtime.device_check import _get_core, available_devices
+
         core = _get_core()
         devices = available_devices()
         gpu_device = next((d for d in devices if d.startswith("GPU")), None)
@@ -111,7 +113,10 @@ def gpu_stats() -> dict | None:
         for k, v in stats.items():
             if isinstance(v, int):
                 formatted_stats[k] = v
-                if any(x in k.lower() for x in ("size", "bytes", "free", "used", "total", "allocated", "limit")):
+                if any(
+                    x in k.lower()
+                    for x in ("size", "bytes", "free", "used", "total", "allocated", "limit")
+                ):
                     formatted_stats[f"{k}_gb"] = round(v / (1024**3), 2)
             else:
                 formatted_stats[k] = v
@@ -133,4 +138,3 @@ def gpu_stats() -> dict | None:
         logger = logging.getLogger("ov-llm.telemetry")
         logger.debug("Failed to query GPU telemetry: %s", exc)
         return None
-

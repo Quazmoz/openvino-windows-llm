@@ -27,7 +27,9 @@ def test_format_tools_includes_name_and_format():
 
 
 def test_format_tools_forced_tool():
-    prompt = format_tools_for_prompt([_weather_tool()], tool_choice={"type": "function", "function": {"name": "get_weather"}})
+    prompt = format_tools_for_prompt(
+        [_weather_tool()], tool_choice={"type": "function", "function": {"name": "get_weather"}}
+    )
     assert "MUST call the 'get_weather'" in prompt
 
 

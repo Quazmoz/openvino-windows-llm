@@ -58,18 +58,21 @@ from runtime.openvino_engine import BaseEngine, GenParams
 
 request_id_var = contextvars.ContextVar("request_id", default="")
 
+
 class RequestIDFilter(logging.Filter):
     def filter(self, record):
         record.request_id = request_id_var.get() or "-"
         return True
 
+
 # Configure logging to console with Request ID support
 root_logger = logging.getLogger()
 handler = logging.StreamHandler(sys.stdout)
-handler.setFormatter(logging.Formatter(
-    fmt="%(asctime)s [%(levelname)s] [%(request_id)s] %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S"
-))
+handler.setFormatter(
+    logging.Formatter(
+        fmt="%(asctime)s [%(levelname)s] [%(request_id)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
+    )
+)
 handler.addFilter(RequestIDFilter())
 for h in list(root_logger.handlers):
     root_logger.removeHandler(h)
@@ -102,9 +105,16 @@ def _normalize_device_or_400(device: str | None) -> str | None:
 # --- Generation helpers ----------------------------------------------------
 
 
-def _params_for(request_max_tokens: int | None, temperature: float | None, top_p: float | None,
-                prompt_tokens: int, max_context_len: int, *,
-                stop: list[str] | None = None, seed: int | None = None) -> GenParams:
+def _params_for(
+    request_max_tokens: int | None,
+    temperature: float | None,
+    top_p: float | None,
+    prompt_tokens: int,
+    max_context_len: int,
+    *,
+    stop: list[str] | None = None,
+    seed: int | None = None,
+) -> GenParams:
     available = max(max_context_len - prompt_tokens - 8, 16)
     requested = request_max_tokens or 512
     max_new = max(min(requested, available), 16)
@@ -170,10 +180,10 @@ def create_app(settings: Settings) -> FastAPI:
         request_id = request.headers.get("X-Request-ID")
         if not request_id:
             request_id = f"req-{uuid.uuid4().hex[:12]}"
-        
+
         token = request_id_var.set(request_id)
         request.state.request_id = request_id
-        
+
         start_time = time.perf_counter()
         try:
             response = await call_next(request)
@@ -187,19 +197,19 @@ def create_app(settings: Settings) -> FastAPI:
                 duration,
             )
             raise
+        else:
+            duration = (time.perf_counter() - start_time) * 1000
+            logger.info(
+                "HTTP %s %s - Status: %d - Latency: %.2fms",
+                request.method,
+                request.url.path,
+                response.status_code,
+                duration,
+            )
+            response.headers["X-Request-ID"] = request_id
+            return response
         finally:
             request_id_var.reset(token)
-            
-        duration = (time.perf_counter() - start_time) * 1000
-        logger.info(
-            "HTTP %s %s - Status: %d - Latency: %.2fms",
-            request.method,
-            request.url.path,
-            response.status_code,
-            duration,
-        )
-        response.headers["X-Request-ID"] = request_id
-        return response
 
     # Configure CORS middleware
     origins = [orig.strip() for orig in settings.cors_origins.split(",") if orig.strip()]
@@ -211,7 +221,6 @@ def create_app(settings: Settings) -> FastAPI:
             allow_methods=["*"],
             allow_headers=["*"],
         )
-
 
     # --- auth (optional) ---------------------------------------------------
 
@@ -268,7 +277,6 @@ def create_app(settings: Settings) -> FastAPI:
             return {"status": "busy", "message": "Models are loading"}
         return {"status": "ready"}
 
-
     # --- models ------------------------------------------------------------
 
     @app.get("/v1/models", dependencies=auth)
@@ -310,7 +318,11 @@ def create_app(settings: Settings) -> FastAPI:
         task = manager.schedule_load(req.model, device)
         entry = manager.catalog_entry(req.model)
         if task is None and entry["is_loaded"]:
-            return {"status": "loaded", "message": f"{entry['name']} is already loaded.", "model": entry}
+            return {
+                "status": "loaded",
+                "message": f"{entry['name']} is already loaded.",
+                "model": entry,
+            }
         return {
             "status": entry["status"],
             "message": f"Loading {entry['name']}. First load can take a while.",
@@ -324,12 +336,18 @@ def create_app(settings: Settings) -> FastAPI:
         device = _normalize_device_or_400(req.device)
         cfg = manager.catalog[req.model]
         if not cfg.source_model:
-            raise HTTPException(status_code=400, detail=f"Model '{req.model}' has no source model configured")
+            raise HTTPException(
+                status_code=400, detail=f"Model '{req.model}' has no source model configured"
+            )
 
         task = manager.schedule_convert(req.model, device, load_after=req.load_after)
         entry = manager.catalog_entry(req.model)
         if task is None and entry["is_downloaded"]:
-            return {"status": entry["status"], "message": f"{entry['name']} is already converted.", "model": entry}
+            return {
+                "status": entry["status"],
+                "message": f"{entry['name']} is already converted.",
+                "model": entry,
+            }
         return {
             "status": entry["status"],
             "message": f"Converting {entry['name']}. This may take several minutes.",
@@ -373,7 +391,12 @@ def create_app(settings: Settings) -> FastAPI:
         entry = manager.catalog_entry(req.model)
         freed_gb = round(result["freed_bytes"] / (1024**3), 2)
         if not result["deleted"]:
-            return {"status": "noop", "message": f"No local files for {entry['name']}.", "freed_gb": 0.0, "model": entry}
+            return {
+                "status": "noop",
+                "message": f"No local files for {entry['name']}.",
+                "freed_gb": 0.0,
+                "model": entry,
+            }
         return {
             "status": "deleted",
             "message": f"Deleted {entry['name']} ({freed_gb} GB freed).",
@@ -552,14 +575,21 @@ def create_app(settings: Settings) -> FastAPI:
         max_prompt_len = cfg.max_prompt_len if cfg else 1536
 
         use_tools = bool(request.tools) and request.tool_choice != "none"
-        system_override = tools.format_tools_for_prompt(request.tools, request.tool_choice) if use_tools else ""
+        system_override = (
+            tools.format_tools_for_prompt(request.tools, request.tool_choice) if use_tools else ""
+        )
 
         prompt, prompt_tokens = _build_chat_prompt(
             engine, request.messages, max_prompt_len, system_override
         )
         params = _params_for(
-            request.max_tokens, request.temperature, request.top_p, prompt_tokens, max_context_len,
-            stop=chat_format.normalize_stop(request.stop), seed=request.seed,
+            request.max_tokens,
+            request.temperature,
+            request.top_p,
+            prompt_tokens,
+            max_context_len,
+            stop=chat_format.normalize_stop(request.stop),
+            seed=request.seed,
         )
 
         if request.stream:
@@ -568,9 +598,13 @@ def create_app(settings: Settings) -> FastAPI:
                 _stream_chat(engine, request, prompt, prompt_tokens, params, use_tools, req_id),
                 media_type="text/event-stream",
             )
-        return await _complete_chat(engine, request, prompt, prompt_tokens, params, use_tools, max_prompt_len)
+        return await _complete_chat(
+            engine, request, prompt, prompt_tokens, params, use_tools, max_prompt_len
+        )
 
-    async def _complete_chat(engine, request, prompt, prompt_tokens, params, use_tools, max_prompt_len):
+    async def _complete_chat(
+        engine, request, prompt, prompt_tokens, params, use_tools, max_prompt_len
+    ):
         MAX_RETRIES = 2
         start = time.perf_counter()
         text = ""
@@ -589,7 +623,9 @@ def create_app(settings: Settings) -> FastAPI:
                     ChatMessage(role="user", content=tools.get_retry_prompt()),
                 ]
                 current_prompt, current_prompt_tokens = _build_chat_prompt(
-                    engine, retry_messages, max_prompt_len,
+                    engine,
+                    retry_messages,
+                    max_prompt_len,
                     tools.format_tools_for_prompt(request.tools, request.tool_choice),
                 )
                 continue
@@ -610,9 +646,7 @@ def create_app(settings: Settings) -> FastAPI:
             if hit:
                 content = truncated
                 loop = asyncio.get_running_loop()
-                completion_tokens = await loop.run_in_executor(
-                    None, engine.count_tokens, truncated
-                )
+                completion_tokens = await loop.run_in_executor(None, engine.count_tokens, truncated)
 
         manager.record_request(
             engine.model_id, current_prompt_tokens, completion_tokens, time.perf_counter() - start
@@ -624,7 +658,9 @@ def create_app(settings: Settings) -> FastAPI:
             choices=[
                 ChatCompletionResponseChoice(
                     index=0,
-                    message=ChatCompletionMessage(role="assistant", content=content, tool_calls=tool_calls),
+                    message=ChatCompletionMessage(
+                        role="assistant", content=content, tool_calls=tool_calls
+                    ),
                     finish_reason=finish_reason,
                 )
             ],
@@ -671,7 +707,10 @@ def create_app(settings: Settings) -> FastAPI:
                                             "index": i,
                                             "id": tc.id,
                                             "type": "function",
-                                            "function": {"name": tc.function.name, "arguments": tc.function.arguments},
+                                            "function": {
+                                                "name": tc.function.name,
+                                                "arguments": tc.function.arguments,
+                                            },
                                         }
                                     ]
                                 }
@@ -686,7 +725,11 @@ def create_app(settings: Settings) -> FastAPI:
                         emit = stopper.feed(piece)
                         if emit:
                             full_text += emit
-                            delta = {"role": "assistant", "content": emit} if first else {"content": emit}
+                            delta = (
+                                {"role": "assistant", "content": emit}
+                                if first
+                                else {"content": emit}
+                            )
                             first = False
                             yield chunk(delta)
                         if stopper.stopped:
@@ -695,7 +738,9 @@ def create_app(settings: Settings) -> FastAPI:
                     tail = stopper.flush()
                     if tail:
                         full_text += tail
-                        yield chunk({"role": "assistant", "content": tail} if first else {"content": tail})
+                        yield chunk(
+                            {"role": "assistant", "content": tail} if first else {"content": tail}
+                        )
             except Exception as exc:  # noqa: BLE001 - report inline to the SSE client
                 logger.exception("Generation failed: %s", exc)
                 yield chunk({"content": f"\n\n[error: {exc}]"})
@@ -731,7 +776,6 @@ def create_app(settings: Settings) -> FastAPI:
         finally:
             request_id_var.reset(token)
 
-
     # --- responses API (n8n) ----------------------------------------------
 
     @app.post("/v1/responses", dependencies=auth)
@@ -742,7 +786,9 @@ def create_app(settings: Settings) -> FastAPI:
         max_prompt_len = cfg.max_prompt_len if cfg else 1536
 
         try:
-            dict_messages = chat_format.responses_input_to_messages(request.input, request.instructions)
+            dict_messages = chat_format.responses_input_to_messages(
+                request.input, request.instructions
+            )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -758,7 +804,9 @@ def create_app(settings: Settings) -> FastAPI:
 
         if request.stream:
             return StreamingResponse(
-                _stream_response(engine, request, prompt, prompt_tokens, params, response_id, msg_id),
+                _stream_response(
+                    engine, request, prompt, prompt_tokens, params, response_id, msg_id
+                ),
                 media_type="text/event-stream",
             )
 
@@ -879,17 +927,29 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--port", type=int, help="Bind port (default 8000)")
     parser.add_argument("--mock", action="store_true", help="Force the mock engine (no OpenVINO)")
     parser.add_argument("--list", action="store_true", help="List catalog models and exit")
-    parser.add_argument("--check-devices", action="store_true", help="Show OpenVINO devices and exit")
-    parser.add_argument("--auto-convert", action="store_true", help="Auto-convert/download models on startup or load")
-    parser.add_argument("--benchmark", action="store_true", help="Run a hardware benchmark and exit")
+    parser.add_argument(
+        "--check-devices", action="store_true", help="Show OpenVINO devices and exit"
+    )
+    parser.add_argument(
+        "--auto-convert",
+        action="store_true",
+        help="Auto-convert/download models on startup or load",
+    )
+    parser.add_argument(
+        "--benchmark", action="store_true", help="Run a hardware benchmark and exit"
+    )
     parser.add_argument("--benchmark-model", help="Catalog model id to benchmark")
     parser.add_argument(
         "--benchmark-devices",
         default="CPU,GPU,NPU,AUTO",
         help="Benchmark devices, e.g. CPU,GPU,NPU,AUTO or CPU;AUTO:NPU,GPU,CPU",
     )
-    parser.add_argument("--benchmark-runs", type=int, default=1, help="Generation runs per model/device")
-    parser.add_argument("--benchmark-max-tokens", type=int, default=64, help="Generated token limit per run")
+    parser.add_argument(
+        "--benchmark-runs", type=int, default=1, help="Generation runs per model/device"
+    )
+    parser.add_argument(
+        "--benchmark-max-tokens", type=int, default=64, help="Generated token limit per run"
+    )
     args = parser.parse_args(argv)
 
     if args.list:
@@ -902,7 +962,9 @@ def main(argv: list[str] | None = None) -> int:
         for model_id, cfg in catalog.items():
             print(f"  {model_id:28} {cfg.name}")
             print(f"  {'':28} {cfg.description}")
-            print(f"  {'':28} source: {cfg.source_model or '(none)'}  device: {cfg.recommended_device}")
+            print(
+                f"  {'':28} source: {cfg.source_model or '(none)'}  device: {cfg.recommended_device}"
+            )
             print()
         return 0
 
@@ -964,7 +1026,9 @@ def main(argv: list[str] | None = None) -> int:
 
     logger.info("Visit http://localhost:%d", resolved.port)
     if resolved.host == "0.0.0.0":
-        logger.warning("Binding to 0.0.0.0 exposes the server on your LAN. Use a trusted network only.")
+        logger.warning(
+            "Binding to 0.0.0.0 exposes the server on your LAN. Use a trusted network only."
+        )
 
     uvicorn.run(create_app(resolved), host=resolved.host, port=resolved.port)
     return 0

@@ -163,7 +163,10 @@ def make_catalog_entry(
         "max_context_len": cfg.max_context_len,
         "max_output_tokens": cfg.max_output_tokens,
         "can_load": (not loaded) and downloaded and not is_busy_state,
-        "can_convert": (not loaded) and (not downloaded) and bool(cfg.source_model) and not is_busy_state,
+        "can_convert": (not loaded)
+        and (not downloaded)
+        and bool(cfg.source_model)
+        and not is_busy_state,
         "can_unload": loaded and not busy,
         "can_delete": (not loaded) and downloaded and not is_busy_state,
         "error": error,
@@ -187,4 +190,3 @@ def save_catalog(models_file: Path, catalog: dict[str, ModelConfig]) -> None:
         }
     with open(models_file, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
-

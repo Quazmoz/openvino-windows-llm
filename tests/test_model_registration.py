@@ -39,7 +39,7 @@ def test_register_model_success(temp_models_file):
         force_mock=True,
     )
     manager = ModelManager(settings)
-    
+
     req = ModelRegisterRequest(
         model_id="custom-m1",
         name="Custom Model One",
@@ -48,9 +48,9 @@ def test_register_model_success(temp_models_file):
         recommended_device="CPU",
         max_context_len=2048,
         max_output_tokens=512,
-        description="A nice custom model"
+        description="A nice custom model",
     )
-    
+
     cfg = manager.register_model(req)
     assert cfg.id == "custom-m1"
     assert cfg.name == "Custom Model One"
@@ -73,7 +73,7 @@ def test_register_model_duplicate_raises(temp_models_file):
         force_mock=True,
     )
     manager = ModelManager(settings)
-    
+
     req = ModelRegisterRequest(
         model_id="custom-m1",
         name="Custom Model One",
@@ -95,9 +95,9 @@ def test_register_endpoint_success(client, temp_models_file):
         "recommended_device": "GPU",
         "max_context_len": 4096,
         "max_output_tokens": 1024,
-        "description": "Registered via endpoint test"
+        "description": "Registered via endpoint test",
     }
-    
+
     resp = client.post("/v1/models/register", json=payload)
     assert resp.status_code == 200, resp.text
     data = resp.json()
@@ -123,7 +123,7 @@ def test_register_endpoint_duplicate_returns_400(client):
         "name": "Dup Model",
         "source_model": "org/dup",
     }
-    
+
     resp1 = client.post("/v1/models/register", json=payload)
     assert resp1.status_code == 200
 

@@ -88,7 +88,9 @@ def parse_device_expression(device: str | None, *, default: str | None = None) -
         if _is_physical_token(text):
             return DeviceExpression(text)
         if text in {"MULTI", "HETERO"}:
-            raise DeviceValidationError(f"Device '{text}' requires priorities, for example {text}:GPU,CPU.")
+            raise DeviceValidationError(
+                f"Device '{text}' requires priorities, for example {text}:GPU,CPU."
+            )
         raise DeviceValidationError(f"Unsupported OpenVINO device '{raw}'.")
 
     meta, priorities = (part.strip() for part in text.split(":", 1))
@@ -103,7 +105,9 @@ def parse_device_expression(device: str | None, *, default: str | None = None) -
 
     for token in devices:
         if not _is_physical_token(token):
-            raise DeviceValidationError(f"Unsupported OpenVINO physical device '{token}' in '{raw}'.")
+            raise DeviceValidationError(
+                f"Unsupported OpenVINO physical device '{token}' in '{raw}'."
+            )
     return DeviceExpression(meta, devices)
 
 
@@ -115,7 +119,9 @@ def validate_device_expression(device: str | None, available: list[str] | None =
         raise DeviceValidationError(_device_error_message(str(exc), available)) from exc
 
     if available is not None and not is_device_available(normalized, available):
-        raise DeviceValidationError(_device_error_message(f"Device '{normalized}' is not available.", available))
+        raise DeviceValidationError(
+            _device_error_message(f"Device '{normalized}' is not available.", available)
+        )
     return normalized
 
 
@@ -145,6 +151,7 @@ def _get_core():
         with _core_lock:
             if _core_instance is None:
                 import openvino as ov
+
                 _core_instance = ov.Core()
     return _core_instance
 
@@ -234,16 +241,32 @@ def suggested_device_targets(available: list[str] | None = None) -> list[dict[st
             suggestions.append({"device": device, "experimental": experimental, "note": note})
 
     if {"NPU", "GPU", "CPU"}.issubset(bases):
-        add("AUTO:NPU,GPU,CPU", experimental=False, note="Auto-select best device (prefers NPU > GPU > CPU). Actual device chosen by model compatibility.")
-        add("AUTO:GPU,NPU,CPU", experimental=False, note="Auto-select best device (prefers GPU > NPU > CPU). Actual device chosen by model compatibility.")
+        add(
+            "AUTO:NPU,GPU,CPU",
+            experimental=False,
+            note="Auto-select best device (prefers NPU > GPU > CPU). Actual device chosen by model compatibility.",
+        )
+        add(
+            "AUTO:GPU,NPU,CPU",
+            experimental=False,
+            note="Auto-select best device (prefers GPU > NPU > CPU). Actual device chosen by model compatibility.",
+        )
         add("MULTI:NPU,GPU,CPU", experimental=True, note="Experimental throughput routing.")
         add("HETERO:NPU,GPU,CPU", experimental=True, note="Experimental graph partitioning.")
     elif {"GPU", "CPU"}.issubset(bases):
-        add("AUTO:GPU,CPU", experimental=False, note="Auto-select best device (prefers GPU > CPU). Actual device chosen by model compatibility.")
+        add(
+            "AUTO:GPU,CPU",
+            experimental=False,
+            note="Auto-select best device (prefers GPU > CPU). Actual device chosen by model compatibility.",
+        )
         add("MULTI:GPU,CPU", experimental=True, note="Experimental throughput routing.")
         add("HETERO:GPU,CPU", experimental=True, note="Experimental graph partitioning.")
     elif {"NPU", "CPU"}.issubset(bases):
-        add("AUTO:NPU,CPU", experimental=False, note="Auto-select best device (prefers NPU > CPU). Actual device chosen by model compatibility.")
+        add(
+            "AUTO:NPU,CPU",
+            experimental=False,
+            note="Auto-select best device (prefers NPU > CPU). Actual device chosen by model compatibility.",
+        )
         add("MULTI:NPU,CPU", experimental=True, note="Experimental throughput routing.")
     return suggestions
 

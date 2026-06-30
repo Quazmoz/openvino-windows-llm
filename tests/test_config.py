@@ -11,6 +11,7 @@ _ENV_VARS = [
     "OV_LLM_MODELS_FILE",
     "OV_LLM_MODELS_DIR",
     "OV_LLM_CACHE_DIR",
+    "OV_LLM_BENCHMARK_RESULTS",
     "OV_LLM_MODEL",
     "OV_LLM_API_KEY",
     "OV_LLM_MOCK",
@@ -103,3 +104,23 @@ def test_replace_drops_none_and_applies_overrides(clean_env):
     assert out.device == s.device  # None ignored
     assert out.force_mock is True
     assert s.port == 8000  # original is frozen / unchanged
+
+
+def test_validate_warns_for_wildcard_host_without_api_key():
+    warnings = Settings(host="0.0.0.0", api_key=None).validate()
+
+    assert any("OV_LLM_API_KEY is not set" in warning for warning in warnings)
+
+
+def test_validate_warns_for_ipv6_wildcard_host_without_api_key():
+    warnings = Settings(host="::", api_key=None).validate()
+
+    assert any("OV_LLM_API_KEY is not set" in warning for warning in warnings)
+
+
+def test_validate_does_not_warn_for_localhost_or_wildcard_with_api_key():
+    localhost_warnings = Settings(host="127.0.0.1", api_key=None).validate()
+    wildcard_warnings = Settings(host="0.0.0.0", api_key="sk-secret").validate()
+
+    assert not any("OV_LLM_API_KEY is not set" in warning for warning in localhost_warnings)
+    assert not any("OV_LLM_API_KEY is not set" in warning for warning in wildcard_warnings)

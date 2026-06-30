@@ -103,7 +103,7 @@ def test_index_escapes_dynamic_model_card_content(client):
     body = client.get("/").text
     assert "const safeName = escapeHtml(model.name)" in body
     assert "data-model-action" in body
-    assert "onclick=\"triggerModelPrimaryAction" not in body
+    assert 'onclick="triggerModelPrimaryAction' not in body
     assert "return window.DOMPurify ? DOMPurify.sanitize(raw) : escapeHtml(text || '')" in body
     assert "submitModalBtn.disabled = true" in body
 
@@ -266,7 +266,9 @@ def test_chat_completion_streaming_honors_stop(client):
     for line in body.splitlines():
         if line.startswith("data: ") and line != "data: [DONE]":
             payload = json.loads(line[6:])
-            streamed += payload["choices"][0]["delta"].get("content") or "" if payload["choices"] else ""
+            streamed += (
+                payload["choices"][0]["delta"].get("content") or "" if payload["choices"] else ""
+            )
     assert "You said" not in streamed
     assert '"finish_reason": "stop"' in body
 
@@ -597,16 +599,20 @@ def test_auto_convert_triggered_on_load(monkeypatch):
         return True
 
     import app.model_registry as registry
+
     monkeypatch.setattr(registry, "is_downloaded", mock_is_downloaded)
 
     class FakeEngine:
         model_id = "smollm2-135m-fp16"
         device = "CPU"
-        def close(self): pass
+
+        def close(self):
+            pass
 
     monkeypatch.setattr(manager, "_build_engine", lambda mid, dev: FakeEngine())
 
     convert_calls = []
+
     async def mock_convert_task(model_id, device, load_after):
         convert_calls.append((model_id, device, load_after))
 
@@ -650,3 +656,20 @@ def test_request_id_propagation_and_header(client):
     assert resp_auto.status_code == 200
     assert "X-Request-ID" in resp_auto.headers
     assert resp_auto.headers["X-Request-ID"].startswith("req-")
+
+
+def test_success_request_log_keeps_request_id(client, caplog):
+    custom_id = "test-req-log-id"
+    caplog.set_level("INFO", logger="ov-llm.server")
+
+    resp = client.get("/health", headers={"X-Request-ID": custom_id})
+
+    assert resp.status_code == 200
+    assert resp.headers.get("X-Request-ID") == custom_id
+    records = [
+        record
+        for record in caplog.records
+        if record.name == "ov-llm.server" and "HTTP GET /health - Status:" in record.getMessage()
+    ]
+    assert records
+    assert records[-1].request_id == custom_id

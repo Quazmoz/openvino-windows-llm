@@ -198,9 +198,7 @@ async def benchmark_model_device(
         total_latency_ms = _ms(total_latency_s / len(generations))
         ttft_ms = _ms(sum(ttft_values) / len(ttft_values)) if ttft_values else None
         tokens_sec = (
-            round(total_completion_tokens / total_latency_s, 3)
-            if total_latency_s > 0
-            else None
+            round(total_completion_tokens / total_latency_s, 3) if total_latency_s > 0 else None
         )
 
         return BenchmarkResult(
@@ -302,7 +300,9 @@ def score_benchmark_results(results: list[dict[str, Any]], *, mock: bool = False
         "score": best.get("score"),
         "summary": summary_prefix,
         "rationale": [
-            f"{best['tokens_sec']:.2f} tokens/sec" if best.get("tokens_sec") else "Tokens/sec was unavailable.",
+            f"{best['tokens_sec']:.2f} tokens/sec"
+            if best.get("tokens_sec")
+            else "Tokens/sec was unavailable.",
             (
                 f"{best['time_to_first_token_ms']:.1f} ms first-token latency"
                 if best.get("time_to_first_token_ms") is not None
@@ -442,7 +442,17 @@ def _reported_actual_device(engine: BaseEngine, requested_device: str) -> str | 
 
 
 def _print_table(run: dict[str, Any]) -> None:
-    headers = ["model", "device", "status", "load_ms", "ttft_ms", "latency_ms", "tokens", "tok/s", "score"]
+    headers = [
+        "model",
+        "device",
+        "status",
+        "load_ms",
+        "ttft_ms",
+        "latency_ms",
+        "tokens",
+        "tok/s",
+        "score",
+    ]
     rows = []
     for result in run["results"]:
         rows.append(
@@ -508,17 +518,25 @@ async def _main_async(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Benchmark catalog models across OpenVINO devices.")
-    parser.add_argument("--benchmark-model", required=True, help="Catalog model id from models.json")
+    parser = argparse.ArgumentParser(
+        description="Benchmark catalog models across OpenVINO devices."
+    )
+    parser.add_argument(
+        "--benchmark-model", required=True, help="Catalog model id from models.json"
+    )
     parser.add_argument(
         "--benchmark-devices",
         default=",".join(DEFAULT_BENCHMARK_DEVICES),
         help="Device targets, e.g. CPU,GPU,NPU,AUTO or CPU;AUTO:NPU,GPU,CPU",
     )
-    parser.add_argument("--prompt", default=DEFAULT_BENCHMARK_PROMPT, help="Prompt used for every run")
+    parser.add_argument(
+        "--prompt", default=DEFAULT_BENCHMARK_PROMPT, help="Prompt used for every run"
+    )
     parser.add_argument("--max-tokens", type=int, default=64, help="Generated token limit per run")
     parser.add_argument("--runs", type=int, default=1, help="Generation runs per model/device")
-    parser.add_argument("--mock", action="store_true", help="Force the mock engine for route/CI validation")
+    parser.add_argument(
+        "--mock", action="store_true", help="Force the mock engine for route/CI validation"
+    )
     parser.add_argument("--output", type=Path, help="Benchmark JSON store path")
     args = parser.parse_args(argv)
 

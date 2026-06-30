@@ -96,7 +96,9 @@ def test_suggested_device_targets_from_available_devices():
     assert "AUTO:NPU,GPU,CPU" in devices
     assert "AUTO:GPU,NPU,CPU" in devices
     assert "MULTI:NPU,GPU,CPU" in devices
-    assert any(item["device"] == "MULTI:NPU,GPU,CPU" and item["experimental"] for item in suggestions)
+    assert any(
+        item["device"] == "MULTI:NPU,GPU,CPU" and item["experimental"] for item in suggestions
+    )
 
 
 def test_probe_functions_return_safe_types_without_openvino():
