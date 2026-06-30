@@ -161,6 +161,18 @@ class ModelRegisterRequest(BaseModel):
     description: str | None = None
 
 
+# --- Benchmark requests ---------------------------------------------------
+
+
+class BenchmarkRunRequest(BaseModel):
+    model: str | None = None
+    models: list[str] | None = None
+    devices: list[str] = Field(default_factory=lambda: ["CPU", "GPU", "NPU", "AUTO"])
+    prompt: str | None = None
+    max_tokens: int = Field(default=64, ge=1, le=4096)
+    runs: int = Field(default=1, ge=1, le=10)
+
+
 # --- Conversation export --------------------------------------------------
 
 

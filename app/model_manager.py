@@ -322,6 +322,35 @@ class ModelManager:
         self.load_tasks[model_id] = task
         return task
 
+    async def build_temporary_engine(self, model_id: str, device: str) -> tuple[BaseEngine, float]:
+        """Build an engine for short-lived benchmark use without registering it.
+
+        The same load lock, validation rules, and engine factory are used as the
+        normal model lifecycle, but the returned engine is owned by the caller
+        and must be closed by the caller.
+        """
+        if model_id not in self.catalog:
+            raise UnknownModel(f"Unknown model '{model_id}'")
+
+        cfg = self.catalog[model_id]
+        device = device_check.normalize_device(device)
+        async with self._load_lock:
+            if not self.force_mock:
+                available = device_check.available_devices()
+                if not device_check.is_device_available(device, available):
+                    raise RuntimeError(errors.format_device_error(device, available))
+                if not registry.is_downloaded(cfg, BASE_DIR):
+                    raise RuntimeError(
+                        errors.format_model_not_converted(
+                            cfg.name, str(cfg.abs_path(BASE_DIR)), cfg.source_model
+                        )
+                    )
+
+            loop = asyncio.get_running_loop()
+            start = time.perf_counter()
+            engine = await loop.run_in_executor(None, self._build_engine, model_id, device)
+            return engine, time.perf_counter() - start
+
     # --- conversion --------------------------------------------------------
 
     async def _convert_task(self, model_id: str, device: str, load_after: bool) -> None:
@@ -551,4 +580,3 @@ class ModelManager:
                     # stale worker is still running on it.
                     handle.request_stop()
                     await loop.run_in_executor(None, handle.wait_closed)
-

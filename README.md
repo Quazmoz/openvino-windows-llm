@@ -92,6 +92,8 @@ local server with the UI, model conversion, catalog, and setup scripts all inclu
 - A chat UI with one-click catalog model conversion/loading plus simple and advanced device selectors
 - **Per-model request metrics** (count, tokens, average latency) on `/v1/system/status`
   and in the UI's settings panel
+- **Hardware benchmarking + auto recommendation** across selected catalog models and
+  CPU/GPU/NPU/AUTO/advanced OpenVINO device strings, with local result persistence
 - A **mock engine** that runs the entire stack (API, streaming, UI) on machines without
   OpenVINO — so you can develop/test on macOS or Linux and CI stays green everywhere
 - Optional **API-key enforcement** for shared/LAN use, honored by the built-in UI
@@ -206,6 +208,9 @@ start_server.bat [args]            # Windows: activates the venv, passes args to
   --mock              Force the mock engine (no OpenVINO needed)
   --list              List catalog models and exit
   --check-devices     Show the OpenVINO devices this machine sees and exit
+  --benchmark         Run a benchmark and exit
+  --benchmark-model <id>
+  --benchmark-devices CPU,GPU,NPU,AUTO
 ```
 
 ---
@@ -224,6 +229,10 @@ POST /v1/models/unload       Unload a model and free memory
 POST /v1/models/delete       Delete a model's on-disk IR directory (frees disk)
 GET  /v1/devices             OpenVINO device discovery + details
 GET  /v1/system/status       CPU / RAM / disk / device / model telemetry + request metrics
+POST /v1/benchmarks/run      Benchmark selected catalog model/device combinations
+GET  /v1/benchmarks          List saved benchmark runs
+GET  /v1/benchmarks/latest   Latest saved benchmark run + recommendation
+DELETE /v1/benchmarks        Clear saved benchmark runs
 ```
 
 `/v1/chat/completions` accepts OpenAI `stop` (string or array) and `seed`. Stop sequences are
@@ -250,6 +259,7 @@ $env:OV_LLM_DEVICE      = "NPU"                 # CPU | GPU | NPU | AUTO | AUTO:
 $env:OV_LLM_MODEL       = "tinyllama-1.1b-chat-fp16" # auto-load on startup (blank = none)
 $env:OV_LLM_MODELS_FILE = "models.json"
 $env:OV_LLM_MODELS_DIR  = "models\openvino"
+$env:OV_LLM_BENCHMARK_RESULTS = "benchmark\results\benchmarks.json"
 $env:OV_LLM_API_KEY     = ""                    # set => /v1/* requires Authorization: Bearer <key>
 $env:OV_LLM_MOCK        = ""                     # 1 => force the mock engine
 $env:HF_TOKEN           = "hf_..."              # only for converting gated models (e.g. Llama)
@@ -293,19 +303,27 @@ Examples:
 .\start_server.bat --model tinyllama-1.1b-chat-fp16 --device MULTI:NPU,GPU,CPU
 ```
 
-Benchmark the same model across targets:
+Benchmark the same catalog model across targets and persist the result locally:
 
 ```powershell
-python scripts\benchmark_devices.py tinyllama-1.1b-chat-fp16
-python scripts\benchmark_devices.py tinyllama-1.1b-chat-fp16 --experimental --json .tmp\device-benchmark.json
+python -m app.server --benchmark --benchmark-model tinyllama-1.1b-chat-fp16 --benchmark-devices CPU,GPU,NPU,AUTO
+python -m runtime.benchmark_runner --benchmark-model tinyllama-1.1b-chat-fp16 --benchmark-devices "CPU;AUTO:NPU,GPU,CPU"
 ```
 
 When passing a custom list that includes composite targets, semicolons avoid
 ambiguity with the commas inside OpenVINO device priorities:
 
 ```powershell
-python scripts\benchmark_devices.py tinyllama-1.1b-chat-fp16 --devices "CPU;GPU;AUTO:NPU,GPU,CPU"
+python -m app.server --benchmark --benchmark-model tinyllama-1.1b-chat-fp16 --benchmark-devices "CPU;GPU;AUTO:NPU,GPU,CPU"
 ```
+
+The browser UI also includes a benchmark panel in Settings. Results are saved to
+`benchmark/results/benchmarks.json` by default, which is gitignored. The recommendation
+uses a balanced score over successful runs, first-token latency, tokens/sec, total
+latency, and load time. It is a local measurement, not a promise that `AUTO`, `MULTI`,
+or `HETERO` will be faster on another prompt, model, driver, or machine. In mock mode,
+the benchmark validates the API/UI path only; rerun on Windows with OpenVINO hardware
+for a real device recommendation.
 
 ---
 
@@ -443,10 +461,10 @@ On Linux experimental:
 ```
 
 If `NPU` doesn't work, retry with `--device CPU` while you sort out drivers.
-For advanced targets, run the benchmark script before assuming a faster path:
+For advanced targets, run a benchmark before assuming a faster path:
 
 ```powershell
-python scripts\benchmark_devices.py tinyllama-1.1b-chat-fp16 --experimental
+python -m app.server --benchmark --benchmark-model tinyllama-1.1b-chat-fp16 --benchmark-devices "CPU;GPU;NPU;AUTO;AUTO:NPU,GPU,CPU"
 ```
 
 ### First-run conversion is slow
@@ -477,13 +495,13 @@ If you bind to the LAN: use a trusted private network, add firewall rules intent
 `/v1/chat/completions` (with `stop`/`seed`), streaming + non-streaming `/v1/responses`,
 model load/unload/convert/delete, system status with per-model request metrics,
 tool-call shim, optional API-key auth (honored by the built-in UI), built-in chat UI,
-conversion helper, advanced OpenVINO device routing, benchmark tooling, Windows
+conversion helper, advanced OpenVINO device routing, hardware benchmark + auto
+recommendation tooling, Windows
 setup scripts, experimental Linux scripts/docs, and a passing mock-backed test suite.
 
 **Next**
 
 - [ ] Auto-download + convert a catalog model on first load (drop the manual step)
-- [ ] Hardware benchmark table with CPU / GPU / NPU / AUTO / MULTI results from real Intel systems
 - [ ] Documented model ↔ device compatibility matrix and known driver issues
 - [ ] Open WebUI and n8n validation write-ups
 - [ ] Support/diagnostics bundle command

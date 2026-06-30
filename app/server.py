@@ -29,6 +29,7 @@ from fastapi.responses import FileResponse, Response, StreamingResponse
 from app import chat_format, model_manager, tools
 from app.config import BASE_DIR, Settings
 from app.openai_api import (
+    BenchmarkRunRequest,
     ChatCompletionMessage,
     ChatCompletionRequest,
     ChatCompletionResponse,
@@ -48,6 +49,11 @@ from app.openai_api import (
 from app.rate_limit import RateLimitMiddleware
 from app.telemetry import cpu_stats, disk_stats, gpu_stats, memory_stats
 from runtime import device_check
+from runtime.benchmark_runner import (
+    DEFAULT_BENCHMARK_PROMPT,
+    BenchmarkStore,
+    run_benchmark_suite,
+)
 from runtime.openvino_engine import BaseEngine, GenParams
 
 request_id_var = contextvars.ContextVar("request_id", default="")
@@ -135,6 +141,7 @@ def _resolve_or_400(manager: model_manager.ModelManager, model_id: str) -> BaseE
 
 def create_app(settings: Settings) -> FastAPI:
     manager = model_manager.ModelManager(settings)
+    benchmark_store = BenchmarkStore(settings.benchmark_results_file)
     settings.validate(manager.catalog)
 
     @asynccontextmanager
@@ -151,6 +158,7 @@ def create_app(settings: Settings) -> FastAPI:
     app = FastAPI(title="OpenVINO Windows LLM", version="0.1.0", lifespan=lifespan)
     app.state.settings = settings
     app.state.manager = manager
+    app.state.benchmark_store = benchmark_store
 
     # Rate limiting middleware
     if settings.rate_limit > 0:
@@ -418,6 +426,71 @@ def create_app(settings: Settings) -> FastAPI:
             "metrics": manager.metrics_summary(),
             "events": manager.recent_events(),
         }
+
+    # --- benchmarks --------------------------------------------------------
+
+    def _benchmark_models_or_400(req: BenchmarkRunRequest) -> list[str]:
+        requested = []
+        if req.model:
+            requested.append(req.model)
+        if req.models:
+            requested.extend(req.models)
+        requested = [model_id for model_id in dict.fromkeys(requested) if model_id]
+        if not requested:
+            raise HTTPException(status_code=400, detail="Provide at least one benchmark model.")
+        unknown = [model_id for model_id in requested if model_id not in manager.catalog]
+        if unknown:
+            raise HTTPException(status_code=404, detail=f"Unknown benchmark model '{unknown[0]}'")
+        return requested
+
+    def _benchmark_devices_or_400(req: BenchmarkRunRequest) -> list[str]:
+        if not req.devices:
+            raise HTTPException(status_code=400, detail="Provide at least one benchmark device.")
+        devices = []
+        for device in req.devices:
+            devices.append(_normalize_device_or_400(device))
+        return [device for device in dict.fromkeys(devices) if device]
+
+    @app.post("/v1/benchmarks/run", dependencies=auth)
+    async def run_benchmarks(req: BenchmarkRunRequest):
+        model_ids = _benchmark_models_or_400(req)
+        devices = _benchmark_devices_or_400(req)
+        prompt = (req.prompt or DEFAULT_BENCHMARK_PROMPT).strip() or DEFAULT_BENCHMARK_PROMPT
+        try:
+            run = await run_benchmark_suite(
+                manager,
+                model_ids=model_ids,
+                devices=devices,
+                prompt=prompt,
+                max_tokens=req.max_tokens,
+                runs=req.runs,
+            )
+        except device_check.DeviceValidationError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        benchmark_store.append(run)
+        manager._emit(
+            "info",
+            f"Benchmarked {len(model_ids)} model(s) across {len(devices)} device target(s)",
+        )
+        return run
+
+    @app.get("/v1/benchmarks", dependencies=auth)
+    async def list_benchmarks():
+        return {"object": "list", "data": list(reversed(benchmark_store.list_runs()))}
+
+    @app.get("/v1/benchmarks/latest", dependencies=auth)
+    async def latest_benchmark():
+        run = benchmark_store.latest()
+        return {
+            "run": run,
+            "recommendation": run.get("recommendation") if run else None,
+        }
+
+    @app.delete("/v1/benchmarks", dependencies=auth)
+    async def clear_benchmarks():
+        deleted = benchmark_store.clear()
+        manager._emit("info", "Cleared benchmark results")
+        return {"status": "cleared", "deleted_runs": deleted}
 
     # --- conversation export -----------------------------------------------
 
@@ -808,6 +881,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--list", action="store_true", help="List catalog models and exit")
     parser.add_argument("--check-devices", action="store_true", help="Show OpenVINO devices and exit")
     parser.add_argument("--auto-convert", action="store_true", help="Auto-convert/download models on startup or load")
+    parser.add_argument("--benchmark", action="store_true", help="Run a hardware benchmark and exit")
+    parser.add_argument("--benchmark-model", help="Catalog model id to benchmark")
+    parser.add_argument(
+        "--benchmark-devices",
+        default="CPU,GPU,NPU,AUTO",
+        help="Benchmark devices, e.g. CPU,GPU,NPU,AUTO or CPU;AUTO:NPU,GPU,CPU",
+    )
+    parser.add_argument("--benchmark-runs", type=int, default=1, help="Generation runs per model/device")
+    parser.add_argument("--benchmark-max-tokens", type=int, default=64, help="Generated token limit per run")
     args = parser.parse_args(argv)
 
     if args.list:
@@ -840,6 +922,25 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.mock:
         os.environ["OV_LLM_MOCK"] = "1"
+
+    if args.benchmark:
+        if not args.benchmark_model:
+            parser.error("--benchmark requires --benchmark-model")
+        from runtime import benchmark_runner
+
+        bench_args = [
+            "--benchmark-model",
+            args.benchmark_model,
+            "--benchmark-devices",
+            args.benchmark_devices,
+            "--runs",
+            str(args.benchmark_runs),
+            "--max-tokens",
+            str(args.benchmark_max_tokens),
+        ]
+        if args.mock:
+            bench_args.append("--mock")
+        return benchmark_runner.main(bench_args)
 
     if args.device is not None:
         try:

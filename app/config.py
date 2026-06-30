@@ -44,6 +44,7 @@ class Settings:
     models_file: Path = BASE_DIR / "models.json"
     models_dir: Path = BASE_DIR / "models" / "openvino"
     cache_dir: Path = BASE_DIR / "models" / "cache"
+    benchmark_results_file: Path = BASE_DIR / "benchmark" / "results" / "benchmarks.json"
     default_model: str | None = None
     api_key: str | None = None
     force_mock: bool = False
@@ -60,6 +61,9 @@ class Settings:
             models_file=_resolve(os.environ.get("OV_LLM_MODELS_FILE", "models.json")),
             models_dir=_resolve(os.environ.get("OV_LLM_MODELS_DIR", "models/openvino")),
             cache_dir=_resolve(os.environ.get("OV_LLM_CACHE_DIR", "models/cache")),
+            benchmark_results_file=_resolve(
+                os.environ.get("OV_LLM_BENCHMARK_RESULTS", "benchmark/results/benchmarks.json")
+            ),
             default_model=(os.environ.get("OV_LLM_MODEL") or "").strip() or None,
             api_key=(os.environ.get("OV_LLM_API_KEY") or "").strip() or None,
             force_mock=_bool_env("OV_LLM_MOCK"),
