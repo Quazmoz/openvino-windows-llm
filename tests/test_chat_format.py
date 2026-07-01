@@ -61,7 +61,9 @@ def test_render_chatml_adds_generation_prompt():
 
 def test_build_prompt_fits_within_budget():
     msgs = [{"role": "user", "content": "short message"}]
-    prompt, tokens = build_prompt_within_budget(msgs, render_chatml, _count_words, max_prompt_len=100)
+    prompt, tokens = build_prompt_within_budget(
+        msgs, render_chatml, _count_words, max_prompt_len=100
+    )
     assert tokens <= 100
     assert "short message" in prompt
 
@@ -73,7 +75,9 @@ def test_build_prompt_slides_window_dropping_oldest():
         {"role": "assistant", "content": "reply " * 40},
         {"role": "user", "content": "NEWEST question"},
     ]
-    prompt, tokens = build_prompt_within_budget(msgs, render_chatml, _count_words, max_prompt_len=30)
+    prompt, tokens = build_prompt_within_budget(
+        msgs, render_chatml, _count_words, max_prompt_len=30
+    )
     assert tokens <= 30
     # The system prompt and the newest user turn are always retained.
     assert "sys" in prompt
@@ -139,3 +143,40 @@ def test_stop_streamer_detects_sequence_split_across_chunks():
     assert s.stopped is True
     # Once stopped, further input is ignored.
     assert s.feed("extra") == ""
+
+
+def test_build_prompt_within_budget_binary_search_exact():
+    msgs = [
+        {"role": "system", "content": "sys"},
+        {"role": "user", "content": "one"},
+        {"role": "assistant", "content": "two"},
+        {"role": "user", "content": "three"},
+        {"role": "assistant", "content": "four"},
+        {"role": "user", "content": "five"},
+    ]
+    # Verify large budget keeps everything
+    prompt, tokens = build_prompt_within_budget(
+        msgs, render_chatml, _count_words, max_prompt_len=100
+    )
+    assert "one" in prompt
+    assert "five" in prompt
+
+    # Verify dropping only system-only messages works when rest is empty
+    system_only = [{"role": "system", "content": "sys"}]
+    prompt_sys, tokens_sys = build_prompt_within_budget(
+        system_only, render_chatml, _count_words, max_prompt_len=2
+    )
+    assert "sys" in prompt_sys
+
+    # Verify monotonic dropping and correctness for multiple budget limits
+    for max_len in range(5, 50):
+        prompt, tokens = build_prompt_within_budget(
+            msgs, render_chatml, _count_words, max_prompt_len=max_len
+        )
+        # It must fit, or if even keeping just the newest turn exceeds budget, it keeps that newest turn
+        newest_only_len = _count_words(
+            render_chatml([msgs[0], msgs[-1]], add_generation_prompt=True)
+        )
+        assert tokens <= max_len or tokens == newest_only_len
+        assert "sys" in prompt
+        assert "five" in prompt

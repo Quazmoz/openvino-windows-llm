@@ -7,11 +7,14 @@ same regardless of the working directory it is launched from.
 from __future__ import annotations
 
 import dataclasses
+import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
 
 from runtime.device_check import normalize_device
+
+logger = logging.getLogger("ov-llm.config")
 
 # Repository root: .../openvino-windows-llm  (parent of the app/ package).
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -41,11 +44,13 @@ class Settings:
     models_file: Path = BASE_DIR / "models.json"
     models_dir: Path = BASE_DIR / "models" / "openvino"
     cache_dir: Path = BASE_DIR / "models" / "cache"
+    benchmark_results_file: Path = BASE_DIR / "benchmark" / "results" / "benchmarks.json"
     default_model: str | None = None
     api_key: str | None = None
     force_mock: bool = False
     auto_convert: bool = False
     cors_origins: str = "*"
+    rate_limit: int = 0  # requests per minute per IP; 0 = disabled
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -56,14 +61,49 @@ class Settings:
             models_file=_resolve(os.environ.get("OV_LLM_MODELS_FILE", "models.json")),
             models_dir=_resolve(os.environ.get("OV_LLM_MODELS_DIR", "models/openvino")),
             cache_dir=_resolve(os.environ.get("OV_LLM_CACHE_DIR", "models/cache")),
+            benchmark_results_file=_resolve(
+                os.environ.get("OV_LLM_BENCHMARK_RESULTS", "benchmark/results/benchmarks.json")
+            ),
             default_model=(os.environ.get("OV_LLM_MODEL") or "").strip() or None,
             api_key=(os.environ.get("OV_LLM_API_KEY") or "").strip() or None,
             force_mock=_bool_env("OV_LLM_MOCK"),
             auto_convert=_bool_env("OV_LLM_AUTO_CONVERT"),
             cors_origins=os.environ.get("OV_LLM_CORS_ORIGINS", "*"),
+            rate_limit=int(os.environ.get("OV_LLM_RATE_LIMIT", "0")),
         )
 
     def replace(self, **changes) -> Settings:
         """Return a copy with the given fields overridden (drops None values)."""
         clean = {k: v for k, v in changes.items() if v is not None}
         return dataclasses.replace(self, **clean)
+
+    def validate(self, catalog: dict | None = None) -> list[str]:
+        """Check for common misconfigurations. Returns a list of warning strings."""
+        warnings: list[str] = []
+
+        if not self.models_file.exists():
+            warnings.append(f"Models catalog not found at {self.models_file}")
+
+        if self.port < 1 or self.port > 65535:
+            warnings.append(f"Port {self.port} is out of the valid range (1-65535)")
+
+        if self.default_model and catalog is not None:
+            if self.default_model not in catalog:
+                warnings.append(
+                    f"Default model '{self.default_model}' is not in the catalog. "
+                    f"Available: {', '.join(catalog) or '(none)'}"
+                )
+
+        if self.rate_limit < 0:
+            warnings.append(f"Rate limit {self.rate_limit} is negative; treating as disabled (0)")
+
+        if self.host.strip() in {"0.0.0.0", "::"} and not self.api_key:
+            warnings.append(
+                f"OV_LLM_HOST is set to {self.host!r}, which can expose the server beyond "
+                "localhost, but OV_LLM_API_KEY is not set. Set OV_LLM_API_KEY before "
+                "exposing the server beyond a trusted local machine/network."
+            )
+
+        for warning in warnings:
+            logger.warning("Config: %s", warning)
+        return warnings

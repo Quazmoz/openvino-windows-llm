@@ -1,33 +1,32 @@
-# Experimental Ubuntu Support
+# Experimental Fedora Support
 
-Linux support is experimental and currently supports Ubuntu and Fedora. This page covers Ubuntu-specific setup; see [FEDORA.md](FEDORA.md) for Fedora.
+Linux support is experimental and currently supports Ubuntu and Fedora. This page covers Fedora-specific setup; see [UBUNTU.md](UBUNTU.md) for Ubuntu.
 
-This repository remains Windows-first. Ubuntu support is intended as a basic, early path for developers who want to try the Python/FastAPI/OpenVINO stack on Ubuntu while keeping CPU inference as the first validation target.
+This repository remains Windows-first. Fedora support is intended as a CPU-first path for developers who want to try the Python/FastAPI/OpenVINO stack on Fedora while treating GPU/NPU as driver-dependent experiments.
 
 ## Expected Baseline
 
-- Ubuntu 22.04 or 24.04 is expected.
+- Fedora 40 or newer is expected.
 - Python 3.11, 3.12, or 3.13 is expected.
 - CPU inference is the recommended first path.
 - GPU/NPU can work only when the system has compatible Intel hardware and Linux drivers.
-- Ubuntu GPU/NPU support is experimental and hardware/driver-dependent.
+- Fedora GPU/NPU support is experimental and hardware/driver-dependent.
 
 ## Install
 
 ```bash
-sudo apt update
-sudo apt install -y python3 python3-venv python3-pip git
+sudo dnf install -y python3 python3-pip python3-devel git
 
 git clone https://github.com/Quazmoz/openvino-windows-llm.git
 cd openvino-windows-llm
-chmod +x setup.sh start_server.sh setup/*.sh
+chmod +x setup.sh start_server.sh setup/*.sh setup/linux/*.sh
 ./setup.sh --minimal
 ```
 
-If Ubuntu 22.04 only provides Python 3.10 from `python3`, install a supported Python 3.11-3.13 interpreter and pass it explicitly:
+If your `python3` is not 3.11-3.13, install a supported interpreter and pass it explicitly:
 
 ```bash
-./setup.sh --minimal --python python3.11
+./setup.sh --minimal --python python3.13
 ```
 
 ## Device Check
@@ -59,25 +58,19 @@ Gated Hugging Face models require accepting the model terms and configuring `HF_
 
 Open the built-in UI at http://localhost:8000.
 
-## Open WebUI
-
-```text
-API Base URL: http://localhost:8000/v1
-API Key:      sk-dummy unless OV_LLM_API_KEY is set
-```
-
 ## Driver Caveats
 
 - CPU should work once the Python/OpenVINO packages install.
 - GPU requires Intel's Linux GPU runtime/driver stack and render-device permissions.
 - NPU requires Intel's NPU Linux driver, supported hardware, and a compatible kernel.
-- Do not assume NPU availability on every Ubuntu machine, even when `lspci` shows an AI/NPU-like device.
+- Do not assume NPU availability on every Fedora machine, even when `lspci` shows an AI/NPU-like device.
 - GPU/NPU validation should start with `./start_server.sh --check-devices`.
 
 ## Troubleshooting
 
 - Permission denied on scripts: run `chmod +x setup.sh start_server.sh setup/*.sh setup/linux/*.sh`.
 - Missing venv: run `./setup.sh --minimal`.
+- Missing `lspci`: run `sudo dnf install -y pciutils`.
 - OpenVINO sees only CPU: install or verify Intel GPU/NPU drivers, then rerun `./start_server.sh --check-devices`.
 - Import errors: remove and recreate `.venv`, then rerun setup.
 - Hugging Face gated models: set `HF_TOKEN=hf_...` in `.env` after accepting the model license.

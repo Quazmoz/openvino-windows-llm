@@ -47,6 +47,7 @@
             --radius: 12px;
             --radius-sm: 8px;
             --shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+            --shadow-md: 0 10px 28px rgba(0, 0, 0, 0.32);
         }
 
         html,
@@ -80,6 +81,7 @@
             display: flex;
             align-items: center;
             gap: 10px;
+            min-width: 0;
         }
 
         .logo-icon {
@@ -113,6 +115,7 @@
             display: flex;
             align-items: center;
             gap: 10px;
+            min-width: 0;
         }
 
         .stat-chip {
@@ -173,6 +176,7 @@
         .model-select-wrap,
         .device-select-wrap {
             position: relative;
+            min-width: 0;
         }
 
         #model-select,
@@ -289,6 +293,20 @@
         .icon-btn:disabled {
             opacity: 0.45;
             cursor: not-allowed;
+        }
+
+        .icon-btn:focus-visible,
+        .chip:focus-visible,
+        .action-btn:focus-visible,
+        .btn-cancel:focus-visible,
+        .btn-submit:focus-visible,
+        .close-btn:focus-visible,
+        #jump-btn:focus-visible,
+        #send-btn:focus-visible,
+        .copy-btn:focus-visible,
+        .code-copy:focus-visible {
+            outline: 2px solid var(--primary);
+            outline-offset: 2px;
         }
 
         .btn-group {
@@ -512,6 +530,156 @@
             color: var(--text-1);
             font-weight: 500;
             text-align: right;
+        }
+
+        .benchmark-panel {
+            gap: 10px;
+        }
+
+        .benchmark-devices {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 6px;
+        }
+
+        .setting-group .benchmark-check {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            min-width: 0;
+            padding: 7px 8px;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            background: var(--surface-2);
+            color: var(--text-2);
+            font-size: 11px;
+            font-weight: 500;
+            text-transform: none;
+            letter-spacing: 0;
+        }
+
+        .benchmark-check input {
+            accent-color: var(--primary);
+            flex-shrink: 0;
+        }
+
+        .benchmark-check span {
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .benchmark-run-btn {
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            min-height: 36px;
+            border: none;
+            border-radius: var(--radius-sm);
+            background: var(--primary);
+            color: #fff;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s, transform 0.2s;
+        }
+
+        .benchmark-run-btn:hover:not(:disabled) {
+            background: #0284c7;
+            transform: translateY(-1px);
+        }
+
+        .benchmark-run-btn:disabled {
+            background: var(--surface-3);
+            color: var(--text-3);
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .benchmark-status {
+            min-height: 17px;
+            font-size: 11px;
+            color: var(--text-3);
+            line-height: 1.45;
+        }
+
+        .benchmark-card {
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            background: var(--surface-2);
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .benchmark-card.empty {
+            color: var(--text-3);
+            font-size: 11px;
+            line-height: 1.45;
+        }
+
+        .benchmark-card-title {
+            font-size: 12px;
+            color: var(--text-1);
+            font-weight: 600;
+            line-height: 1.35;
+        }
+
+        .benchmark-card-meta,
+        .benchmark-card-note {
+            color: var(--text-2);
+            font-size: 11px;
+            line-height: 1.45;
+        }
+
+        .benchmark-card-note {
+            color: var(--text-3);
+        }
+
+        .benchmark-table-wrap {
+            overflow-x: auto;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+        }
+
+        .benchmark-table {
+            width: 100%;
+            border-collapse: collapse;
+            min-width: 260px;
+            font-size: 10.5px;
+        }
+
+        .benchmark-table th,
+        .benchmark-table td {
+            padding: 6px 7px;
+            border-bottom: 1px solid var(--border);
+            text-align: left;
+            color: var(--text-2);
+            white-space: nowrap;
+        }
+
+        .benchmark-table th {
+            color: var(--text-3);
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+            background: rgba(8, 16, 22, 0.35);
+        }
+
+        .benchmark-table tr:last-child td {
+            border-bottom: none;
+        }
+
+        .benchmark-table .ok {
+            color: var(--green);
+        }
+
+        .benchmark-table .fail {
+            color: var(--red);
         }
 
         .icon-btn.active {
@@ -833,6 +1001,10 @@
             color: var(--text-1);
         }
 
+        .copy-btn:focus-visible {
+            opacity: 1;
+        }
+
         #input-area {
             position: relative;
             padding: 16px 20px;
@@ -1031,6 +1203,10 @@
             opacity: 1;
         }
 
+        .bubble pre:focus-within .code-copy {
+            opacity: 1;
+        }
+
         .code-copy:hover {
             color: var(--text-1);
             border-color: var(--border-hover);
@@ -1096,6 +1272,102 @@
             }
             .device-select-wrap {
                 flex-shrink: 0;
+            }
+        }
+
+        @media (max-width: 700px) {
+            #app {
+                grid-template-rows: auto minmax(0, 1fr) auto;
+            }
+            .logo-sub {
+                display: none;
+            }
+            .header-right {
+                display: grid;
+                grid-template-columns: 1fr auto auto auto auto auto auto;
+                align-items: center;
+            }
+            .model-select-wrap {
+                grid-column: 1 / -1;
+                order: -1;
+            }
+            .device-select-wrap {
+                grid-column: span 2;
+            }
+            #device-select,
+            #device-select.has-advanced-value {
+                width: 100%;
+                max-width: none;
+            }
+            .stat-chip {
+                justify-content: center;
+                min-height: 34px;
+                white-space: nowrap;
+            }
+            .btn-group {
+                display: contents;
+            }
+            .icon-btn {
+                width: 34px;
+                height: 34px;
+            }
+            #settings-sidebar {
+                position: absolute;
+                inset: 0 0 0 auto;
+                width: min(320px, 92vw);
+                box-shadow: var(--shadow);
+            }
+            #settings-sidebar.hidden {
+                margin-right: min(-320px, -92vw);
+            }
+            #chat-area {
+                padding: 16px 0;
+            }
+            .chat-inner {
+                padding: 0 12px;
+                gap: 16px;
+            }
+            .empty-state {
+                padding: 56px 12px;
+            }
+            .avatar {
+                display: none;
+            }
+            .msg-row,
+            .msg-row.user {
+                flex-direction: column;
+                gap: 4px;
+            }
+            .msg-row .bubble {
+                border-radius: var(--radius-sm);
+            }
+            .msg-row.ai .bubble,
+            .msg-row.user .bubble {
+                border-bottom-left-radius: var(--radius-sm);
+                border-bottom-right-radius: var(--radius-sm);
+            }
+            #input-area {
+                padding: 12px;
+            }
+            .footer-meta {
+                flex-direction: column;
+                gap: 6px;
+            }
+            .footer-right {
+                justify-content: space-between;
+                flex: 0 1 auto;
+            }
+            .form-group-row,
+            .modal-footer {
+                flex-direction: column;
+            }
+            .modal-footer button {
+                width: 100%;
+            }
+            #toast {
+                max-width: calc(100vw - 24px);
+                white-space: normal;
+                text-align: center;
             }
         }
 
@@ -1244,6 +1516,166 @@
             color: var(--text-3);
             font-style: italic;
         }
+
+        /* Modal Styles */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(8, 16, 22, 0.8);
+            backdrop-filter: blur(8px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            opacity: 1;
+            transition: opacity 0.3s ease;
+        }
+
+        .modal-overlay.hidden {
+            display: none !important;
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .modal-card {
+            background: var(--surface-1);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            width: min(520px, 90vw);
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: var(--shadow);
+            animation: modal-in 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex;
+            flex-direction: column;
+        }
+
+        @keyframes modal-in {
+            from {
+                opacity: 0;
+                transform: scale(0.95) translateY(12px);
+            }
+            to {
+                opacity: 1;
+                transform: scale(1) translateY(0);
+            }
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .modal-header h3 {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-1);
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+        }
+
+        .modal-form {
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            flex: 1;
+        }
+
+        .form-group-row {
+            display: flex;
+            gap: 16px;
+        }
+
+        .form-group label {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-2);
+        }
+
+        .form-group input,
+        .form-group select {
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            color: var(--text-1);
+            font-family: inherit;
+            font-size: 13px;
+            padding: 10px 12px;
+            border-radius: var(--radius-sm);
+            outline: none;
+            transition: all 0.2s;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px var(--primary-glow);
+        }
+
+        .modal-footer {
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+            margin-top: 8px;
+        }
+
+        .btn-cancel {
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            color: var(--text-2);
+            padding: 10px 20px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-cancel:hover {
+            background: var(--surface-3);
+            border-color: var(--border-hover);
+            color: var(--text-1);
+        }
+
+        .btn-submit {
+            background: linear-gradient(135deg, #0ea5e9, #6366f1);
+            border: none;
+            color: white;
+            padding: 10px 24px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            box-shadow: 0 4px 12px rgba(14, 165, 233, 0.25);
+        }
+
+        .btn-submit:hover:not(:disabled) {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 16px rgba(14, 165, 233, 0.4);
+            filter: brightness(1.08);
+        }
+
+        .btn-submit:disabled {
+            background: var(--surface-3);
+            color: var(--text-3);
+            cursor: not-allowed;
+            box-shadow: none;
+        }
     </style>
 </head>
 
@@ -1342,6 +1774,12 @@
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M12 5v14" />
                         <path d="M5 12h14" />
+                    </svg>
+                </button>
+                <button class="icon-btn" id="add-model-btn" title="Add Custom Model" aria-label="Add Custom Model">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="12" y1="5" x2="12" y2="19" />
+                        <line x1="5" y1="12" x2="19" y2="12" />
                     </svg>
                 </button>
                 <button class="icon-btn" id="export-chat-btn" title="Export conversation as Markdown" aria-label="Export conversation" disabled>
@@ -1470,6 +1908,44 @@
 
                 <div class="sidebar-divider"></div>
 
+                <div class="setting-group stats-section benchmark-panel">
+                    <h4>Hardware Benchmark</h4>
+                    <div class="benchmark-devices" id="benchmark-devices">
+                        <label class="benchmark-check"><input type="checkbox" value="CPU" checked><span>CPU</span></label>
+                        <label class="benchmark-check"><input type="checkbox" value="GPU" checked><span>GPU</span></label>
+                        <label class="benchmark-check"><input type="checkbox" value="NPU" checked><span>NPU</span></label>
+                        <label class="benchmark-check"><input type="checkbox" value="AUTO" checked><span>AUTO</span></label>
+                        <label class="benchmark-check"><input type="checkbox" value="AUTO:NPU,GPU,CPU"><span>AUTO:NPU,GPU,CPU</span></label>
+                        <label class="benchmark-check"><input type="checkbox" value="AUTO:GPU,NPU,CPU"><span>AUTO:GPU,NPU,CPU</span></label>
+                    </div>
+                    <button id="run-benchmark-btn" class="benchmark-run-btn" type="button">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3"
+                            stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M13 2 3 14h8l-1 8 11-13h-8l1-7Z" />
+                        </svg>
+                        Run Benchmark
+                    </button>
+                    <div class="benchmark-status" id="benchmark-status">No benchmark running.</div>
+                    <div class="benchmark-card empty" id="benchmark-recommendation">No benchmark results yet.</div>
+                    <div class="benchmark-table-wrap">
+                        <table class="benchmark-table" aria-label="Latest benchmark results">
+                            <thead>
+                                <tr>
+                                    <th>Device</th>
+                                    <th>TTFT</th>
+                                    <th>Tok/s</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="benchmark-results-body">
+                                <tr><td colspan="4">-</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="sidebar-divider"></div>
+
                 <div class="setting-group stats-section">
                     <h4>Activity</h4>
                     <div class="activity-list" id="activity-list">
@@ -1511,6 +1987,66 @@
 
     <div id="toast"></div>
 
+    <div id="custom-model-modal" class="modal-overlay hidden">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3>Add Custom Model</h3>
+                <button id="close-modal-btn" class="close-btn" title="Close modal">&times;</button>
+            </div>
+            <form id="custom-model-form" class="modal-form" onsubmit="return false;">
+                <div class="form-group">
+                    <label for="custom-source-model">Hugging Face Repo ID</label>
+                    <input type="text" id="custom-source-model" required placeholder="e.g. HuggingFaceTB/SmolLM2-135M-Instruct">
+                </div>
+                <div class="form-group">
+                    <label for="custom-model-id">Model ID (Unique Identifier)</label>
+                    <input type="text" id="custom-model-id" required placeholder="e.g. smollm2-135m-int4">
+                </div>
+                <div class="form-group">
+                    <label for="custom-model-name">Display Name</label>
+                    <input type="text" id="custom-model-name" required placeholder="e.g. SmolLM2 135M Instruct INT4">
+                </div>
+                <div class="form-group-row">
+                    <div class="form-group">
+                        <label for="custom-weight-format">Weight Format</label>
+                        <select id="custom-weight-format">
+                            <option value="int4">INT4 (Recommended for NPU)</option>
+                            <option value="int8">INT8</option>
+                            <option value="fp16">FP16</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="custom-recommended-device">Recommended Device</label>
+                        <select id="custom-recommended-device">
+                            <option value="NPU">NPU</option>
+                            <option value="CPU">CPU</option>
+                            <option value="GPU">GPU</option>
+                            <option value="AUTO">AUTO</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group-row">
+                    <div class="form-group">
+                        <label for="custom-max-context-len">Max Context Length</label>
+                        <input type="number" id="custom-max-context-len" required value="2048">
+                    </div>
+                    <div class="form-group">
+                        <label for="custom-max-output-tokens">Max Output Tokens</label>
+                        <input type="number" id="custom-max-output-tokens" required value="512">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="custom-description">Description</label>
+                    <input type="text" id="custom-description" placeholder="Optional description...">
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn-cancel" id="cancel-modal-btn">Cancel</button>
+                    <button type="submit" class="btn-submit" id="submit-modal-btn">Register & Convert</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <script>
         // ── State ─────────────────────────────────────────────
         let conversation = [];
@@ -1530,6 +2066,7 @@
         let authPromptShown = false;   // only auto-open settings once per 401 streak
         let queuedPrompt = null;
         let activeLoaderBubble = null;
+        let benchmarkRunning = false;
 
         const SEND_ICON = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13"/><path d="M22 2L15 22 11 13 2 9l20-7z"/></svg>';
         const STOP_ICON = '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>';
@@ -1569,6 +2106,22 @@
         const exportChatBtn = document.getElementById('export-chat-btn');
         updateSendButtonState();
 
+        // Custom model modal DOM refs
+        const addModelBtn = document.getElementById('add-model-btn');
+        const customModelModal = document.getElementById('custom-model-modal');
+        const closeModalBtn = document.getElementById('close-modal-btn');
+        const cancelModalBtn = document.getElementById('cancel-modal-btn');
+        const customModelForm = document.getElementById('custom-model-form');
+        const submitModalBtn = document.getElementById('submit-modal-btn');
+        const customSourceModel = document.getElementById('custom-source-model');
+        const customModelId = document.getElementById('custom-model-id');
+        const customModelName = document.getElementById('custom-model-name');
+        const customWeightFormat = document.getElementById('custom-weight-format');
+        const customRecommendedDevice = document.getElementById('custom-recommended-device');
+        const customMaxContextLen = document.getElementById('custom-max-context-len');
+        const customMaxOutputTokens = document.getElementById('custom-max-output-tokens');
+        const customDescription = document.getElementById('custom-description');
+
         // Settings panel DOM refs
         const settingsToggleBtn = document.getElementById('settings-toggle-btn');
         const settingsSidebar = document.getElementById('settings-sidebar');
@@ -1585,6 +2138,11 @@
         const infoRequests = document.getElementById('info-requests');
         const infoCompletionTokens = document.getElementById('info-completion-tokens');
         const infoAvgLatency = document.getElementById('info-avg-latency');
+        const benchmarkDevices = document.getElementById('benchmark-devices');
+        const runBenchmarkBtn = document.getElementById('run-benchmark-btn');
+        const benchmarkStatus = document.getElementById('benchmark-status');
+        const benchmarkRecommendation = document.getElementById('benchmark-recommendation');
+        const benchmarkResultsBody = document.getElementById('benchmark-results-body');
 
         // ── Helpers ───────────────────────────────────────────
         // Build request headers, attaching the optional API key when one is set.
@@ -1597,10 +2155,12 @@
         // Render model output as markdown, then sanitize the HTML before insertion.
         // (Degrades gracefully if the marked / DOMPurify CDNs are unavailable.)
         function renderMarkdown(text) {
-            const raw = window.marked ? marked.parse(text || '') : escapeHtml(text || '');
-            return window.DOMPurify ? DOMPurify.sanitize(raw) : raw;
+            if (!window.marked) return escapeHtml(text || '');
+            const raw = marked.parse(text || '');
+            return window.DOMPurify ? DOMPurify.sanitize(raw) : escapeHtml(text || '');
         }
         function escapeHtml(text) { return String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+        function escapeAttr(text) { return escapeHtml(text).replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
         // Syntax-highlight code blocks and add a per-block copy button (once each).
         function enhanceCodeBlocks(container) {
             container.querySelectorAll('pre:not(.tool-call-args)').forEach(pre => {
@@ -1653,16 +2213,19 @@
             card.classList.remove('hidden');
             
             const loadDevice = modelLoadDevice();
+            const safeName = escapeHtml(model.name);
+            const safeDevice = escapeHtml(model.device || '');
+            const safeLoadDevice = escapeHtml(loadDevice);
             
             if (model.is_loaded) {
                 card.innerHTML = `
-                    <div class="action-card-title">Model Ready: <span style="color:var(--green)">${model.name}</span></div>
-                    <p class="action-card-text">Loaded on <strong>${model.device}</strong>. Type a message below or click a suggestion to start chatting!</p>
+                    <div class="action-card-title">Model Ready: <span style="color:var(--green)">${safeName}</span></div>
+                    <p class="action-card-text">Loaded on <strong>${safeDevice}</strong>. Type a message below or click a suggestion to start chatting!</p>
                 `;
             } else if (model.is_loading) {
                 const actionText = model.status === 'converting' 
-                    ? `Converting <strong>${model.name}</strong> to OpenVINO IR...` 
-                    : `Loading <strong>${model.name}</strong> into memory...`;
+                    ? `Converting <strong>${safeName}</strong> to OpenVINO IR...` 
+                    : `Loading <strong>${safeName}</strong> into memory...`;
                 const subText = model.status === 'converting'
                     ? 'This downloads the weights from Hugging Face and exports them. It may take 1-5 minutes.'
                     : 'Bringing model onto the selected device...';
@@ -1679,26 +2242,30 @@
                 card.innerHTML = `
                     <div class="action-card-title" style="color:var(--red)">${actionLabel}</div>
                     <p class="action-card-text">${escapeHtml(model.error || 'An error occurred during preparation.')}</p>
-                    <button class="action-btn" onclick="triggerModelPrimaryAction('${model.id}')">
+                    <button class="action-btn" data-model-action>
                         Retry Preparation
                     </button>
                 `;
             } else if (model.status === 'ready_to_load') {
                 card.innerHTML = `
-                    <div class="action-card-title">Model Converted: <span>${model.name}</span></div>
+                    <div class="action-card-title">Model Converted: <span>${safeName}</span></div>
                     <p class="action-card-text">The model is ready on disk. Load it to begin chatting.</p>
-                    <button class="action-btn" onclick="triggerModelPrimaryAction('${model.id}')">
-                        ${LOAD_ICON} Load on ${loadDevice}
+                    <button class="action-btn" data-model-action>
+                        ${LOAD_ICON} Load on ${safeLoadDevice}
                     </button>
                 `;
             } else {
                 card.innerHTML = `
-                    <div class="action-card-title">Model Available: <span>${model.name}</span></div>
+                    <div class="action-card-title">Model Available: <span>${safeName}</span></div>
                     <p class="action-card-text">This model needs to be prepared (converted to OpenVINO IR) first.</p>
-                    <button class="action-btn" onclick="triggerModelPrimaryAction('${model.id}')">
-                        ${CONVERT_ICON} Convert & Load on ${loadDevice}
+                    <button class="action-btn" data-model-action>
+                        ${CONVERT_ICON} Convert & Load on ${safeLoadDevice}
                     </button>
                 `;
+            }
+            const actionBtn = card.querySelector('[data-model-action]');
+            if (actionBtn) {
+                actionBtn.addEventListener('click', () => triggerModelPrimaryAction(model.id));
             }
         }
 
@@ -1725,7 +2292,7 @@
             activeLoaderBubble.firstElementChild.innerHTML = `
                 <div class="model-loader-status" style="display:flex;align-items:center;gap:10px;padding:4px 0;color:var(--amber);">
                     <div class="spinner"></div>
-                    <span>${actionText} <strong>${selectedModel.name}</strong> on <strong>${loadDevice}</strong>... This may take a moment.</span>
+                    <span>${escapeHtml(actionText)} <strong>${escapeHtml(selectedModel.name)}</strong> on <strong>${escapeHtml(loadDevice)}</strong>... This may take a moment.</span>
                 </div>
             `;
             scrollToBottom(true);
@@ -1749,6 +2316,102 @@
         }
 
         function getSelectedModelMeta() { return availableModels.get(modelSelect.value) || null; }
+        function getBenchmarkDevices() {
+            return Array.from(benchmarkDevices.querySelectorAll('input[type="checkbox"]:checked'))
+                .map(input => normalizeUiDevice(input.value));
+        }
+        function fmtBenchMs(value) {
+            if (value === null || value === undefined) return '-';
+            const n = Number(value);
+            if (!Number.isFinite(n)) return '-';
+            return n >= 1000 ? `${(n / 1000).toFixed(2)}s` : `${n.toFixed(0)}ms`;
+        }
+        function fmtBenchRate(value) {
+            if (value === null || value === undefined) return '-';
+            const n = Number(value);
+            return Number.isFinite(n) ? n.toFixed(1) : '-';
+        }
+        function setBenchmarkRunning(running) {
+            benchmarkRunning = running;
+            runBenchmarkBtn.disabled = running;
+            runBenchmarkBtn.innerHTML = running
+                ? '<span class="spinner" style="width:14px;height:14px;border-width:2px;"></span>Running...'
+                : '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h8l-1 8 11-13h-8l1-7Z" /></svg>Run Benchmark';
+            if (running) benchmarkStatus.textContent = 'Benchmark in progress. This may take several minutes on real hardware.';
+        }
+        function renderBenchmark(run) {
+            if (!run) {
+                benchmarkRecommendation.className = 'benchmark-card empty';
+                benchmarkRecommendation.textContent = 'No benchmark results yet.';
+                benchmarkResultsBody.innerHTML = '<tr><td colspan="4">-</td></tr>';
+                return;
+            }
+            const rec = run.recommendation || {};
+            const rows = (run.results || []).slice(-8).reverse();
+            benchmarkRecommendation.className = 'benchmark-card';
+            const title = rec.model_id
+                ? `${escapeHtml(rec.model_id)} on ${escapeHtml(rec.requested_device || '-')}`
+                : 'No successful run';
+            const score = rec.score !== null && rec.score !== undefined ? `Score ${Number(rec.score).toFixed(1)}` : 'Score -';
+            benchmarkRecommendation.innerHTML = `
+                <div class="benchmark-card-title">${title}</div>
+                <div class="benchmark-card-meta">${escapeHtml(rec.summary || 'Benchmark complete.')}</div>
+                <div class="benchmark-card-meta">${escapeHtml(score)} · ${escapeHtml(run.mock ? 'Mock engine' : 'OpenVINO hardware')}</div>
+                <div class="benchmark-card-note">${escapeHtml(rec.caveat || run.caveat || '')}</div>
+            `;
+            if (!rows.length) {
+                benchmarkResultsBody.innerHTML = '<tr><td colspan="4">-</td></tr>';
+                return;
+            }
+            benchmarkResultsBody.innerHTML = rows.map(result => {
+                const status = result.success ? 'ok' : 'fail';
+                const statusText = result.success ? 'ok' : 'error';
+                const titleAttr = result.error ? ` title="${escapeAttr(result.error)}"` : '';
+                return `
+                    <tr>
+                        <td>${escapeHtml(result.requested_device || '-')}</td>
+                        <td>${fmtBenchMs(result.time_to_first_token_ms)}</td>
+                        <td>${fmtBenchRate(result.tokens_sec)}</td>
+                        <td class="${status}"${titleAttr}>${statusText}</td>
+                    </tr>
+                `;
+            }).join('');
+        }
+        async function loadLatestBenchmark() {
+            try {
+                const res = await fetch('/v1/benchmarks/latest', { headers: authHeaders() });
+                if (res.status === 401) { handleAuthRequired(); return; }
+                const data = await res.json();
+                if (res.ok) renderBenchmark(data.run);
+            } catch { }
+        }
+        async function runBenchmark() {
+            const model = getSelectedModelMeta();
+            const devices = getBenchmarkDevices();
+            if (!model) { showToast('Select a model first'); return; }
+            if (!devices.length) { showToast('Select at least one device'); return; }
+            setBenchmarkRunning(true);
+            benchmarkStatus.textContent = `Benchmarking ${model.name} on ${devices.join(', ')}...`;
+            try {
+                const res = await fetch('/v1/benchmarks/run', {
+                    method: 'POST',
+                    headers: authHeaders({ 'Content-Type': 'application/json' }),
+                    body: JSON.stringify({ model: model.id, devices, max_tokens: 64, runs: 1 }),
+                });
+                if (res.status === 401) { handleAuthRequired(); return; }
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+                renderBenchmark(data);
+                benchmarkStatus.textContent = 'Benchmark complete.';
+                showToast('Benchmark complete');
+                await updateStatus();
+            } catch (err) {
+                benchmarkStatus.textContent = `Benchmark failed: ${err.message}`;
+                showToast('Benchmark failed');
+            } finally {
+                setBenchmarkRunning(false);
+            }
+        }
         function getModelHardwareRequirement(model) {
             let bCount = 0.0;
             const match = model.id.match(/[-_](\d+(?:\.\d+)?)([mbMB])/);
@@ -2261,6 +2924,7 @@
         // ── Conversation persistence (survives reloads) ───────
         function saveConversation() {
             try { localStorage.setItem(STORAGE_KEY, JSON.stringify(conversation)); } catch { }
+            updateExportButton();
         }
         function restoreConversation() {
             let saved;
@@ -2354,7 +3018,12 @@
         });
 
         userInput.addEventListener('keydown', e => {
-            if (e.key === 'Enter' && !e.shiftKey && !isGenerating) { e.preventDefault(); sendMessage(); }
+            // Enter sends; Shift+Enter inserts a newline. While generating, Enter is
+            // swallowed (matching the disabled send button) instead of adding a newline.
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                if (!isGenerating) sendMessage();
+            }
         });
         document.addEventListener('keydown', e => {
             if ((e.ctrlKey || e.metaKey) && e.key === 'l') { e.preventDefault(); clearConversation(); }
@@ -2372,6 +3041,80 @@
         });
         unloadModelBtn.addEventListener('click', () => { const m = getSelectedModelMeta(); if (m) requestModelUnload(m.id); });
         deleteModelBtn.addEventListener('click', () => { const m = getSelectedModelMeta(); if (m) requestModelDelete(m.id); });
+        runBenchmarkBtn.addEventListener('click', runBenchmark);
+
+        // ── Custom Model Modal Event Listeners ─────────────────
+        addModelBtn.addEventListener('click', () => {
+            customModelModal.classList.remove('hidden');
+            customSourceModel.focus();
+        });
+        closeModalBtn.addEventListener('click', () => customModelModal.classList.add('hidden'));
+        cancelModalBtn.addEventListener('click', () => customModelModal.classList.add('hidden'));
+        customModelModal.addEventListener('click', e => {
+            if (e.target === customModelModal) customModelModal.classList.add('hidden');
+        });
+
+        // Autocomplete Model ID and Name on input
+        function updateAutofilledFields() {
+            const val = customSourceModel.value.trim();
+            if (!val) return;
+            const parts = val.split('/');
+            const rawName = parts[parts.length - 1] || '';
+            if (!rawName) return;
+
+            const cleanId = rawName.toLowerCase().replace(/[^a-z0-9_.-]/g, '-').replace(/-+/g, '-');
+            const weight = customWeightFormat.value;
+            customModelId.value = `${cleanId}-${weight}`;
+
+            let displayName = rawName.replace(/[-_]/g, ' ');
+            displayName = displayName.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+            customModelName.value = `${displayName} ${weight.toUpperCase()}`;
+        }
+        customSourceModel.addEventListener('input', updateAutofilledFields);
+        customWeightFormat.addEventListener('change', updateAutofilledFields);
+
+        // Submit form
+        customModelForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const body = {
+                model_id: customModelId.value.trim(),
+                name: customModelName.value.trim(),
+                source_model: customSourceModel.value.trim(),
+                weight_format: customWeightFormat.value,
+                recommended_device: customRecommendedDevice.value,
+                max_context_len: parseInt(customMaxContextLen.value, 10),
+                max_output_tokens: parseInt(customMaxOutputTokens.value, 10),
+                description: customDescription.value.trim() || null
+            };
+            const previousSubmitText = submitModalBtn.textContent;
+            submitModalBtn.disabled = true;
+            submitModalBtn.textContent = 'Registering...';
+            try {
+                const res = await fetch('/v1/models/register', {
+                    method: 'POST',
+                    headers: authHeaders({ 'Content-Type': 'application/json' }),
+                    body: JSON.stringify(body)
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+                showToast(`Registered custom model: ${body.name}`);
+                customModelModal.classList.add('hidden');
+                customModelForm.reset();
+
+                // Select the model
+                waitingForModelId = body.model_id;
+                await updateStatus();
+
+                // Start conversion
+                await requestModelConvert(body.model_id);
+            } catch (err) {
+                showToast(`Failed to register model: ${err.message}`);
+            } finally {
+                submitModalBtn.disabled = false;
+                submitModalBtn.textContent = previousSubmitText;
+            }
+        });
+
         modelSelect.addEventListener('change', updateModelUi);
         deviceSelect.addEventListener('change', async () => {
             const newDevice = normalizeUiDevice(deviceSelect.value);
@@ -2610,6 +3353,7 @@
         setSendButtonMode('send');
         restoreConversation();
         updateExportButton();
+        loadLatestBenchmark();
     </script>
 </body>
 

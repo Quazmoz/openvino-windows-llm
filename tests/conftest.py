@@ -12,3 +12,14 @@ def pytest_configure(config):
     # pyproject sets `--basetemp=.tmp/pytest`; pytest creates that leaf dir but
     # not its parent, so a fresh checkout/CI run errors unless `.tmp/` exists.
     (ROOT / ".tmp").mkdir(parents=True, exist_ok=True)
+
+
+import pytest  # noqa: E402
+
+from runtime.device_check import cleanup_cached_core  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def cleanup_ov_core():
+    yield
+    cleanup_cached_core()

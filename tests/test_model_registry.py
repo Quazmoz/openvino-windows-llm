@@ -74,12 +74,16 @@ def test_make_catalog_entry_status_precedence(tmp_path):
     assert loaded["can_unload"] is True
     assert loaded["can_load"] is False
 
-    error = make_catalog_entry(cfg, loaded=False, queued=False, loading=False, downloaded=True, error="boom")
+    error = make_catalog_entry(
+        cfg, loaded=False, queued=False, loading=False, downloaded=True, error="boom"
+    )
     assert error["status"] == "error"
     assert error["status_label"] == "Load failed"
     assert error["error"] == "boom"
 
-    conversion_error = make_catalog_entry(cfg, loaded=False, queued=False, loading=False, downloaded=False, error="boom")
+    conversion_error = make_catalog_entry(
+        cfg, loaded=False, queued=False, loading=False, downloaded=False, error="boom"
+    )
     assert conversion_error["status"] == "error"
     assert conversion_error["status_label"] == "Conversion failed"
 
@@ -95,12 +99,16 @@ def test_make_catalog_entry_status_precedence(tmp_path):
     assert missing["can_convert"] is True
     assert missing["can_delete"] is False
 
-    converting = make_catalog_entry(cfg, loaded=False, queued=False, loading=False, converting=True, downloaded=False)
+    converting = make_catalog_entry(
+        cfg, loaded=False, queued=False, loading=False, converting=True, downloaded=False
+    )
     assert converting["status"] == "converting"
     assert converting["can_load"] is False
     assert converting["can_convert"] is False
 
     no_source_path = _write_catalog(tmp_path, {"m2": {"name": "M2"}})
     no_source_cfg = load_catalog(no_source_path)["m2"]
-    no_source = make_catalog_entry(no_source_cfg, loaded=False, queued=False, loading=False, downloaded=False)
+    no_source = make_catalog_entry(
+        no_source_cfg, loaded=False, queued=False, loading=False, downloaded=False
+    )
     assert no_source["can_convert"] is False
