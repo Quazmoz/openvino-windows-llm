@@ -537,7 +537,7 @@ def test_events_capped_at_max(client):
     """The event log should never exceed 50 entries."""
     manager = client.app.state.manager
     for i in range(60):
-        manager._emit("info", f"Event {i}")
+        manager.emit_event("info", f"Event {i}")
     body = client.get("/v1/system/status").json()
     events = body.get("events", [])
     assert len(events) <= 50
@@ -673,3 +673,27 @@ def test_success_request_log_keeps_request_id(client, caplog):
     ]
     assert records
     assert records[-1].request_id == custom_id
+
+
+def test_unsafe_request_id_is_replaced(client):
+    """Header values that could forge log lines are swapped for a generated id."""
+    resp = client.get("/health", headers={"X-Request-ID": "evil\tid injected"})
+    assert resp.status_code == 200
+    assert resp.headers["X-Request-ID"].startswith("req-")
+
+    too_long = "a" * 200
+    resp = client.get("/health", headers={"X-Request-ID": too_long})
+    assert resp.headers["X-Request-ID"].startswith("req-")
+
+
+def test_wildcard_cors_does_not_allow_credentials(client):
+    resp = client.options(
+        "/v1/models",
+        headers={
+            "Origin": "http://example.com",
+            "Access-Control-Request-Method": "GET",
+        },
+    )
+    assert resp.status_code == 200
+    assert resp.headers.get("access-control-allow-origin") == "*"
+    assert "access-control-allow-credentials" not in resp.headers

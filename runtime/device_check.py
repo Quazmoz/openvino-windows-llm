@@ -136,9 +136,15 @@ _cached_details: list[dict] | None = None
 
 
 def cleanup_cached_core() -> None:
-    """Clear the globally cached OpenVINO Core instance to release resources."""
-    global _core_instance
+    """Clear the cached OpenVINO Core and device discovery results.
+
+    Releases Core resources at exit and gives tests a way to fully reset
+    discovery state between cases.
+    """
+    global _core_instance, _cached_devices, _cached_details
     _core_instance = None
+    _cached_devices = None
+    _cached_details = None
 
 
 atexit.register(cleanup_cached_core)

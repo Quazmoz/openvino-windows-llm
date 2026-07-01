@@ -57,10 +57,10 @@ class StreamOptions(BaseModel):
 
 class ChatCompletionRequest(BaseModel):
     model: str
-    messages: list[ChatMessage]
-    max_tokens: int | None = 512
-    temperature: float | None = 0.7
-    top_p: float | None = 1.0
+    messages: list[ChatMessage] = Field(min_length=1)
+    max_tokens: int | None = Field(default=512, ge=1)
+    temperature: float | None = Field(default=0.7, ge=0.0, le=2.0)
+    top_p: float | None = Field(default=1.0, ge=0.0, le=1.0)
     stream: bool | None = False
     stream_options: StreamOptions | None = None
     tools: list[ToolDefinition] | None = None
@@ -103,8 +103,8 @@ class ResponseRequest(BaseModel):
     model: str
     input: Any  # string or list of {role, content} messages
     instructions: str | None = None
-    max_output_tokens: int | None = 512
-    temperature: float | None = 0.7
+    max_output_tokens: int | None = Field(default=512, ge=1)
+    temperature: float | None = Field(default=0.7, ge=0.0, le=2.0)
     stream: bool | None = False
 
 

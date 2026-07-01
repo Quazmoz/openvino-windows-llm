@@ -3018,7 +3018,12 @@
         });
 
         userInput.addEventListener('keydown', e => {
-            if (e.key === 'Enter' && !e.shiftKey && !isGenerating) { e.preventDefault(); sendMessage(); }
+            // Enter sends; Shift+Enter inserts a newline. While generating, Enter is
+            // swallowed (matching the disabled send button) instead of adding a newline.
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                if (!isGenerating) sendMessage();
+            }
         });
         document.addEventListener('keydown', e => {
             if ((e.ctrlKey || e.metaKey) && e.key === 'l') { e.preventDefault(); clearConversation(); }

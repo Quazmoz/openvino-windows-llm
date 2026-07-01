@@ -14,6 +14,7 @@ import contextvars
 import json
 import logging
 import os
+import re
 import secrets
 import sys
 import time
@@ -26,7 +27,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response, StreamingResponse
 
-from app import chat_format, model_manager, tools
+from app import __version__, chat_format, model_manager, tools
 from app.config import BASE_DIR, Settings
 from app.openai_api import (
     BenchmarkRunRequest,
@@ -57,6 +58,10 @@ from runtime.benchmark_runner import (
 from runtime.openvino_engine import BaseEngine, GenParams
 
 request_id_var = contextvars.ContextVar("request_id", default="")
+
+# Client-supplied X-Request-ID values must be short and log-safe (no newlines /
+# control characters that could forge log lines); anything else is replaced.
+_REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
 
 
 class RequestIDFilter(logging.Filter):
@@ -165,7 +170,7 @@ def create_app(settings: Settings) -> FastAPI:
             await manager.shutdown()
             logger.info("Server stopped; models unloaded.")
 
-    app = FastAPI(title="OpenVINO Windows LLM", version="0.1.0", lifespan=lifespan)
+    app = FastAPI(title="OpenVINO Windows LLM", version=__version__, lifespan=lifespan)
     app.state.settings = settings
     app.state.manager = manager
     app.state.benchmark_store = benchmark_store
@@ -177,8 +182,8 @@ def create_app(settings: Settings) -> FastAPI:
     # Request ID and structured request/response logging middleware
     @app.middleware("http")
     async def request_id_and_logging_middleware(request: Request, call_next):
-        request_id = request.headers.get("X-Request-ID")
-        if not request_id:
+        request_id = request.headers.get("X-Request-ID", "")
+        if not _REQUEST_ID_RE.fullmatch(request_id):
             request_id = f"req-{uuid.uuid4().hex[:12]}"
 
         token = request_id_var.set(request_id)
@@ -211,13 +216,16 @@ def create_app(settings: Settings) -> FastAPI:
         finally:
             request_id_var.reset(token)
 
-    # Configure CORS middleware
+    # Configure CORS middleware. Credentialed CORS is invalid with a wildcard
+    # origin (browsers reject the combination), and this API authenticates via
+    # the Authorization header rather than cookies, so credentials are only
+    # enabled when explicit origins are configured.
     origins = [orig.strip() for orig in settings.cors_origins.split(",") if orig.strip()]
     if origins:
         app.add_middleware(
             CORSMiddleware,
             allow_origins=origins,
-            allow_credentials=True,
+            allow_credentials="*" not in origins,
             allow_methods=["*"],
             allow_headers=["*"],
         )
@@ -382,7 +390,8 @@ def create_app(settings: Settings) -> FastAPI:
             raise HTTPException(status_code=409, detail=f"Model '{req.model}' is still loading")
 
         try:
-            result = manager.delete(req.model)
+            # Deleting a multi-GB IR directory can take a while; keep it off the event loop.
+            result = await asyncio.to_thread(manager.delete, req.model)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except OSError as exc:
@@ -424,10 +433,16 @@ def create_app(settings: Settings) -> FastAPI:
     async def system_status():
         entries = manager.catalog_entries()
         available = device_check.available_devices()
+        # GPU property queries and the models-dir size walk both touch
+        # drivers/disk; run them off the event loop since the UI polls this.
+        gpu, disk = await asyncio.gather(
+            asyncio.to_thread(gpu_stats),
+            asyncio.to_thread(disk_stats, settings.models_dir),
+        )
         return {
             "memory": memory_stats(),
             "cpu": cpu_stats(),
-            "gpu": gpu_stats(),
+            "gpu": gpu,
             "device": {
                 "default": settings.device,
                 "mock": manager.force_mock,
@@ -444,7 +459,7 @@ def create_app(settings: Settings) -> FastAPI:
             },
             "disk": {
                 "models_dir": str(settings.models_dir.resolve()),
-                **disk_stats(settings.models_dir),
+                **disk,
             },
             "metrics": manager.metrics_summary(),
             "events": manager.recent_events(),
@@ -490,8 +505,8 @@ def create_app(settings: Settings) -> FastAPI:
             )
         except device_check.DeviceValidationError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        benchmark_store.append(run)
-        manager._emit(
+        await asyncio.to_thread(benchmark_store.append, run)
+        manager.emit_event(
             "info",
             f"Benchmarked {len(model_ids)} model(s) across {len(devices)} device target(s)",
         )
@@ -499,11 +514,12 @@ def create_app(settings: Settings) -> FastAPI:
 
     @app.get("/v1/benchmarks", dependencies=auth)
     async def list_benchmarks():
-        return {"object": "list", "data": list(reversed(benchmark_store.list_runs()))}
+        runs = await asyncio.to_thread(benchmark_store.list_runs)
+        return {"object": "list", "data": list(reversed(runs))}
 
     @app.get("/v1/benchmarks/latest", dependencies=auth)
     async def latest_benchmark():
-        run = benchmark_store.latest()
+        run = await asyncio.to_thread(benchmark_store.latest)
         return {
             "run": run,
             "recommendation": run.get("recommendation") if run else None,
@@ -511,8 +527,8 @@ def create_app(settings: Settings) -> FastAPI:
 
     @app.delete("/v1/benchmarks", dependencies=auth)
     async def clear_benchmarks():
-        deleted = benchmark_store.clear()
-        manager._emit("info", "Cleared benchmark results")
+        deleted = await asyncio.to_thread(benchmark_store.clear)
+        manager.emit_event("info", "Cleared benchmark results")
         return {"status": "cleared", "deleted_runs": deleted}
 
     # --- conversation export -----------------------------------------------

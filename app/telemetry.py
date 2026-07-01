@@ -12,6 +12,8 @@ try:
 except ImportError:  # pragma: no cover - psutil is a hard dependency at runtime
     psutil = None  # type: ignore[assignment]
 
+logger = logging.getLogger("ov-llm.telemetry")
+
 
 def dir_size_bytes(path: str | Path) -> int:
     """Total size of a directory tree in bytes (0 if missing / unreadable)."""
@@ -124,17 +126,23 @@ def gpu_stats() -> dict | None:
         if formatted_stats:
             result["statistics"] = formatted_stats
 
-        for key in ("used", "allocated"):
-            for k in list(formatted_stats.keys()):
-                if k.lower() == key and isinstance(formatted_stats[k], int):
-                    result["used_gb"] = round(formatted_stats[k] / (1024**3), 2)
-        for key in ("free", "available"):
-            for k in list(formatted_stats.keys()):
-                if k.lower() == key and isinstance(formatted_stats[k], int):
-                    result["free_gb"] = round(formatted_stats[k] / (1024**3), 2)
+        used_gb = _first_stat_gb(formatted_stats, ("used", "allocated"))
+        if used_gb is not None:
+            result["used_gb"] = used_gb
+        free_gb = _first_stat_gb(formatted_stats, ("free", "available"))
+        if free_gb is not None:
+            result["free_gb"] = free_gb
 
         return result
     except Exception as exc:
-        logger = logging.getLogger("ov-llm.telemetry")
         logger.debug("Failed to query GPU telemetry: %s", exc)
         return None
+
+
+def _first_stat_gb(stats: dict, keys: tuple[str, ...]) -> float | None:
+    """Return the first matching statistic (by key preference order) in GB."""
+    for key in keys:
+        for k, v in stats.items():
+            if k.lower() == key and isinstance(v, int):
+                return round(v / (1024**3), 2)
+    return None

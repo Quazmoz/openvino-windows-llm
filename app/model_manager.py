@@ -100,7 +100,7 @@ class ModelManager:
 
     # --- activity events ---------------------------------------------------
 
-    def _emit(self, level: str, message: str) -> None:
+    def emit_event(self, level: str, message: str) -> None:
         """Append an event to the bounded activity log.
 
         *level* is ``"info"``, ``"warning"``, or ``"error"``.
@@ -147,7 +147,7 @@ class ModelManager:
         cfg = self.catalog.get(model_id)
         name = cfg.name if cfg else model_id
         tps = round(completion_tokens / latency_s, 1) if latency_s > 0 else 0.0
-        self._emit("info", f"Generated {completion_tokens} tokens using {name} ({tps} t/s)")
+        self.emit_event("info", f"Generated {completion_tokens} tokens using {name} ({tps} t/s)")
 
     def metrics_summary(self) -> dict:
         """Per-model and aggregate request metrics for the status endpoint."""
@@ -288,7 +288,7 @@ class ModelManager:
                     self.devices[model_id] = engine.device
                     self._clear_status(model_id)
                     logger.info("Loaded '%s' on %s", model_id, engine.device)
-                    self._emit("info", f"Loaded {cfg.name} on {engine.device}")
+                    self.emit_event("info", f"Loaded {cfg.name} on {engine.device}")
             except Exception as exc:  # noqa: BLE001 - surfaced to the UI as a status
                 self.engines.pop(model_id, None)
                 self.locks.pop(model_id, None)
@@ -296,7 +296,7 @@ class ModelManager:
                 message = errors.format_model_load_error(exc)
                 self._set_status(model_id, "error", error=message)
                 logger.exception("Failed to load '%s': %s", model_id, message)
-                self._emit("error", f"Failed to load {cfg.name}: {message}")
+                self.emit_event("error", f"Failed to load {cfg.name}: {message}")
         finally:
             self.load_tasks.pop(model_id, None)
 
@@ -386,7 +386,7 @@ class ModelManager:
 
                     self._clear_status(model_id)
                     logger.info("Converted '%s' to %s", model_id, cfg.abs_path(BASE_DIR))
-                    self._emit("info", f"Converted {cfg.name} to OpenVINO IR")
+                    self.emit_event("info", f"Converted {cfg.name} to OpenVINO IR")
                     if load_after:
                         self.schedule_load(model_id, device)
             except asyncio.CancelledError:
@@ -399,7 +399,7 @@ class ModelManager:
                 message = errors.format_model_convert_error(exc)
                 self._set_status(model_id, "error", error=message)
                 logger.exception("Failed to convert '%s': %s", model_id, message)
-                self._emit("error", f"Conversion failed for {cfg.name}")
+                self.emit_event("error", f"Conversion failed for {cfg.name}")
         finally:
             self.convert_tasks.pop(model_id, None)
 
@@ -447,7 +447,7 @@ class ModelManager:
         with contextlib.suppress(Exception):
             engine.close()
         gc.collect()
-        self._emit("info", f"Unloaded {name}")
+        self.emit_event("info", f"Unloaded {name}")
         return True
 
     def delete(self, model_id: str) -> dict:
@@ -470,7 +470,7 @@ class ModelManager:
         self.convert_tasks.pop(model_id, None)
         if deleted:
             freed_gb = round(freed / (1024**3), 2)
-            self._emit("info", f"Deleted {cfg.name} ({freed_gb} GB freed)")
+            self.emit_event("info", f"Deleted {cfg.name} ({freed_gb} GB freed)")
         return {"deleted": deleted, "freed_bytes": freed}
 
     def _ensure_within_models_dir(self, path: Path) -> None:
@@ -506,12 +506,12 @@ class ModelManager:
 
         self.catalog[req.model_id] = cfg
         registry.save_catalog(self.settings.models_file, self.catalog)
-        self._emit("info", f"Registered new custom model: {cfg.name} ({cfg.id})")
+        self.emit_event("info", f"Registered new custom model: {cfg.name} ({cfg.id})")
         return cfg
 
     async def startup(self) -> None:
         mode = "mock engine" if self.force_mock else f"device={self.settings.device}"
-        self._emit("info", f"Server started ({mode}, {len(self.catalog)} models in catalog)")
+        self.emit_event("info", f"Server started ({mode}, {len(self.catalog)} models in catalog)")
         if self.settings.default_model:
             if self.settings.default_model in self.catalog:
                 self.schedule_load(self.settings.default_model)
