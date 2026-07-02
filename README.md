@@ -29,17 +29,23 @@ agents, or their own apps to an OpenVINO-powered local inference endpoint.
 
 ## Visual Preview
 
+*(Screenshots captured with the built-in mock engine on macOS — on Windows/Intel hardware the status chip shows the live device, e.g. `NPU · idle`.)*
+
 ### 1. Main Chat Interface
 ![OpenVINO Windows LLM Chat Interface](screenshots/chat_preview.png)
-*Sleek, dark-mode chat interface with real-time tokens/second tracking, device indicators, and system telemetry (RAM/Disk footprint).*
+*Streaming markdown chat with a conversation-history sidebar, per-message stats (model · tokens · tok/s), one-click copy/regenerate, device indicators, and system telemetry (RAM/disk footprint).*
 
 ### 2. Collapsible Settings & System Info
 ![OpenVINO Windows LLM Settings](screenshots/settings_preview.png)
-*Deep control over system prompt instructions, model parameters (temperature, token limits), and loaded engine properties.*
+*Deep control over system prompt instructions, model parameters (temperature, token limits), loaded engine properties, request metrics, and the hardware benchmark panel.*
 
 ### 3. Clean Setup & Onboarding
 ![OpenVINO Windows LLM Empty State](screenshots/empty_state.png)
-*Simple, high-tech onboarding screen offering single-click quickstart suggestion chips that auto-run prompts.*
+*Onboarding screen with one-click model conversion/loading and quickstart suggestion chips that auto-run prompts.*
+
+### 4. Light Theme & Mobile
+![OpenVINO Windows LLM Light Theme](screenshots/light_theme.png)
+*A one-click light/dark theme toggle (persisted per browser). The layout is fully responsive — see [screenshots/responsive_preview.png](screenshots/responsive_preview.png) for the phone-width layout.*
 
 ---
 
@@ -49,6 +55,7 @@ Quick links:
 
 - [Windows Quickstart](#windows-quickstart)
 - [Experimental Linux Quickstart](#experimental-linux-quickstart)
+- [The built-in web UI](#the-built-in-web-ui)
 - [Device support notes](docs/DEVICE_SUPPORT.md)
 
 This is the successor to the older [`npu-windows`](https://github.com/Quazmoz/npu-windows)
@@ -82,14 +89,15 @@ local server with the UI, model conversion, catalog, and setup scripts all inclu
   and `AUTO:GPU,NPU,CPU`
 - Serves an **OpenAI-compatible API** — `/v1/chat/completions` (streaming + non-streaming,
   with `stop` sequences and `seed`), `/v1/models`, and `/v1/responses` (streaming + non-streaming)
-- Includes a **built-in browser chat UI** at `http://localhost:8000`
+- Includes a **built-in browser chat UI** at `http://localhost:8000` — multi-conversation
+  history, streaming markdown, light/dark themes, per-message stats, and one-click model
+  management (see [The built-in web UI](#the-built-in-web-ui))
 - **Model lifecycle:** discover, load, unload, delete, with background loading and
   per-model locks so requests never block and two big models don't load at once
 - **Function/tool calling** via a prompt shim (OpenVINO GenAI has no native tool calling)
   with malformed-call retry
 - **Actionable device errors** (e.g. "OpenVINO doesn't see the NPU — retry with `--device CPU`")
 - A **conversion helper** that exports Hugging Face models to OpenVINO IR
-- A chat UI with one-click catalog model conversion/loading plus simple and advanced device selectors
 - **Per-model request metrics** (count, tokens, average latency) on `/v1/system/status`
   and in the UI's settings panel
 - **Hardware benchmarking + auto recommendation** across selected catalog models and
@@ -144,7 +152,8 @@ Run the server and load your model on your target hardware device:
 .\start_server.bat --model tinyllama-1.1b-chat-fp16 --device CPU
 ```
 
-Open **http://localhost:8000** for the browser chat UI, or connect external API tools.
+Open **http://localhost:8000** for the browser chat UI (see
+[The built-in web UI](#the-built-in-web-ui) for a tour), or connect external API tools.
 
 ### Try it without OpenVINO (Mock Mode)
 
@@ -245,6 +254,49 @@ real OpenVINO hardware (the mock engine is already deterministic).
 API Base URL: http://localhost:8000/v1          (or http://<WINDOWS-PC-IP>:8000/v1 over LAN)
 API Key:      sk-dummy                           (any value, unless OV_LLM_API_KEY is set)
 ```
+
+---
+
+## The built-in web UI
+
+Open **http://localhost:8000** after starting the server. Everything below works
+identically in mock mode, so you can explore the full UI on any machine.
+
+**Chat**
+
+- Streaming markdown responses with syntax-highlighted code blocks and per-block copy buttons
+- **Multiple conversations** — a collapsible history sidebar with auto-titled chats;
+  switch, delete, and start new chats without losing anything (stored in your browser's
+  localStorage, never on the server)
+- **Per-message stats** under each response (model · tokens · tok/s), plus copy and
+  **regenerate** actions on hover
+- Send a message before the model is loaded and the UI queues it — it converts/loads the
+  model first, then answers
+- Tool/function calls stream in as structured cards
+- Export any conversation to Markdown (download button in the header)
+
+**Model & device management**
+
+- Model picker with live status (`Not converted → Converting → Ready to load → Loaded`)
+  and estimated RAM requirements
+- One-click convert/load/unload/delete for catalog models; register **custom Hugging Face
+  models** from the ➕ dialog (auto-fills IDs, kicks off conversion)
+- Device selector for `CPU / GPU / NPU / AUTO` plus advanced expressions like
+  `AUTO:NPU,GPU,CPU` — switching devices live reloads the model on the new target
+- Header telemetry: engine status, converted-model disk footprint, RAM usage
+
+**Settings panel (⚙)**
+
+- System prompt, temperature, and max-output-tokens (persisted per browser)
+- API key field for servers started with `OV_LLM_API_KEY`
+- Engine/system info, request metrics, the hardware benchmark panel, and a live
+  server activity feed
+
+**Quality-of-life**
+
+- Light/dark theme toggle (persisted), responsive down to phone widths
+- Keyboard shortcuts: `Enter` send · `Shift+Enter` newline · `Esc` stop generating ·
+  `Ctrl+L` new chat · `Ctrl+B` toggle the conversation sidebar
 
 ---
 
@@ -391,7 +443,7 @@ runtime/
   model_converter.py optimum-intel export helper (HF -> OpenVINO IR)
   device_check.py    OpenVINO device discovery + validation
 
-web/index.html       Built-in chat UI (streaming, model picker, device selector, telemetry)
+web/index.html       Built-in chat UI (multi-chat, streaming, themes, model picker, telemetry)
 setup.bat            Windows setup entrypoint
 setup.sh             Experimental Linux setup entrypoint
 start_server.bat     Windows launcher
@@ -494,10 +546,11 @@ If you bind to the LAN: use a trusted private network, add firewall rules intent
 `LLMPipeline` wrapper + mock engine, `/v1/models`, streaming + non-streaming
 `/v1/chat/completions` (with `stop`/`seed`), streaming + non-streaming `/v1/responses`,
 model load/unload/convert/delete, system status with per-model request metrics,
-tool-call shim, optional API-key auth (honored by the built-in UI), built-in chat UI,
-conversion helper, advanced OpenVINO device routing, hardware benchmark + auto
-recommendation tooling, Windows
-setup scripts, experimental Linux scripts/docs, and a passing mock-backed test suite.
+tool-call shim, optional API-key auth (honored by the built-in UI), built-in chat UI
+(multi-conversation history, streaming markdown, light/dark themes, per-message stats,
+regenerate, Markdown export), conversion helper, advanced OpenVINO device routing,
+hardware benchmark + auto recommendation tooling, Windows setup scripts, experimental
+Linux scripts/docs, and a passing mock-backed test suite.
 
 **Next**
 

@@ -35,7 +35,12 @@ Launch the server in mock mode to verify the stack works end-to-end without need
 .\start_server.bat --mock
 ```
 
-Open **http://localhost:8000** in your browser.
+Open **http://localhost:8000** in your browser. You'll land in the built-in chat UI:
+pick a model in the header, click the onboarding card's **Load** button (or just type a
+message — the UI converts/loads the model for you, then answers). The left sidebar keeps
+your conversation history, and the ⚙ panel holds generation settings, request metrics,
+and the hardware benchmark. In mock mode responses are canned, but every feature —
+streaming, model lifecycle, benchmarks, export — behaves exactly like the real thing.
 
 ### 3. Convert a Catalog Model
 

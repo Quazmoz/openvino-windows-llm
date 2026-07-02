@@ -94,9 +94,25 @@ def test_index_has_responsive_and_accessible_ui_polish(client):
     body = client.get("/").text
     assert "--shadow-md" in body
     assert "@media (max-width: 700px)" in body
+    assert "prefers-reduced-motion" in body
     assert ".icon-btn:focus-visible" in body
-    assert ".copy-btn:focus-visible" in body
+    assert ".meta-btn:focus-visible" in body
     assert ".bubble pre:focus-within .code-copy" in body
+
+
+def test_index_has_multichat_theme_and_regenerate(client):
+    body = client.get("/").text
+    # Conversation history sidebar with local persistence + v1 migration.
+    assert 'id="chats-sidebar"' in body
+    assert "ovllm.chats.v2" in body
+    assert "ovllm.chat.v1" in body
+    # Light/dark theme toggle persisted per browser.
+    assert 'id="theme-toggle-btn"' in body
+    assert "ovllm.theme.v1" in body
+    assert '[data-theme="light"]' in body
+    # Per-message actions.
+    assert "function regenerateLast" in body
+    assert "function formatMsgStat" in body
 
 
 def test_index_escapes_dynamic_model_card_content(client):
