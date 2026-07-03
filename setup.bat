@@ -15,7 +15,7 @@ echo   OpenVINO Windows LLM - Setup
 echo ==========================================
 echo.
 
-"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "%~dp0setup\setup_all.ps1" %*
+"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "%~dp0setup\windows\setup_all.ps1" %*
 
 if errorlevel 1 (
     echo.

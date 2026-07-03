@@ -6,9 +6,11 @@ an empty / "unavailable" result instead of raising.
 
 from __future__ import annotations
 
+import atexit
 import importlib.util
 import logging
 import re
+import threading
 from dataclasses import dataclass
 
 logger = logging.getLogger("ov-llm.device")
@@ -86,7 +88,9 @@ def parse_device_expression(device: str | None, *, default: str | None = None) -
         if _is_physical_token(text):
             return DeviceExpression(text)
         if text in {"MULTI", "HETERO"}:
-            raise DeviceValidationError(f"Device '{text}' requires priorities, for example {text}:GPU,CPU.")
+            raise DeviceValidationError(
+                f"Device '{text}' requires priorities, for example {text}:GPU,CPU."
+            )
         raise DeviceValidationError(f"Unsupported OpenVINO device '{raw}'.")
 
     meta, priorities = (part.strip() for part in text.split(":", 1))
@@ -101,7 +105,9 @@ def parse_device_expression(device: str | None, *, default: str | None = None) -
 
     for token in devices:
         if not _is_physical_token(token):
-            raise DeviceValidationError(f"Unsupported OpenVINO physical device '{token}' in '{raw}'.")
+            raise DeviceValidationError(
+                f"Unsupported OpenVINO physical device '{token}' in '{raw}'."
+            )
     return DeviceExpression(meta, devices)
 
 
@@ -113,7 +119,9 @@ def validate_device_expression(device: str | None, available: list[str] | None =
         raise DeviceValidationError(_device_error_message(str(exc), available)) from exc
 
     if available is not None and not is_device_available(normalized, available):
-        raise DeviceValidationError(_device_error_message(f"Device '{normalized}' is not available.", available))
+        raise DeviceValidationError(
+            _device_error_message(f"Device '{normalized}' is not available.", available)
+        )
     return normalized
 
 
@@ -121,14 +129,51 @@ def _is_physical_token(device: str) -> bool:
     return bool(_PHYSICAL_RE.fullmatch(device))
 
 
+_core_lock = threading.Lock()
+_core_instance = None
+_cached_devices: list[str] | None = None
+_cached_details: list[dict] | None = None
+
+
+def cleanup_cached_core() -> None:
+    """Clear the cached OpenVINO Core and device discovery results.
+
+    Releases Core resources at exit and gives tests a way to fully reset
+    discovery state between cases.
+    """
+    global _core_instance, _cached_devices, _cached_details
+    _core_instance = None
+    _cached_devices = None
+    _cached_details = None
+
+
+atexit.register(cleanup_cached_core)
+
+
+def _get_core():
+    """Get or create the global thread-safe openvino.Core instance."""
+    global _core_instance
+    if _core_instance is None:
+        with _core_lock:
+            if _core_instance is None:
+                import openvino as ov
+
+                _core_instance = ov.Core()
+    return _core_instance
+
+
 def available_devices() -> list[str]:
     """List OpenVINO device names (e.g. ['CPU', 'GPU', 'NPU']); [] if unavailable."""
+    global _cached_devices
+    if _cached_devices is not None:
+        return _cached_devices
+
     if importlib.util.find_spec("openvino") is None:
         return []
     try:
-        import openvino as ov
-
-        return list(ov.Core().available_devices)
+        core = _get_core()
+        _cached_devices = list(core.available_devices)
+        return _cached_devices
     except Exception as exc:  # pragma: no cover - depends on local OpenVINO/drivers
         logger.warning("OpenVINO device discovery failed: %s", exc)
         return []
@@ -136,12 +181,14 @@ def available_devices() -> list[str]:
 
 def device_details() -> list[dict]:
     """List devices with their human-readable full names."""
+    global _cached_details
+    if _cached_details is not None:
+        return _cached_details
+
     if importlib.util.find_spec("openvino") is None:
         return []
     try:
-        import openvino as ov
-
-        core = ov.Core()
+        core = _get_core()
         details = []
         for dev in core.available_devices:
             try:
@@ -149,7 +196,8 @@ def device_details() -> list[dict]:
             except Exception:
                 full = dev
             details.append({"device": dev, "full_name": str(full)})
-        return details
+        _cached_details = details
+        return _cached_details
     except Exception as exc:  # pragma: no cover
         logger.warning("OpenVINO device discovery failed: %s", exc)
         return []
@@ -199,16 +247,32 @@ def suggested_device_targets(available: list[str] | None = None) -> list[dict[st
             suggestions.append({"device": device, "experimental": experimental, "note": note})
 
     if {"NPU", "GPU", "CPU"}.issubset(bases):
-        add("AUTO:NPU,GPU,CPU", experimental=False, note="Auto-select best device (prefers NPU > GPU > CPU). Actual device chosen by model compatibility.")
-        add("AUTO:GPU,NPU,CPU", experimental=False, note="Auto-select best device (prefers GPU > NPU > CPU). Actual device chosen by model compatibility.")
+        add(
+            "AUTO:NPU,GPU,CPU",
+            experimental=False,
+            note="Auto-select best device (prefers NPU > GPU > CPU). Actual device chosen by model compatibility.",
+        )
+        add(
+            "AUTO:GPU,NPU,CPU",
+            experimental=False,
+            note="Auto-select best device (prefers GPU > NPU > CPU). Actual device chosen by model compatibility.",
+        )
         add("MULTI:NPU,GPU,CPU", experimental=True, note="Experimental throughput routing.")
         add("HETERO:NPU,GPU,CPU", experimental=True, note="Experimental graph partitioning.")
     elif {"GPU", "CPU"}.issubset(bases):
-        add("AUTO:GPU,CPU", experimental=False, note="Auto-select best device (prefers GPU > CPU). Actual device chosen by model compatibility.")
+        add(
+            "AUTO:GPU,CPU",
+            experimental=False,
+            note="Auto-select best device (prefers GPU > CPU). Actual device chosen by model compatibility.",
+        )
         add("MULTI:GPU,CPU", experimental=True, note="Experimental throughput routing.")
         add("HETERO:GPU,CPU", experimental=True, note="Experimental graph partitioning.")
     elif {"NPU", "CPU"}.issubset(bases):
-        add("AUTO:NPU,CPU", experimental=False, note="Auto-select best device (prefers NPU > CPU). Actual device chosen by model compatibility.")
+        add(
+            "AUTO:NPU,CPU",
+            experimental=False,
+            note="Auto-select best device (prefers NPU > CPU). Actual device chosen by model compatibility.",
+        )
         add("MULTI:NPU,CPU", experimental=True, note="Experimental throughput routing.")
     return suggestions
 

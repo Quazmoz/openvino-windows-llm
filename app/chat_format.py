@@ -137,21 +137,32 @@ def build_prompt_within_budget(
     system = [m for m in dict_messages if m["role"] == "system"][:1]
     rest = [m for m in dict_messages if m["role"] != "system"]
 
-    kept_reversed: list[dict] = []  # newest-first
-    for m in reversed(rest):
-        trial = system + list(reversed(kept_reversed + [m]))
+    if not rest:
+        # Only system messages and they exceed budget. Just return them.
+        prompt = apply_template(system)
+        return prompt, count_tokens(prompt)
+
+    # Binary search the number of messages to keep from the end of rest (1 to len(rest)).
+    low = 1
+    high = len(rest)
+    best_k = 1  # We must keep at least the single most recent message.
+
+    while low <= high:
+        mid = (low + high) // 2
+        trial = system + rest[-mid:]
         if count_tokens(apply_template(trial)) <= max_prompt_len:
-            kept_reversed.append(m)
+            best_k = mid
+            low = mid + 1
         else:
-            if not kept_reversed:
-                kept_reversed.append(m)  # keep at least the newest turn
-            break
+            high = mid - 1
 
-    dropped = len(rest) - len(kept_reversed)
+    dropped = len(rest) - best_k
     if dropped > 0:
-        logger.info("Sliding window dropped %d older turn(s) to fit %d tokens", dropped, max_prompt_len)
+        logger.info(
+            "Sliding window dropped %d older turn(s) to fit %d tokens", dropped, max_prompt_len
+        )
 
-    final = system + list(reversed(kept_reversed))
+    final = system + rest[-best_k:]
     prompt = apply_template(final)
     return prompt, count_tokens(prompt)
 

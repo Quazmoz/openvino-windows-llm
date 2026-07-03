@@ -18,6 +18,7 @@ import shutil
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 from app import errors
 from app import model_registry as registry
@@ -70,6 +71,20 @@ class ModelManager:
         self._events: collections.deque[dict] = collections.deque(maxlen=50)
         self._load_lock = asyncio.Lock()
         self._convert_lock = asyncio.Lock()
+        self._active_generations = 0
+        self._drain_event = asyncio.Event()
+        self._drain_event.set()
+
+    @contextlib.asynccontextmanager
+    async def _track_generation(self):
+        self._active_generations += 1
+        self._drain_event.clear()
+        try:
+            yield
+        finally:
+            self._active_generations -= 1
+            if self._active_generations == 0:
+                self._drain_event.set()
 
     # --- status helpers ----------------------------------------------------
 
@@ -85,14 +100,12 @@ class ModelManager:
 
     # --- activity events ---------------------------------------------------
 
-    def _emit(self, level: str, message: str) -> None:
+    def emit_event(self, level: str, message: str) -> None:
         """Append an event to the bounded activity log.
 
         *level* is ``"info"``, ``"warning"``, or ``"error"``.
         """
-        self._events.append(
-            {"timestamp": int(time.time()), "level": level, "message": message}
-        )
+        self._events.append({"timestamp": int(time.time()), "level": level, "message": message})
 
     def recent_events(self) -> list[dict]:
         """Return the activity log as a plain list (oldest first)."""
@@ -134,7 +147,7 @@ class ModelManager:
         cfg = self.catalog.get(model_id)
         name = cfg.name if cfg else model_id
         tps = round(completion_tokens / latency_s, 1) if latency_s > 0 else 0.0
-        self._emit("info", f"Generated {completion_tokens} tokens using {name} ({tps} t/s)")
+        self.emit_event("info", f"Generated {completion_tokens} tokens using {name} ({tps} t/s)")
 
     def metrics_summary(self) -> dict:
         """Per-model and aggregate request metrics for the status endpoint."""
@@ -235,54 +248,57 @@ class ModelManager:
     async def _load_task(self, model_id: str, device: str) -> None:
         cfg = self.catalog[model_id]
         try:
-            async with self._load_lock:
-                if model_id in self.engines:
-                    self._clear_status(model_id)
-                    return
+            try:
+                async with self._load_lock:
+                    if model_id in self.engines:
+                        self._clear_status(model_id)
+                        return
 
-                self._set_status(model_id, "loading")
+                    self._set_status(model_id, "loading")
 
-                # Validate device + on-disk model for real (non-mock) loads.
-                if not self.force_mock:
-                    available = device_check.available_devices()
-                    if not device_check.is_device_available(device, available):
-                        raise RuntimeError(errors.format_device_error(device, available))
-                    if not registry.is_downloaded(cfg, BASE_DIR):
-                        if self.settings.auto_convert:
-                            logger.info(
-                                "Model '%s' not found locally. Auto-convert is enabled. Starting conversion...",
-                                model_id,
-                            )
-                            await self._convert_task(model_id, device, load_after=False)
-                            self._set_status(model_id, "loading")
-                            if not registry.is_downloaded(cfg, BASE_DIR):
+                    # Validate device + on-disk model for real (non-mock) loads.
+                    if not self.force_mock:
+                        available = device_check.available_devices()
+                        if not device_check.is_device_available(device, available):
+                            raise RuntimeError(errors.format_device_error(device, available))
+                        if not registry.is_downloaded(cfg, BASE_DIR):
+                            if self.settings.auto_convert:
+                                logger.info(
+                                    "Model '%s' not found locally. Auto-convert is enabled. Starting conversion...",
+                                    model_id,
+                                )
+                                await self._convert_task(model_id, device, load_after=False)
+                                self._set_status(model_id, "loading")
+                                if not registry.is_downloaded(cfg, BASE_DIR):
+                                    raise RuntimeError(
+                                        f"Auto-conversion failed for '{cfg.name}'. Please check logs."
+                                    )
+                            else:
                                 raise RuntimeError(
-                                    f"Auto-conversion failed for '{cfg.name}'. Please check logs."
+                                    errors.format_model_not_converted(
+                                        cfg.name, str(cfg.abs_path(BASE_DIR)), cfg.source_model
+                                    )
                                 )
-                        else:
-                            raise RuntimeError(
-                                errors.format_model_not_converted(
-                                    cfg.name, str(cfg.abs_path(BASE_DIR)), cfg.source_model
-                                )
-                            )
 
-                loop = asyncio.get_running_loop()
-                engine = await loop.run_in_executor(None, self._build_engine, model_id, device)
+                    loop = asyncio.get_running_loop()
+                    engine = await loop.run_in_executor(None, self._build_engine, model_id, device)
 
-                self.engines[model_id] = engine
-                self.locks[model_id] = asyncio.Lock()
-                self.devices[model_id] = engine.device
-                self._clear_status(model_id)
-                logger.info("Loaded '%s' on %s", model_id, engine.device)
-                self._emit("info", f"Loaded {cfg.name} on {engine.device}")
-        except Exception as exc:  # noqa: BLE001 - surfaced to the UI as a status
-            self.engines.pop(model_id, None)
-            self.locks.pop(model_id, None)
-            self.devices.pop(model_id, None)
-            message = errors.format_model_load_error(exc)
-            self._set_status(model_id, "error", error=message)
-            logger.exception("Failed to load '%s': %s", model_id, message)
-            self._emit("error", f"Failed to load {cfg.name}: {message}")
+                    self.engines[model_id] = engine
+                    self.locks[model_id] = asyncio.Lock()
+                    self.devices[model_id] = engine.device
+                    self._clear_status(model_id)
+                    logger.info("Loaded '%s' on %s", model_id, engine.device)
+                    self.emit_event("info", f"Loaded {cfg.name} on {engine.device}")
+            except Exception as exc:  # noqa: BLE001 - surfaced to the UI as a status
+                self.engines.pop(model_id, None)
+                self.locks.pop(model_id, None)
+                self.devices.pop(model_id, None)
+                message = errors.format_model_load_error(exc)
+                self._set_status(model_id, "error", error=message)
+                logger.exception("Failed to load '%s': %s", model_id, message)
+                self.emit_event("error", f"Failed to load {cfg.name}: {message}")
+        finally:
+            self.load_tasks.pop(model_id, None)
 
     def schedule_load(self, model_id: str, device: str | None = None) -> asyncio.Task | None:
         if model_id not in self.catalog:
@@ -302,54 +318,90 @@ class ModelManager:
         self.load_tasks[model_id] = task
         return task
 
+    async def build_temporary_engine(self, model_id: str, device: str) -> tuple[BaseEngine, float]:
+        """Build an engine for short-lived benchmark use without registering it.
+
+        The same load lock, validation rules, and engine factory are used as the
+        normal model lifecycle, but the returned engine is owned by the caller
+        and must be closed by the caller.
+        """
+        if model_id not in self.catalog:
+            raise UnknownModel(f"Unknown model '{model_id}'")
+
+        cfg = self.catalog[model_id]
+        device = device_check.normalize_device(device)
+        async with self._load_lock:
+            if not self.force_mock:
+                available = device_check.available_devices()
+                if not device_check.is_device_available(device, available):
+                    raise RuntimeError(errors.format_device_error(device, available))
+                if not registry.is_downloaded(cfg, BASE_DIR):
+                    raise RuntimeError(
+                        errors.format_model_not_converted(
+                            cfg.name, str(cfg.abs_path(BASE_DIR)), cfg.source_model
+                        )
+                    )
+
+            loop = asyncio.get_running_loop()
+            start = time.perf_counter()
+            engine = await loop.run_in_executor(None, self._build_engine, model_id, device)
+            return engine, time.perf_counter() - start
+
     # --- conversion --------------------------------------------------------
 
     async def _convert_task(self, model_id: str, device: str, load_after: bool) -> None:
         cfg = self.catalog[model_id]
         proc: asyncio.subprocess.Process | None = None
         try:
-            async with self._convert_lock:
-                if registry.is_downloaded(cfg, BASE_DIR):
+            try:
+                async with self._convert_lock:
+                    if registry.is_downloaded(cfg, BASE_DIR):
+                        self._clear_status(model_id)
+                        if load_after:
+                            self.schedule_load(model_id, device)
+                        return
+
+                    if not cfg.source_model:
+                        raise RuntimeError(
+                            f"{cfg.name} has no Hugging Face source model configured."
+                        )
+
+                    self._set_status(model_id, "converting")
+                    proc = await asyncio.create_subprocess_exec(
+                        sys.executable,
+                        "-m",
+                        "runtime.model_converter",
+                        "--id",
+                        model_id,
+                        cwd=str(BASE_DIR),
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE,
+                    )
+                    stdout, stderr = await proc.communicate()
+                    if proc.returncode != 0:
+                        output = (stderr or stdout).decode(errors="replace").strip()
+                        raise RuntimeError(
+                            output or f"Conversion exited with code {proc.returncode}"
+                        )
+
                     self._clear_status(model_id)
+                    logger.info("Converted '%s' to %s", model_id, cfg.abs_path(BASE_DIR))
+                    self.emit_event("info", f"Converted {cfg.name} to OpenVINO IR")
                     if load_after:
                         self.schedule_load(model_id, device)
-                    return
-
-                if not cfg.source_model:
-                    raise RuntimeError(f"{cfg.name} has no Hugging Face source model configured.")
-
-                self._set_status(model_id, "converting")
-                proc = await asyncio.create_subprocess_exec(
-                    sys.executable,
-                    "-m",
-                    "runtime.model_converter",
-                    "--id",
-                    model_id,
-                    cwd=str(BASE_DIR),
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                )
-                stdout, stderr = await proc.communicate()
-                if proc.returncode != 0:
-                    output = (stderr or stdout).decode(errors="replace").strip()
-                    raise RuntimeError(output or f"Conversion exited with code {proc.returncode}")
-
-                self._clear_status(model_id)
-                logger.info("Converted '%s' to %s", model_id, cfg.abs_path(BASE_DIR))
-                self._emit("info", f"Converted {cfg.name} to OpenVINO IR")
-                if load_after:
-                    self.schedule_load(model_id, device)
-        except asyncio.CancelledError:
-            if proc and proc.returncode is None:
-                proc.kill()
-                with contextlib.suppress(Exception):
-                    await proc.wait()
-            raise
-        except Exception as exc:  # noqa: BLE001 - surfaced to the UI as a statement/status
-            message = errors.format_model_convert_error(exc)
-            self._set_status(model_id, "error", error=message)
-            logger.exception("Failed to convert '%s': %s", model_id, message)
-            self._emit("error", f"Conversion failed for {cfg.name}")
+            except asyncio.CancelledError:
+                if proc and proc.returncode is None:
+                    proc.kill()
+                    with contextlib.suppress(Exception):
+                        await proc.wait()
+                raise
+            except Exception as exc:  # noqa: BLE001 - surfaced to the UI as a statement/status
+                message = errors.format_model_convert_error(exc)
+                self._set_status(model_id, "error", error=message)
+                logger.exception("Failed to convert '%s': %s", model_id, message)
+                self.emit_event("error", f"Conversion failed for {cfg.name}")
+        finally:
+            self.convert_tasks.pop(model_id, None)
 
     def schedule_convert(
         self,
@@ -395,7 +447,7 @@ class ModelManager:
         with contextlib.suppress(Exception):
             engine.close()
         gc.collect()
-        self._emit("info", f"Unloaded {name}")
+        self.emit_event("info", f"Unloaded {name}")
         return True
 
     def delete(self, model_id: str) -> dict:
@@ -418,7 +470,7 @@ class ModelManager:
         self.convert_tasks.pop(model_id, None)
         if deleted:
             freed_gb = round(freed / (1024**3), 2)
-            self._emit("info", f"Deleted {cfg.name} ({freed_gb} GB freed)")
+            self.emit_event("info", f"Deleted {cfg.name} ({freed_gb} GB freed)")
         return {"deleted": deleted, "freed_bytes": freed}
 
     def _ensure_within_models_dir(self, path: Path) -> None:
@@ -432,9 +484,34 @@ class ModelManager:
     def reload_catalog(self) -> None:
         self.catalog = registry.load_catalog(self.settings.models_file)
 
+    def register_model(self, req: Any) -> registry.ModelConfig:
+        """Register a new custom model in the catalog and save to models.json."""
+        if req.model_id in self.catalog:
+            raise ValueError(f"Model ID '{req.model_id}' is already registered in the catalog.")
+
+        # Build new config
+        cfg = registry.ModelConfig(
+            id=req.model_id,
+            name=req.name,
+            description=req.description
+            or f"Custom model registered via Web UI. Source: {req.source_model}",
+            backend="openvino-genai",
+            model_path=f"models/openvino/{req.model_id}",
+            source_model=req.source_model,
+            weight_format=req.weight_format,
+            recommended_device=req.recommended_device,
+            max_context_len=req.max_context_len,
+            max_output_tokens=req.max_output_tokens,
+        )
+
+        self.catalog[req.model_id] = cfg
+        registry.save_catalog(self.settings.models_file, self.catalog)
+        self.emit_event("info", f"Registered new custom model: {cfg.name} ({cfg.id})")
+        return cfg
+
     async def startup(self) -> None:
         mode = "mock engine" if self.force_mock else f"device={self.settings.device}"
-        self._emit("info", f"Server started ({mode}, {len(self.catalog)} models in catalog)")
+        self.emit_event("info", f"Server started ({mode}, {len(self.catalog)} models in catalog)")
         if self.settings.default_model:
             if self.settings.default_model in self.catalog:
                 self.schedule_load(self.settings.default_model)
@@ -455,6 +532,20 @@ class ModelManager:
                 task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await task
+
+        # Gracefully wait for in-flight requests to complete
+        if self._active_generations > 0:
+            logger.info(
+                "Waiting for %d in-flight generation requests to drain...", self._active_generations
+            )
+            try:
+                await asyncio.wait_for(self._drain_event.wait(), timeout=10.0)
+                logger.info("All in-flight requests drained.")
+            except TimeoutError:
+                logger.warning(
+                    "Timeout waiting for in-flight requests to drain. Proceeding with shutdown."
+                )
+
         for model_id in list(self.engines):
             self.unload(model_id)
         self.load_tasks.clear()
@@ -464,29 +555,31 @@ class ModelManager:
     # --- generation bridges (sync engine -> asyncio) -----------------------
 
     async def generate(self, engine: BaseEngine, prompt: str, params: GenParams) -> GenResult:
-        loop = asyncio.get_running_loop()
-        lock = self.get_lock(engine.model_id)
-        async with lock:
-            return await loop.run_in_executor(None, engine.generate, prompt, params)
+        async with self._track_generation():
+            loop = asyncio.get_running_loop()
+            lock = self.get_lock(engine.model_id)
+            async with lock:
+                return await loop.run_in_executor(None, engine.generate, prompt, params)
 
     async def stream(self, engine: BaseEngine, prompt: str, params: GenParams):
         """Async generator yielding text chunks; holds the model lock throughout."""
-        loop = asyncio.get_running_loop()
-        lock = self.get_lock(engine.model_id)
-        async with lock:
-            handle: StreamHandle = engine.stream(prompt, params)
-            try:
-                while True:
-                    chunk = await loop.run_in_executor(None, handle.next_chunk)
-                    if chunk is None:
-                        break
-                    yield chunk
-                if handle.error is not None:
-                    raise handle.error
-            finally:
-                # If the consumer stopped early (client disconnect), signal the
-                # worker and wait for it to finish before releasing the lock, so a
-                # later request can't call generate() on the same pipeline while a
-                # stale worker is still running on it.
-                handle.request_stop()
-                await loop.run_in_executor(None, handle.wait_closed)
+        async with self._track_generation():
+            loop = asyncio.get_running_loop()
+            lock = self.get_lock(engine.model_id)
+            async with lock:
+                handle: StreamHandle = engine.stream(prompt, params)
+                try:
+                    while True:
+                        chunk = await loop.run_in_executor(None, handle.next_chunk)
+                        if chunk is None:
+                            break
+                        yield chunk
+                    if handle.error is not None:
+                        raise handle.error
+                finally:
+                    # If the consumer stopped early (client disconnect), signal the
+                    # worker and wait for it to finish before releasing the lock, so a
+                    # later request can't call generate() on the same pipeline while a
+                    # stale worker is still running on it.
+                    handle.request_stop()
+                    await loop.run_in_executor(None, handle.wait_closed)

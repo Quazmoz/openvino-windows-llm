@@ -38,6 +38,7 @@ htmlcov/
 # --- Logs / scratch ---
 *.log
 diagnostics-*.json
+benchmark/results/
 
 # --- IDE ---
 .vscode/

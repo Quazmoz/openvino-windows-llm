@@ -226,10 +226,7 @@ def _benchmark_device(
             pipe = ov_genai.LLMPipeline(str(model_path), device)
         load_time = time.perf_counter() - load_start
 
-        generated = [
-            _generate_once(pipe, ov_genai, prompt, max_new_tokens)
-            for _ in range(runs)
-        ]
+        generated = [_generate_once(pipe, ov_genai, prompt, max_new_tokens) for _ in range(runs)]
         latencies = [run.latency_s for run in generated]
         ttfts = [run.ttft_s for run in generated if run.ttft_s is not None]
         output_tokens = [run.output_tokens for run in generated]
@@ -252,7 +249,9 @@ def _benchmark_device(
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Benchmark OpenVINO GenAI device targets.")
-    parser.add_argument("model", help="Catalog model id from models.json or path to an OpenVINO model directory")
+    parser.add_argument(
+        "model", help="Catalog model id from models.json or path to an OpenVINO model directory"
+    )
     parser.add_argument(
         "--devices",
         help=(
@@ -261,12 +260,20 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     parser.add_argument("--experimental", action="store_true", help="Include MULTI/HETERO targets")
-    parser.add_argument("--runs", type=int, default=3, help="Generation runs per device (default 3)")
-    parser.add_argument("--max-new-tokens", type=int, default=64, help="Generated token limit per run")
+    parser.add_argument(
+        "--runs", type=int, default=3, help="Generation runs per device (default 3)"
+    )
+    parser.add_argument(
+        "--max-new-tokens", type=int, default=64, help="Generated token limit per run"
+    )
     parser.add_argument("--max-prompt-len", type=int, default=1024, help="Exact-NPU MAX_PROMPT_LEN")
     parser.add_argument("--prompt", default=DEFAULT_PROMPT, help="Fixed prompt used for every run")
-    parser.add_argument("--models-file", type=Path, default=BASE_DIR / "models.json", help="Catalog JSON path")
-    parser.add_argument("--cache-dir", type=Path, default=BASE_DIR / "models" / "cache", help="OpenVINO cache dir")
+    parser.add_argument(
+        "--models-file", type=Path, default=BASE_DIR / "models.json", help="Catalog JSON path"
+    )
+    parser.add_argument(
+        "--cache-dir", type=Path, default=BASE_DIR / "models" / "cache", help="OpenVINO cache dir"
+    )
     parser.add_argument("--json", type=Path, help="Optional path to write JSON results")
     args = parser.parse_args(argv)
 
@@ -286,10 +293,17 @@ def main(argv: list[str] | None = None) -> int:
     try:
         import openvino_genai as ov_genai
     except Exception as exc:  # noqa: BLE001 - keep this script importable in CI/dev
-        results = [BenchmarkResult(device=device, success=False, error=f"openvino_genai import failed: {exc}") for device in devices]
+        results = [
+            BenchmarkResult(
+                device=device, success=False, error=f"openvino_genai import failed: {exc}"
+            )
+            for device in devices
+        ]
         _print_table(results)
         if args.json:
-            args.json.write_text(json.dumps([asdict(result) for result in results], indent=2), encoding="utf-8")
+            args.json.write_text(
+                json.dumps([asdict(result) for result in results], indent=2), encoding="utf-8"
+            )
         return 0
 
     print(f"Model: {model_path}")
@@ -313,7 +327,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.json:
         args.json.parent.mkdir(parents=True, exist_ok=True)
-        args.json.write_text(json.dumps([asdict(result) for result in results], indent=2), encoding="utf-8")
+        args.json.write_text(
+            json.dumps([asdict(result) for result in results], indent=2), encoding="utf-8"
+        )
         print(f"\nWrote JSON results to {args.json}")
 
     return 0

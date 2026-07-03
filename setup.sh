@@ -3,21 +3,27 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 REPO_ROOT="$SCRIPT_DIR"
+LINUX_SETUP_DIR="$REPO_ROOT/setup/linux"
 
 MINIMAL=0
 SKIP_HARDWARE_CHECK=0
 PYTHON_CMD=""
 
+# shellcheck disable=SC1091
+. "$LINUX_SETUP_DIR/lib.sh"
+OS_ID="$(detect_linux_id)"
+PLATFORM_NAME="$(linux_platform_name "$OS_ID")"
+
 usage() {
     cat <<'EOF'
-OpenVINO Windows LLM - Experimental Ubuntu Setup
+OpenVINO Windows LLM - Experimental Linux Setup
 
 Usage:
   ./setup.sh [options]
 
 Options:
   --minimal              Install runtime dependencies only.
-  --skip-hardware-check  Skip Ubuntu hardware diagnostics and OpenVINO device check.
+  --skip-hardware-check  Skip Linux hardware diagnostics and OpenVINO device check.
   --python <command>     Use a specific Python command, for example python3.11.
   -h, --help             Show this help.
 
@@ -60,10 +66,10 @@ while [ "$#" -gt 0 ]; do
 done
 
 echo "=========================================="
-echo "  OpenVINO Windows LLM - Ubuntu Setup"
+echo "  OpenVINO Windows LLM - Linux Setup"
 echo "=========================================="
 echo
-echo "Linux support is experimental and currently targeted only for Ubuntu."
+echo "Linux support is experimental and currently supports Ubuntu and Fedora."
 echo
 echo "Repo: $REPO_ROOT"
 
@@ -71,8 +77,8 @@ if [ -r /etc/os-release ]; then
     # shellcheck disable=SC1091
     . /etc/os-release
     echo "OS: ${PRETTY_NAME:-unknown}"
-    if [ "${ID:-}" != "ubuntu" ]; then
-        echo "WARNING: This script is tested only for Ubuntu. Continuing best-effort."
+    if ! linux_is_supported_distro "${ID:-unknown}"; then
+        echo "WARNING: This script is tested on Ubuntu and Fedora. Continuing best-effort."
     fi
 else
     echo "WARNING: /etc/os-release was not found. Continuing best-effort."
@@ -80,9 +86,7 @@ fi
 
 if ! command -v python3 >/dev/null 2>&1; then
     echo "ERROR: python3 was not found." >&2
-    echo "On Ubuntu, install Python and venv support first:" >&2
-    echo "  sudo apt update" >&2
-    echo "  sudo apt install -y python3 python3-venv python3-pip git" >&2
+    print_python_install_hint "$OS_ID"
     exit 1
 fi
 
@@ -94,7 +98,7 @@ if [ -n "$PYTHON_CMD" ]; then
     INSTALL_ARGS+=(--python "$PYTHON_CMD")
 fi
 
-"$REPO_ROOT/setup/install_deps.sh" "${INSTALL_ARGS[@]}"
+"$LINUX_SETUP_DIR/install_deps.sh" "${INSTALL_ARGS[@]}"
 
 ENV_FILE="$REPO_ROOT/.env"
 ENV_EXAMPLE_FILE="$REPO_ROOT/.env.example"
@@ -133,14 +137,14 @@ fi
 
 if [ "$SKIP_HARDWARE_CHECK" -eq 0 ]; then
     echo
-    "$REPO_ROOT/setup/check_ubuntu_hardware.sh" || {
-        echo "WARNING: Ubuntu hardware diagnostics failed; continuing."
+    "$LINUX_SETUP_DIR/check_hardware.sh" || {
+        echo "WARNING: Linux hardware diagnostics failed; continuing."
     }
 
     echo
     echo "OpenVINO device check:"
     if ! "$REPO_ROOT/.venv/bin/python" -m app.server --check-devices; then
-        echo "WARNING: OpenVINO device check failed. CPU should be the first Ubuntu validation path."
+        echo "WARNING: OpenVINO device check failed. CPU should be the first $PLATFORM_NAME validation path."
     fi
 else
     echo "Skipping hardware diagnostics and OpenVINO device check."
@@ -155,8 +159,8 @@ echo "Next steps:"
 echo "  1. Verify the app stack without a real model:"
 echo "       ./start_server.sh --mock"
 echo "  2. Convert a small catalog model when conversion dependencies are installed:"
-echo "       ./setup/convert_model.sh --id tinyllama-1.1b-chat-fp16"
-echo "  3. Start with CPU first on Ubuntu:"
+echo "       ./setup/linux/convert_model.sh --id tinyllama-1.1b-chat-fp16"
+echo "  3. Start with CPU first on Linux:"
 echo "       ./start_server.sh --model tinyllama-1.1b-chat-fp16 --device CPU"
 echo
-echo "Ubuntu GPU/NPU use is experimental and depends on compatible Intel Linux drivers."
+echo "Linux GPU/NPU use is experimental and depends on compatible Intel Linux drivers."

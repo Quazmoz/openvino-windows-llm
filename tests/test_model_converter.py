@@ -115,10 +115,9 @@ def test_main_by_id_allows_weight_format_override(monkeypatch, tmp_path):
     monkeypatch.setattr(
         mc,
         "export_model",
-        lambda source_model, output_dir, weight_format, **kwargs: captured.setdefault(
-            "weight_format", weight_format
-        )
-        or output_dir,
+        lambda source_model, output_dir, weight_format, **kwargs: (
+            captured.setdefault("weight_format", weight_format) or output_dir
+        ),
     )
 
     assert mc.main(["--id", "m1-fp16", "--weight-format", "int8"]) == 0

@@ -90,6 +90,40 @@ def test_index_has_api_key_and_metrics_ui(client):
     assert "data.metrics" in body
 
 
+def test_index_has_responsive_and_accessible_ui_polish(client):
+    body = client.get("/").text
+    assert "--shadow-md" in body
+    assert "@media (max-width: 700px)" in body
+    assert "prefers-reduced-motion" in body
+    assert ".icon-btn:focus-visible" in body
+    assert ".meta-btn:focus-visible" in body
+    assert ".bubble pre:focus-within .code-copy" in body
+
+
+def test_index_has_multichat_theme_and_regenerate(client):
+    body = client.get("/").text
+    # Conversation history sidebar with local persistence + v1 migration.
+    assert 'id="chats-sidebar"' in body
+    assert "ovllm.chats.v2" in body
+    assert "ovllm.chat.v1" in body
+    # Light/dark theme toggle persisted per browser.
+    assert 'id="theme-toggle-btn"' in body
+    assert "ovllm.theme.v1" in body
+    assert '[data-theme="light"]' in body
+    # Per-message actions.
+    assert "function regenerateLast" in body
+    assert "function formatMsgStat" in body
+
+
+def test_index_escapes_dynamic_model_card_content(client):
+    body = client.get("/").text
+    assert "const safeName = escapeHtml(model.name)" in body
+    assert "data-model-action" in body
+    assert 'onclick="triggerModelPrimaryAction' not in body
+    assert "return window.DOMPurify ? DOMPurify.sanitize(raw) : escapeHtml(text || '')" in body
+    assert "submitModalBtn.disabled = true" in body
+
+
 def test_devices_endpoint(client):
     body = client.get("/v1/devices").json()
     assert body["mock"] is True
@@ -248,7 +282,9 @@ def test_chat_completion_streaming_honors_stop(client):
     for line in body.splitlines():
         if line.startswith("data: ") and line != "data: [DONE]":
             payload = json.loads(line[6:])
-            streamed += payload["choices"][0]["delta"].get("content") or "" if payload["choices"] else ""
+            streamed += (
+                payload["choices"][0]["delta"].get("content") or "" if payload["choices"] else ""
+            )
     assert "You said" not in streamed
     assert '"finish_reason": "stop"' in body
 
@@ -517,7 +553,7 @@ def test_events_capped_at_max(client):
     """The event log should never exceed 50 entries."""
     manager = client.app.state.manager
     for i in range(60):
-        manager._emit("info", f"Event {i}")
+        manager.emit_event("info", f"Event {i}")
     body = client.get("/v1/system/status").json()
     events = body.get("events", [])
     assert len(events) <= 50
@@ -579,16 +615,20 @@ def test_auto_convert_triggered_on_load(monkeypatch):
         return True
 
     import app.model_registry as registry
+
     monkeypatch.setattr(registry, "is_downloaded", mock_is_downloaded)
 
     class FakeEngine:
         model_id = "smollm2-135m-fp16"
         device = "CPU"
-        def close(self): pass
+
+        def close(self):
+            pass
 
     monkeypatch.setattr(manager, "_build_engine", lambda mid, dev: FakeEngine())
 
     convert_calls = []
+
     async def mock_convert_task(model_id, device, load_after):
         convert_calls.append((model_id, device, load_after))
 
@@ -601,3 +641,75 @@ def test_auto_convert_triggered_on_load(monkeypatch):
 
     assert len(convert_calls) == 1
     assert convert_calls[0] == ("smollm2-135m-fp16", "CPU", False)
+
+
+def test_health_endpoints_live_and_ready(client):
+    resp_live = client.get("/health/live")
+    assert resp_live.status_code == 200
+    assert resp_live.json() == {"status": "ok"}
+
+    resp_ready = client.get("/health/ready")
+    assert resp_ready.status_code == 200
+    assert resp_ready.json() == {"status": "ready"}
+
+    manager = client.app.state.manager
+    manager._set_status(MODEL_ID, "loading")
+    try:
+        resp_busy = client.get("/health/ready")
+        assert resp_busy.status_code == 503
+        assert resp_busy.json()["status"] == "busy"
+    finally:
+        manager._clear_status(MODEL_ID)
+
+
+def test_request_id_propagation_and_header(client):
+    custom_id = "test-req-12345"
+    resp = client.get("/health", headers={"X-Request-ID": custom_id})
+    assert resp.status_code == 200
+    assert resp.headers.get("X-Request-ID") == custom_id
+
+    resp_auto = client.get("/health")
+    assert resp_auto.status_code == 200
+    assert "X-Request-ID" in resp_auto.headers
+    assert resp_auto.headers["X-Request-ID"].startswith("req-")
+
+
+def test_success_request_log_keeps_request_id(client, caplog):
+    custom_id = "test-req-log-id"
+    caplog.set_level("INFO", logger="ov-llm.server")
+
+    resp = client.get("/health", headers={"X-Request-ID": custom_id})
+
+    assert resp.status_code == 200
+    assert resp.headers.get("X-Request-ID") == custom_id
+    records = [
+        record
+        for record in caplog.records
+        if record.name == "ov-llm.server" and "HTTP GET /health - Status:" in record.getMessage()
+    ]
+    assert records
+    assert records[-1].request_id == custom_id
+
+
+def test_unsafe_request_id_is_replaced(client):
+    """Header values that could forge log lines are swapped for a generated id."""
+    resp = client.get("/health", headers={"X-Request-ID": "evil\tid injected"})
+    assert resp.status_code == 200
+    assert resp.headers["X-Request-ID"].startswith("req-")
+
+    too_long = "a" * 200
+    resp = client.get("/health", headers={"X-Request-ID": too_long})
+    assert resp.headers["X-Request-ID"].startswith("req-")
+
+
+def test_wildcard_cors_does_not_allow_credentials(client):
+    resp = client.options(
+        "/v1/models",
+        headers={
+            "Origin": "http://example.com",
+            "Access-Control-Request-Method": "GET",
+        },
+    )
+    assert resp.status_code == 200
+    assert resp.headers.get("access-control-allow-origin") == "*"
+    assert "access-control-allow-credentials" not in resp.headers
