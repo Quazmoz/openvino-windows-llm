@@ -53,5 +53,13 @@ diagnostics-*.json
 .DS_Store
 Thumbs.db
 
+# --- MemoryOps local credentials and private generated config ---
+.memoryops.local.json
+.memoryops/
+.mcp.json
+.vscode/mcp.json
+mcp.json
+mcp.*.json
+
 # --- Dependency install marker (auto-created by start_server.bat) ---
 .deps_installed
