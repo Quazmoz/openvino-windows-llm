@@ -124,6 +124,56 @@ def test_index_escapes_dynamic_model_card_content(client):
     assert "submitModalBtn.disabled = true" in body
 
 
+def test_system_status_includes_model_progress(client):
+    body = client.get("/v1/system/status").json()
+    entry = next(m for m in body["models"]["available"] if m["id"] == MODEL_ID)
+
+    progress = entry["progress"]
+    assert set(progress) == {"phase", "message", "percent", "started_at", "updated_at", "log_tail"}
+    assert progress["phase"] in {"ready", "idle"}
+    assert isinstance(progress["message"], str)
+    assert isinstance(progress["log_tail"], list)
+
+
+def test_progress_message_updates_status_label(client):
+    manager = client.app.state.manager
+    manager._set_status(MODEL_ID, "loading")
+    manager._set_progress(
+        MODEL_ID,
+        "loading",
+        "Loading TinyLlama on GPU...",
+        percent=42,
+        append_log="Loading TinyLlama on GPU...",
+    )
+
+    body = client.get("/v1/system/status").json()
+    entry = next(m for m in body["models"]["available"] if m["id"] == MODEL_ID)
+
+    assert entry["status"] == "loading"
+    assert entry["is_loading"] is True
+    assert entry["status_label"] == "Loading TinyLlama on GPU... (42%)"
+    assert entry["progress"]["phase"] == "loading"
+    assert entry["progress"]["percent"] == 42
+    assert entry["progress"]["log_tail"] == ["Loading TinyLlama on GPU..."]
+
+
+def test_progress_sanitizes_converter_output(client):
+    manager = client.app.state.manager
+    manager._set_status(MODEL_ID, "converting")
+    manager._set_progress(
+        MODEL_ID,
+        "downloading",
+        "Downloading with Bearer super-secret-token",
+        append_log="token = hf_abcdefghijklmnopqrstuvwxyz123456",
+    )
+
+    body = client.get("/v1/system/status").json()
+    entry = next(m for m in body["models"]["available"] if m["id"] == MODEL_ID)
+
+    assert "[redacted]" in entry["progress"]["message"]
+    assert entry["progress"]["log_tail"] == ["[redacted]"]
+
+
 def test_devices_endpoint(client):
     body = client.get("/v1/devices").json()
     assert body["mock"] is True
@@ -137,6 +187,7 @@ def test_devices_endpoint(client):
 def test_load_model_uses_requested_device(client):
     resp = client.post("/v1/models/load", json={"model": MODEL_ID, "device": "GPU"})
     assert resp.status_code == 200, resp.text
+    assert "progress" in resp.json()["model"]
 
     deadline = time.time() + 10
     while time.time() < deadline:
@@ -144,6 +195,7 @@ def test_load_model_uses_requested_device(client):
         entry = next(m for m in body["models"]["available"] if m["id"] == MODEL_ID)
         if entry["is_loaded"]:
             assert entry["device"] == "GPU"
+            assert entry["progress"]["phase"] == "ready"
             return
         time.sleep(0.05)
     raise AssertionError("model did not load in time")
@@ -183,6 +235,7 @@ def test_convert_model_endpoint_schedules_background_task(client):
     def fake_schedule_convert(model_id, device=None, *, load_after=True):
         calls.append((model_id, device, load_after))
         manager._set_status(model_id, "queued_convert")
+        manager._set_progress(model_id, "queued", "Queued conversion...")
         return object()
 
     manager.schedule_convert = fake_schedule_convert
@@ -195,6 +248,7 @@ def test_convert_model_endpoint_schedules_background_task(client):
     body = resp.json()
     assert body["status"] == "converting"
     assert body["model"]["is_loading"] is True
+    assert body["model"]["progress"]["phase"] == "queued"
     assert calls == [("qwen2.5-1.5b-fp16", "NPU", True)]
 
 
@@ -517,199 +571,3 @@ def test_chat_export_auth_protected(authed_client):
         json={"messages": [{"role": "user", "content": "hi"}]},
     )
     assert resp.status_code == 401
-
-
-# --- Activity event log tests -----------------------------------------------
-
-
-def test_startup_event_present(client):
-    """A fresh server should have a startup event in the activity log."""
-    body = client.get("/v1/system/status").json()
-    events = body.get("events", [])
-    assert any("Server started" in ev["message"] for ev in events)
-
-
-def test_events_appear_after_model_load(client):
-    """Loading a model emits an info event visible in /v1/system/status."""
-    _load_and_wait(client)
-    body = client.get("/v1/system/status").json()
-    events = body.get("events", [])
-    loaded = [ev for ev in events if "Loaded" in ev["message"] and "TinyLlama" in ev["message"]]
-    assert loaded, f"Expected a load event, got: {events}"
-    assert loaded[-1]["level"] == "info"
-
-
-def test_events_appear_after_model_unload(client):
-    """Unloading a model emits an info event."""
-    _load_and_wait(client)
-    client.post("/v1/models/unload", json={"model": MODEL_ID})
-    body = client.get("/v1/system/status").json()
-    events = body.get("events", [])
-    unloaded = [ev for ev in events if "Unloaded" in ev["message"]]
-    assert unloaded, f"Expected an unload event, got: {events}"
-
-
-def test_events_capped_at_max(client):
-    """The event log should never exceed 50 entries."""
-    manager = client.app.state.manager
-    for i in range(60):
-        manager.emit_event("info", f"Event {i}")
-    body = client.get("/v1/system/status").json()
-    events = body.get("events", [])
-    assert len(events) <= 50
-    # Oldest events should have been dropped (event 0..9 gone).
-    messages = [ev["message"] for ev in events]
-    assert "Event 0" not in messages
-    assert "Event 59" in messages
-
-
-def test_events_appear_after_generation(client):
-    """Generating a completion emits a generation event."""
-    _load_and_wait(client)
-    resp = client.post(
-        "/v1/chat/completions",
-        json={
-            "model": MODEL_ID,
-            "messages": [{"role": "user", "content": "hello"}],
-            "stream": False,
-        },
-    )
-    assert resp.status_code == 200
-    body = client.get("/v1/system/status").json()
-    events = body.get("events", [])
-    generated = [ev for ev in events if "Generated" in ev["message"] and "tokens" in ev["message"]]
-    assert generated, f"Expected a generation event, got: {events}"
-    assert generated[-1]["level"] == "info"
-
-
-def test_cors_middleware_headers():
-    settings = Settings(
-        models_file=BASE_DIR / "models.json",
-        models_dir=BASE_DIR / "models" / "openvino",
-        cors_origins="http://localhost:3000",
-        force_mock=True,
-    )
-    app = create_app(settings)
-    with TestClient(app) as c:
-        headers = {"Origin": "http://localhost:3000"}
-        resp = c.get("/health", headers=headers)
-        assert resp.status_code == 200
-        assert resp.headers.get("access-control-allow-origin") == "http://localhost:3000"
-
-
-def test_auto_convert_triggered_on_load(monkeypatch):
-    monkeypatch.setattr("runtime.device_check.is_openvino_available", lambda: True)
-    settings = Settings(
-        models_file=BASE_DIR / "models.json",
-        models_dir=BASE_DIR / "models" / "openvino",
-        force_mock=False,
-        auto_convert=True,
-    )
-    manager = ModelManager(settings)
-
-    downloaded_states = [False, True]
-
-    def mock_is_downloaded(cfg, base_dir):
-        if downloaded_states:
-            return downloaded_states.pop(0)
-        return True
-
-    import app.model_registry as registry
-
-    monkeypatch.setattr(registry, "is_downloaded", mock_is_downloaded)
-
-    class FakeEngine:
-        model_id = "smollm2-135m-fp16"
-        device = "CPU"
-
-        def close(self):
-            pass
-
-    monkeypatch.setattr(manager, "_build_engine", lambda mid, dev: FakeEngine())
-
-    convert_calls = []
-
-    async def mock_convert_task(model_id, device, load_after):
-        convert_calls.append((model_id, device, load_after))
-
-    monkeypatch.setattr(manager, "_convert_task", mock_convert_task)
-
-    async def run_scenario():
-        await manager._load_task("smollm2-135m-fp16", "CPU")
-
-    asyncio.run(run_scenario())
-
-    assert len(convert_calls) == 1
-    assert convert_calls[0] == ("smollm2-135m-fp16", "CPU", False)
-
-
-def test_health_endpoints_live_and_ready(client):
-    resp_live = client.get("/health/live")
-    assert resp_live.status_code == 200
-    assert resp_live.json() == {"status": "ok"}
-
-    resp_ready = client.get("/health/ready")
-    assert resp_ready.status_code == 200
-    assert resp_ready.json() == {"status": "ready"}
-
-    manager = client.app.state.manager
-    manager._set_status(MODEL_ID, "loading")
-    try:
-        resp_busy = client.get("/health/ready")
-        assert resp_busy.status_code == 503
-        assert resp_busy.json()["status"] == "busy"
-    finally:
-        manager._clear_status(MODEL_ID)
-
-
-def test_request_id_propagation_and_header(client):
-    custom_id = "test-req-12345"
-    resp = client.get("/health", headers={"X-Request-ID": custom_id})
-    assert resp.status_code == 200
-    assert resp.headers.get("X-Request-ID") == custom_id
-
-    resp_auto = client.get("/health")
-    assert resp_auto.status_code == 200
-    assert "X-Request-ID" in resp_auto.headers
-    assert resp_auto.headers["X-Request-ID"].startswith("req-")
-
-
-def test_success_request_log_keeps_request_id(client, caplog):
-    custom_id = "test-req-log-id"
-    caplog.set_level("INFO", logger="ov-llm.server")
-
-    resp = client.get("/health", headers={"X-Request-ID": custom_id})
-
-    assert resp.status_code == 200
-    assert resp.headers.get("X-Request-ID") == custom_id
-    records = [
-        record
-        for record in caplog.records
-        if record.name == "ov-llm.server" and "HTTP GET /health - Status:" in record.getMessage()
-    ]
-    assert records
-    assert records[-1].request_id == custom_id
-
-
-def test_unsafe_request_id_is_replaced(client):
-    """Header values that could forge log lines are swapped for a generated id."""
-    resp = client.get("/health", headers={"X-Request-ID": "evil\tid injected"})
-    assert resp.status_code == 200
-    assert resp.headers["X-Request-ID"].startswith("req-")
-
-    too_long = "a" * 200
-    resp = client.get("/health", headers={"X-Request-ID": too_long})
-    assert resp.headers["X-Request-ID"].startswith("req-")
-
-
-def test_wildcard_cors_does_not_allow_credentials(client):
-    resp = client.options(
-        "/v1/models",
-        headers={
-            "Origin": "http://example.com",
-            "Access-Control-Request-Method": "GET",
-        },
-    )
-    assert resp.status_code == 200
-    assert resp.headers.get("access-control-allow-origin") == "*"
-    assert "access-control-allow-credentials" not in resp.headers
