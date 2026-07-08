@@ -32,6 +32,24 @@ _STATUS_LABELS = {
     "error": "Load failed",
 }
 
+_PROGRESS_PHASE_LABELS = {
+    "queued": "Queued",
+    "downloading": "Downloading",
+    "converting": "Converting",
+    "loading": "Loading",
+    "ready": "Ready",
+    "error": "Error",
+}
+
+_PROGRESS_PHASE_ICONS = {
+    "queued": "⏳",
+    "downloading": "⬇",
+    "converting": "⚙",
+    "loading": "🧠",
+    "ready": "✓",
+    "error": "⚠",
+}
+
 
 @dataclass(frozen=True)
 class ModelConfig:
@@ -148,6 +166,19 @@ def _normalize_progress(progress: dict | None, status: str, label: str) -> dict:
     }
 
 
+def _progress_badge(progress: dict) -> str:
+    phase = str(progress.get("phase") or "").lower()
+    label = _PROGRESS_PHASE_LABELS.get(phase, phase.replace("_", " ").title() or "Working")
+    icon = _PROGRESS_PHASE_ICONS.get(phase, "•")
+    percent = progress.get("percent")
+    if percent is None:
+        return f"{icon} {label}"
+    try:
+        return f"{icon} {label} {float(percent):.0f}%"
+    except (TypeError, ValueError):
+        return f"{icon} {label}"
+
+
 def make_catalog_entry(
     cfg: ModelConfig,
     *,
@@ -181,14 +212,18 @@ def make_catalog_entry(
     label = "Conversion failed" if status == "error" and not downloaded else status_label(status)
     progress_payload = _normalize_progress(progress, status, label)
 
+    display_name = cfg.name
     if progress_payload.get("message") and (is_busy_state or status == "error"):
-        label = progress_payload["message"]
-        if progress_payload.get("percent") is not None and is_busy_state:
-            label = f"{label} ({progress_payload['percent']:.0f}%)"
+        badge = _progress_badge(progress_payload)
+        label = f"{badge}: {progress_payload['message']}"
+        # The existing frontend renders model.name prominently in both the main
+        # model card and the dropdown. Appending a short badge makes preparation
+        # progress visible without replacing the stable single-file UI.
+        display_name = f"{cfg.name} — {badge}"
 
     return {
         "id": cfg.id,
-        "name": cfg.name,
+        "name": display_name,
         "description": cfg.description,
         "status": status,
         "status_label": label,
