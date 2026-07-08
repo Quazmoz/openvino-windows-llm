@@ -117,6 +117,37 @@ def status_label(status: str) -> str:
     return _STATUS_LABELS.get(status, "Unknown")
 
 
+def _default_progress(status: str, label: str) -> dict:
+    phase = {
+        "queued_convert": "queued",
+        "ready_to_load": "ready",
+        "not_downloaded": "idle",
+        "loaded": "ready",
+    }.get(status, status)
+    percent = 100.0 if status in {"loaded", "ready_to_load"} else None
+    return {
+        "phase": phase,
+        "message": label,
+        "percent": percent,
+        "started_at": None,
+        "updated_at": None,
+        "log_tail": [],
+    }
+
+
+def _normalize_progress(progress: dict | None, status: str, label: str) -> dict:
+    if not isinstance(progress, dict):
+        return _default_progress(status, label)
+    return {
+        "phase": progress.get("phase") or _default_progress(status, label)["phase"],
+        "message": progress.get("message") or label,
+        "percent": progress.get("percent"),
+        "started_at": progress.get("started_at"),
+        "updated_at": progress.get("updated_at"),
+        "log_tail": list(progress.get("log_tail") or [])[-10:],
+    }
+
+
 def make_catalog_entry(
     cfg: ModelConfig,
     *,
@@ -128,6 +159,7 @@ def make_catalog_entry(
     device: str | None = None,
     busy: bool = False,
     error: str | None = None,
+    progress: dict | None = None,
 ) -> dict:
     """Build a single UI/API-facing status entry for a model."""
     if loaded:
@@ -147,6 +179,13 @@ def make_catalog_entry(
 
     is_busy_state = status in {"queued", "loading", "queued_convert", "converting"}
     label = "Conversion failed" if status == "error" and not downloaded else status_label(status)
+    progress_payload = _normalize_progress(progress, status, label)
+
+    if progress_payload.get("message") and (is_busy_state or status == "error"):
+        label = progress_payload["message"]
+        if progress_payload.get("percent") is not None and is_busy_state:
+            label = f"{label} ({progress_payload['percent']:.0f}%)"
+
     return {
         "id": cfg.id,
         "name": cfg.name,
@@ -170,6 +209,7 @@ def make_catalog_entry(
         "can_unload": loaded and not busy,
         "can_delete": (not loaded) and downloaded and not is_busy_state,
         "error": error,
+        "progress": progress_payload,
     }
 
 
