@@ -215,7 +215,9 @@ def make_catalog_entry(
     display_name = cfg.name
     if progress_payload.get("message") and (is_busy_state or status == "error"):
         badge = _progress_badge(progress_payload)
-        label = f"{badge}: {progress_payload['message']}"
+        label = progress_payload["message"]
+        if progress_payload.get("percent") is not None and is_busy_state:
+            label = f"{label} ({progress_payload['percent']:.0f}%)"
         # The existing frontend renders model.name prominently in both the main
         # model card and the dropdown. Appending a short badge makes preparation
         # progress visible without replacing the stable single-file UI.
