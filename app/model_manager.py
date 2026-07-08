@@ -14,6 +14,7 @@ import collections
 import contextlib
 import gc
 import logging
+import re
 import shutil
 import sys
 import time
@@ -27,6 +28,13 @@ from runtime import device_check
 from runtime.openvino_engine import BaseEngine, GenParams, GenResult, StreamHandle, create_engine
 
 logger = logging.getLogger("ov-llm.manager")
+
+_PROGRESS_PERCENT_RE = re.compile(r"(?<!\d)(100(?:\.0+)?|[1-9]?\d(?:\.\d+)?)\s*%")
+_PROGRESS_SECRET_RE = re.compile(
+    r"(hf_[A-Za-z0-9_=-]{8,}|Bearer\s+[A-Za-z0-9._~+/=-]+|token\s*[:=]\s*[A-Za-z0-9._~+/=-]+)",
+    re.IGNORECASE,
+)
+_PROGRESS_CONTROL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
 
 # --- Resolution errors (mapped to HTTP status codes by the server) ---------
@@ -65,6 +73,9 @@ class ModelManager:
         self.load_tasks: dict[str, asyncio.Task] = {}
         self.convert_tasks: dict[str, asyncio.Task] = {}
         self.status_overrides: dict[str, dict] = {}
+        # Per-model preparation progress shown by the API/UI. This is intentionally
+        # bounded and sanitized because converter output may include noisy CLI text.
+        self.progress: dict[str, dict] = {}
         # Cumulative per-model request metrics (since server start).
         self.metrics: dict[str, dict] = {}
         # Bounded activity log for the UI (newest last).
@@ -97,6 +108,98 @@ class ModelManager:
 
     def _clear_status(self, model_id: str) -> None:
         self.status_overrides.pop(model_id, None)
+
+    # --- progress helpers --------------------------------------------------
+
+    def _sanitize_progress_line(self, text: str, *, limit: int = 240) -> str:
+        line = _PROGRESS_CONTROL_RE.sub("", str(text or "")).strip()
+        if not line:
+            return ""
+        line = _PROGRESS_SECRET_RE.sub("[redacted]", line)
+        # Avoid exposing machine-specific full paths in user-facing progress. Keep
+        # the most useful part of path-like strings, which is usually the filename.
+        line = re.sub(r"[A-Za-z]:\\(?:[^\\\s]+\\)+", "...\\", line)
+        line = re.sub(r"/(?:[^/\s]+/){2,}", ".../", line)
+        if len(line) > limit:
+            return line[: limit - 1].rstrip() + "…"
+        return line
+
+    def _set_progress(
+        self,
+        model_id: str,
+        phase: str,
+        message: str,
+        *,
+        percent: float | None = None,
+        append_log: str | None = None,
+    ) -> None:
+        now = int(time.time())
+        previous = self.progress.get(model_id, {})
+        started_at = previous.get("started_at") or now
+        log_tail = list(previous.get("log_tail") or [])
+        if append_log:
+            safe_log = self._sanitize_progress_line(append_log)
+            if safe_log:
+                log_tail.append(safe_log)
+                log_tail = log_tail[-10:]
+
+        safe_message = self._sanitize_progress_line(message, limit=180) or phase.replace("_", " ").title()
+        if percent is not None:
+            percent = max(0.0, min(float(percent), 100.0))
+
+        self.progress[model_id] = {
+            "phase": phase,
+            "message": safe_message,
+            "percent": percent,
+            "started_at": started_at,
+            "updated_at": now,
+            "log_tail": log_tail,
+        }
+
+    def _clear_progress(self, model_id: str) -> None:
+        self.progress.pop(model_id, None)
+
+    def _progress_from_converter_line(
+        self, line: str, cfg: registry.ModelConfig
+    ) -> tuple[str, str, float | None]:
+        text = line.lower()
+        percent: float | None = None
+        match = _PROGRESS_PERCENT_RE.search(line)
+        if match:
+            with contextlib.suppress(ValueError):
+                percent = float(match.group(1))
+
+        if any(token in text for token in ("download", "fetch", "snapshot", "cache", "resolve")):
+            return "downloading", f"Downloading model weights for {cfg.name}…", percent
+        if any(token in text for token in ("quant", "compress", "int4", "int8")):
+            return "converting", f"Quantizing {cfg.name} for OpenVINO…", percent
+        if any(token in text for token in ("save", "write", "serializ")):
+            return "converting", f"Saving OpenVINO IR for {cfg.name}…", percent
+        if any(token in text for token in ("export", "openvino", "convert", "compile")):
+            return "converting", f"Converting {cfg.name} to OpenVINO IR…", percent
+        return "converting", f"Preparing {cfg.name}…", percent
+
+    async def _read_conversion_stream(
+        self,
+        model_id: str,
+        cfg: registry.ModelConfig,
+        stream: asyncio.StreamReader | None,
+    ) -> list[str]:
+        if stream is None:
+            return []
+
+        lines: list[str] = []
+        while True:
+            raw = await stream.readline()
+            if not raw:
+                break
+            line = self._sanitize_progress_line(raw.decode(errors="replace"))
+            if not line:
+                continue
+            lines.append(line)
+            phase, message, percent = self._progress_from_converter_line(line, cfg)
+            self._set_progress(model_id, phase, message, percent=percent, append_log=line)
+        return lines
 
     # --- activity events ---------------------------------------------------
 
@@ -227,6 +330,7 @@ class ModelManager:
             device=self.devices.get(model_id),
             busy=busy,
             error=error,
+            progress=self.progress.get(model_id),
         )
 
     def catalog_entries(self) -> list[dict]:
@@ -251,10 +355,12 @@ class ModelManager:
             try:
                 async with self._load_lock:
                     if model_id in self.engines:
+                        self._set_progress(model_id, "ready", f"{cfg.name} is already loaded.", percent=100)
                         self._clear_status(model_id)
                         return
 
                     self._set_status(model_id, "loading")
+                    self._set_progress(model_id, "loading", f"Checking local model files for {cfg.name}…")
 
                     # Validate device + on-disk model for real (non-mock) loads.
                     if not self.force_mock:
@@ -267,8 +373,18 @@ class ModelManager:
                                     "Model '%s' not found locally. Auto-convert is enabled. Starting conversion...",
                                     model_id,
                                 )
+                                self._set_progress(
+                                    model_id,
+                                    "downloading",
+                                    f"{cfg.name} is not converted yet. Downloading and converting first…",
+                                )
                                 await self._convert_task(model_id, device, load_after=False)
                                 self._set_status(model_id, "loading")
+                                self._set_progress(
+                                    model_id,
+                                    "loading",
+                                    f"Loading {cfg.name} on {device}…",
+                                )
                                 if not registry.is_downloaded(cfg, BASE_DIR):
                                     raise RuntimeError(
                                         f"Auto-conversion failed for '{cfg.name}'. Please check logs."
@@ -280,12 +396,19 @@ class ModelManager:
                                     )
                                 )
 
+                    self._set_progress(model_id, "loading", f"Loading {cfg.name} on {device}…")
                     loop = asyncio.get_running_loop()
                     engine = await loop.run_in_executor(None, self._build_engine, model_id, device)
 
                     self.engines[model_id] = engine
                     self.locks[model_id] = asyncio.Lock()
                     self.devices[model_id] = engine.device
+                    self._set_progress(
+                        model_id,
+                        "ready",
+                        f"{cfg.name} is ready on {engine.device}.",
+                        percent=100,
+                    )
                     self._clear_status(model_id)
                     logger.info("Loaded '%s' on %s", model_id, engine.device)
                     self.emit_event("info", f"Loaded {cfg.name} on {engine.device}")
@@ -295,6 +418,7 @@ class ModelManager:
                 self.devices.pop(model_id, None)
                 message = errors.format_model_load_error(exc)
                 self._set_status(model_id, "error", error=message)
+                self._set_progress(model_id, "error", f"Load failed: {message}")
                 logger.exception("Failed to load '%s': %s", model_id, message)
                 self.emit_event("error", f"Failed to load {cfg.name}: {message}")
         finally:
@@ -305,6 +429,8 @@ class ModelManager:
             logger.warning("Refusing to load unknown model '%s'", model_id)
             return None
         if model_id in self.engines:
+            cfg = self.catalog[model_id]
+            self._set_progress(model_id, "ready", f"{cfg.name} is already loaded.", percent=100)
             self._clear_status(model_id)
             return None
 
@@ -313,7 +439,9 @@ class ModelManager:
             return existing
 
         device = device_check.normalize_device(device or self.settings.device)
+        cfg = self.catalog[model_id]
         self._set_status(model_id, "queued")
+        self._set_progress(model_id, "queued", f"Queued {cfg.name} to load on {device}…")
         task = asyncio.create_task(self._load_task(model_id, device))
         self.load_tasks[model_id] = task
         return task
@@ -356,6 +484,7 @@ class ModelManager:
             try:
                 async with self._convert_lock:
                     if registry.is_downloaded(cfg, BASE_DIR):
+                        self._set_progress(model_id, "ready", f"{cfg.name} is already converted.", percent=100)
                         self._clear_status(model_id)
                         if load_after:
                             self.schedule_load(model_id, device)
@@ -367,6 +496,11 @@ class ModelManager:
                         )
 
                     self._set_status(model_id, "converting")
+                    self._set_progress(
+                        model_id,
+                        "downloading",
+                        f"Starting download and OpenVINO conversion for {cfg.name}…",
+                    )
                     proc = await asyncio.create_subprocess_exec(
                         sys.executable,
                         "-m",
@@ -377,13 +511,26 @@ class ModelManager:
                         stdout=asyncio.subprocess.PIPE,
                         stderr=asyncio.subprocess.PIPE,
                     )
-                    stdout, stderr = await proc.communicate()
-                    if proc.returncode != 0:
-                        output = (stderr or stdout).decode(errors="replace").strip()
-                        raise RuntimeError(
-                            output or f"Conversion exited with code {proc.returncode}"
-                        )
+                    stdout_task = asyncio.create_task(
+                        self._read_conversion_stream(model_id, cfg, proc.stdout)
+                    )
+                    stderr_task = asyncio.create_task(
+                        self._read_conversion_stream(model_id, cfg, proc.stderr)
+                    )
+                    return_code = await proc.wait()
+                    stdout_lines, stderr_lines = await asyncio.gather(stdout_task, stderr_task)
+                    output_lines = [*stdout_lines, *stderr_lines]
 
+                    if return_code != 0:
+                        tail = "\n".join(output_lines[-12:]).strip()
+                        raise RuntimeError(tail or f"Conversion exited with code {return_code}")
+
+                    self._set_progress(
+                        model_id,
+                        "ready",
+                        f"Converted {cfg.name} to OpenVINO IR.",
+                        percent=100,
+                    )
                     self._clear_status(model_id)
                     logger.info("Converted '%s' to %s", model_id, cfg.abs_path(BASE_DIR))
                     self.emit_event("info", f"Converted {cfg.name} to OpenVINO IR")
@@ -398,8 +545,9 @@ class ModelManager:
             except Exception as exc:  # noqa: BLE001 - surfaced to the UI as a statement/status
                 message = errors.format_model_convert_error(exc)
                 self._set_status(model_id, "error", error=message)
+                self._set_progress(model_id, "error", f"Conversion failed: {message}")
                 logger.exception("Failed to convert '%s': %s", model_id, message)
-                self.emit_event("error", f"Conversion failed for {cfg.name}")
+                self.emit_event("error", f"Conversion failed for {cfg.name}: {message}")
         finally:
             self.convert_tasks.pop(model_id, None)
 
@@ -414,6 +562,8 @@ class ModelManager:
             logger.warning("Refusing to convert unknown model '%s'", model_id)
             return None
         if model_id in self.engines:
+            cfg = self.catalog[model_id]
+            self._set_progress(model_id, "ready", f"{cfg.name} is already loaded.", percent=100)
             self._clear_status(model_id)
             return None
 
@@ -423,12 +573,14 @@ class ModelManager:
 
         cfg = self.catalog[model_id]
         if registry.is_downloaded(cfg, BASE_DIR):
+            self._set_progress(model_id, "ready", f"{cfg.name} is already converted.", percent=100)
             if load_after:
                 return self.schedule_load(model_id, device)
             return None
 
         device = device_check.normalize_device(device or self.settings.device)
         self._set_status(model_id, "queued_convert")
+        self._set_progress(model_id, "queued", f"Queued {cfg.name} for OpenVINO conversion…")
         task = asyncio.create_task(self._convert_task(model_id, device, load_after))
         self.convert_tasks[model_id] = task
         return task
@@ -440,6 +592,7 @@ class ModelManager:
         self.locks.pop(model_id, None)
         self.devices.pop(model_id, None)
         self._clear_status(model_id)
+        self._clear_progress(model_id)
         if engine is None:
             return False
         cfg = self.catalog.get(model_id)
@@ -466,6 +619,7 @@ class ModelManager:
             deleted = True
 
         self._clear_status(model_id)
+        self._clear_progress(model_id)
         self.load_tasks.pop(model_id, None)
         self.convert_tasks.pop(model_id, None)
         if deleted:
@@ -551,6 +705,7 @@ class ModelManager:
         self.load_tasks.clear()
         self.convert_tasks.clear()
         self.status_overrides.clear()
+        self.progress.clear()
 
     # --- generation bridges (sync engine -> asyncio) -----------------------
 
