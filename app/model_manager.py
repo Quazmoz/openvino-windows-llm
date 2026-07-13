@@ -146,7 +146,9 @@ class ModelManager:
                 log_tail.append(safe_log)
                 log_tail = log_tail[-10:]
 
-        safe_message = self._sanitize_progress_line(message, limit=180) or phase.replace("_", " ").title()
+        safe_message = (
+            self._sanitize_progress_line(message, limit=180) or phase.replace("_", " ").title()
+        )
         if percent is not None:
             percent = max(0.0, min(float(percent), 100.0))
 
@@ -341,7 +343,34 @@ class ModelManager:
 
     # --- loading -----------------------------------------------------------
 
-    def _build_engine(self, model_id: str, device: str, draft_model_path: str | None = None) -> BaseEngine:
+    def _resolve_draft_model_path(self, model_id: str, draft_model: str | None) -> str | None:
+        if not draft_model:
+            return None
+        if draft_model == model_id:
+            raise ValueError("Draft model must differ from the target model.")
+
+        draft_cfg = self.catalog.get(draft_model)
+        if draft_cfg is not None:
+            if "embedding" in draft_cfg.backend.lower():
+                raise ValueError(
+                    f"Draft model '{draft_model}' is an embedding model; "
+                    "speculative decoding requires a text-generation model."
+                )
+            if not self.force_mock and not registry.is_downloaded(draft_cfg, BASE_DIR):
+                raise ValueError(f"Draft model '{draft_model}' is not converted locally.")
+            return str(draft_cfg.abs_path(BASE_DIR))
+
+        path = Path(draft_model).expanduser()
+        path = path.resolve() if path.is_absolute() else (BASE_DIR / path).resolve()
+        if not path.is_dir():
+            raise ValueError(f"Draft model path does not exist or is not a directory: {path}")
+        if not self.force_mock and not registry.is_openvino_model_dir(path):
+            raise ValueError(f"Draft model path is not a converted OpenVINO model: {path}")
+        return str(path)
+
+    def _build_engine(
+        self, model_id: str, device: str, draft_model_path: str | None = None
+    ) -> BaseEngine:
         cfg = self.catalog[model_id]
         return create_engine(
             model_id=model_id,
@@ -354,78 +383,81 @@ class ModelManager:
             draft_model_path=draft_model_path,
         )
 
-    async def _load_task(self, model_id: str, device: str, draft_model: str | None = None) -> None:
+    async def _load_task(
+        self, model_id: str, device: str, draft_model_path: str | None = None
+    ) -> None:
         cfg = self.catalog[model_id]
         try:
             try:
                 async with asyncio.timeout(600):
-                  async with self._load_lock:
-                      if model_id in self.engines:
-                        self._set_progress(model_id, "ready", f"{cfg.name} is already loaded.", percent=100)
-                        self._clear_status(model_id)
-                        return
+                    async with self._load_lock:
+                        if model_id in self.engines:
+                            self._set_progress(
+                                model_id, "ready", f"{cfg.name} is already loaded.", percent=100
+                            )
+                            self._clear_status(model_id)
+                            return
 
-                      self._set_status(model_id, "loading")
-                      self._set_progress(model_id, "loading", f"Checking local model files for {cfg.name}…")
+                        self._set_status(model_id, "loading")
+                        self._set_progress(
+                            model_id, "loading", f"Checking local model files for {cfg.name}…"
+                        )
 
-                      # Validate device + on-disk model for real (non-mock) loads.
-                      if not self.force_mock:
-                        available = device_check.available_devices()
-                        if not device_check.is_device_available(device, available):
-                            raise RuntimeError(errors.format_device_error(device, available))
-                        if not registry.is_downloaded(cfg, BASE_DIR):
-                            if self.settings.auto_convert:
-                                logger.info(
-                                    "Model '%s' not found locally. Auto-convert is enabled. Starting conversion...",
-                                    model_id,
-                                )
-                                self._set_progress(
-                                    model_id,
-                                    "downloading",
-                                    f"{cfg.name} is not converted yet. Downloading and converting first…",
-                                )
-                                await self._convert_task(model_id, device, load_after=False)
-                                self._set_status(model_id, "loading")
-                                self._set_progress(
-                                    model_id,
-                                    "loading",
-                                    f"Loading {cfg.name} on {device}…",
-                                )
-                                if not registry.is_downloaded(cfg, BASE_DIR):
+                        # Validate device + on-disk model for real (non-mock) loads.
+                        if not self.force_mock:
+                            available = device_check.available_devices()
+                            if not device_check.is_device_available(device, available):
+                                raise RuntimeError(errors.format_device_error(device, available))
+                            if not registry.is_downloaded(cfg, BASE_DIR):
+                                if self.settings.auto_convert:
+                                    logger.info(
+                                        "Model '%s' not found locally. Auto-convert is enabled. Starting conversion...",
+                                        model_id,
+                                    )
+                                    self._set_progress(
+                                        model_id,
+                                        "downloading",
+                                        f"{cfg.name} is not converted yet. Downloading and converting first…",
+                                    )
+                                    await self._convert_task(model_id, device, load_after=False)
+                                    self._set_status(model_id, "loading")
+                                    self._set_progress(
+                                        model_id,
+                                        "loading",
+                                        f"Loading {cfg.name} on {device}…",
+                                    )
+                                    if not registry.is_downloaded(cfg, BASE_DIR):
+                                        raise RuntimeError(
+                                            f"Auto-conversion failed for '{cfg.name}'. Please check logs."
+                                        )
+                                else:
                                     raise RuntimeError(
-                                        f"Auto-conversion failed for '{cfg.name}'. Please check logs."
+                                        errors.format_model_not_converted(
+                                            cfg.name,
+                                            str(cfg.abs_path(BASE_DIR)),
+                                            cfg.source_model,
+                                            weight_format=cfg.weight_format,
+                                        )
                                     )
-                            else:
-                                raise RuntimeError(
-                                    errors.format_model_not_converted(
-                                        cfg.name, str(cfg.abs_path(BASE_DIR)), cfg.source_model,
-                                        weight_format=cfg.weight_format,
-                                    )
-                                )
 
-                      self._set_progress(model_id, "loading", f"Loading {cfg.name} on {device}…")
-                      draft_model_path = None
-                      if draft_model:
-                          if draft_model in self.catalog:
-                              draft_model_path = str(self.catalog[draft_model].abs_path(BASE_DIR))
-                          else:
-                              draft_model_path = draft_model
+                        self._set_progress(model_id, "loading", f"Loading {cfg.name} on {device}…")
+                        loop = asyncio.get_running_loop()
+                        engine = await loop.run_in_executor(
+                            None, self._build_engine, model_id, device, draft_model_path
+                        )
 
-                      loop = asyncio.get_running_loop()
-                      engine = await loop.run_in_executor(None, self._build_engine, model_id, device, draft_model_path)
-
-                      self.engines[model_id] = engine
-                      self.locks[model_id] = asyncio.Lock()
-                      self.devices[model_id] = engine.device
-                      self._set_progress(
-                        model_id,
-                        "ready",
-                        f"{cfg.name} is ready on {engine.device}.",
-                        percent=100,
-                      )
-                      self._clear_status(model_id)
-                      logger.info("Loaded '%s' on %s", model_id, engine.device)
-                      self.emit_event("info", f"Loaded {cfg.name} on {engine.device}")
+                        self.engines[model_id] = engine
+                        self.locks[model_id] = asyncio.Lock()
+                        self.devices[model_id] = engine.device
+                        self._set_progress(
+                            model_id,
+                            "ready",
+                            f"{cfg.name} is ready on {engine.device}.",
+                            percent=100,
+                        )
+                        self._clear_status(model_id)
+                        logger.info("Loaded '%s' on %s", model_id, engine.device)
+                        self.emit_event("info", f"Loaded {cfg.name} on {engine.device}")
             except Exception as exc:  # noqa: BLE001 - surfaced to the UI as a status
                 self.engines.pop(model_id, None)
                 self.locks.pop(model_id, None)
@@ -458,11 +490,14 @@ class ModelManager:
         if existing and not existing.done():
             return existing
 
+        draft_model_path = self._resolve_draft_model_path(model_id, draft_model)
         device = device_check.normalize_device(device or self.settings.device)
         cfg = self.catalog[model_id]
         self._set_status(model_id, "queued")
         self._set_progress(model_id, "queued", f"Queued {cfg.name} to load on {device}…")
-        task = asyncio.create_task(self._load_task(model_id, device, draft_model=draft_model))
+        task = asyncio.create_task(
+            self._load_task(model_id, device, draft_model_path=draft_model_path)
+        )
         self.load_tasks[model_id] = task
         return task
 
@@ -513,7 +548,9 @@ class ModelManager:
             try:
                 async with self._convert_lock:
                     if registry.is_downloaded(cfg, BASE_DIR) and not weight_format:
-                        self._set_progress(model_id, "ready", f"{cfg.name} is already converted.", percent=100)
+                        self._set_progress(
+                            model_id, "ready", f"{cfg.name} is already converted.", percent=100
+                        )
                         self._clear_status(model_id)
                         if load_after:
                             self.schedule_load(model_id, device)
@@ -700,7 +737,7 @@ class ModelManager:
             name=req.name,
             description=req.description
             or f"Custom model registered via Web UI. Source: {req.source_model}",
-            backend="openvino-genai",
+            backend=getattr(req, "backend", "openvino-genai"),
             model_path=f"models/openvino/{req.model_id}",
             source_model=req.source_model,
             weight_format=req.weight_format,

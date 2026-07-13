@@ -85,7 +85,7 @@ def gpu_stats() -> dict | None:
         return None
 
     try:
-        from runtime.device_check import get_core, available_devices
+        from runtime.device_check import available_devices, get_core
 
         core = get_core()
         devices = available_devices()

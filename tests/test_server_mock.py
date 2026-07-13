@@ -608,8 +608,9 @@ def test_embeddings_endpoint_success(client):
     # Base64 decoder check
     import base64
     import struct
+
     decoded = base64.b64decode(data["data"][0]["embedding"])
-    floats = struct.unpack(f"{len(decoded)//4}f", decoded)
+    floats = struct.unpack(f"{len(decoded) // 4}f", decoded)
     assert len(floats) == 384
 
 
@@ -688,15 +689,17 @@ def test_search_hf_endpoint(client):
 
     mock_resp = MagicMock()
     mock_resp.status_code = 200
-    mock_resp.json = MagicMock(return_value=[
-        {
-            "id": "Qwen/Qwen2.5-0.5B-Instruct",
-            "downloads": 15000,
-            "likes": 350,
-            "pipeline_tag": "text-generation",
-            "tags": ["text-generation", "openvino"],
-        }
-    ])
+    mock_resp.json = MagicMock(
+        return_value=[
+            {
+                "id": "Qwen/Qwen2.5-0.5B-Instruct",
+                "downloads": 15000,
+                "likes": 350,
+                "pipeline_tag": "text-generation",
+                "tags": ["text-generation", "openvino"],
+            }
+        ]
+    )
 
     with patch("httpx.AsyncClient.get", new_callable=AsyncMock) as mock_get:
         mock_get.return_value = mock_resp
@@ -713,6 +716,7 @@ def test_search_hf_endpoint(client):
 def test_download_custom_endpoint(client):
     # Backup original models.json to avoid polluting the workspace on disk
     from app.config import BASE_DIR
+
     models_file = BASE_DIR / "models.json"
     backup = models_file.read_text(encoding="utf-8")
     try:
@@ -743,46 +747,50 @@ def test_download_custom_endpoint(client):
 def test_speculative_decoding_load(client):
     # Speculative decoding draft model parameter passed to /v1/models/load
     from unittest.mock import patch
+
     manager = client.app.state.manager
-    
+
     with patch.object(manager, "_build_engine") as mock_build:
         resp = client.post(
             "/v1/models/load",
             json={
                 "model": "tinyllama-1.1b-chat-fp16",
-                "draft_model": "bge-small-en-v1.5",
-            }
+                "draft_model": "smollm2-135m-fp16",
+            },
         )
         assert resp.status_code == 200
         # Wait for loading to finish
         import time
+
         for _ in range(50):
             if "tinyllama-1.1b-chat-fp16" not in manager.load_tasks:
                 break
             time.sleep(0.02)
-        
+
         # Verify draft model path was resolved and passed
         mock_build.assert_called_once()
         args = mock_build.call_args[0]
         # First positional argument is model_id, second is device, third is draft_model_path
         assert args[0] == "tinyllama-1.1b-chat-fp16"
-        assert "bge-small-en-v1.5" in args[2]  # draft path contains model name
+        assert "smollm2-135m-instruct-fp16" in args[2]
 
 
 def test_dynamic_lora_generation(client):
     # Dynamic LoRA parameters inside completions call
     from unittest.mock import patch
-    
+
     _load_and_wait(client)
     engine = client.app.state.manager.engines[MODEL_ID]
-    
+
     # Wrap engine.generate to invoke _build_adapters_config (since MockEngine is used in tests)
     orig_generate = engine.generate
+
     def fake_generate(prompt, params):
         engine._build_adapters_config(params)
         return orig_generate(prompt, params)
+
     engine.generate = fake_generate
-    
+
     with patch.object(engine, "_build_adapters_config") as mock_adapters:
         resp = client.post(
             "/v1/chat/completions",
@@ -791,7 +799,7 @@ def test_dynamic_lora_generation(client):
                 "messages": [{"role": "user", "content": "hi"}],
                 "lora_path": "models/adapters/test-lora",
                 "lora_alpha": 0.8,
-            }
+            },
         )
         assert resp.status_code == 200
         mock_adapters.assert_called_once()
@@ -803,10 +811,10 @@ def test_dynamic_lora_generation(client):
 def test_multiple_api_keys_and_tracking():
     # Test setting multiple API keys via Settings and tracking metrics
     from fastapi.testclient import TestClient
-    from app.config import Settings
+
+    from app.config import BASE_DIR, Settings
     from app.server import create_app
-    from app.config import BASE_DIR
-    
+
     settings = Settings(
         models_file=BASE_DIR / "models.json",
         models_dir=BASE_DIR / "models" / "openvino",
@@ -818,15 +826,15 @@ def test_multiple_api_keys_and_tracking():
         # Request with key1
         resp = test_client.get("/v1/models", headers={"Authorization": "Bearer key1"})
         assert resp.status_code == 200
-        
+
         # Request with key2
         resp = test_client.get("/v1/models", headers={"Authorization": "Bearer key2"})
         assert resp.status_code == 200
-        
+
         # Request with invalid key
         resp = test_client.get("/v1/models", headers={"Authorization": "Bearer key3"})
         assert resp.status_code == 401
-        
+
         # Verify stats endpoint
         resp = test_client.get("/v1/keys/stats", headers={"Authorization": "Bearer key1"})
         assert resp.status_code == 200
@@ -834,4 +842,5 @@ def test_multiple_api_keys_and_tracking():
         assert len(stats) == 2
         # Obfuscated key names should be returned
         names = [s["key_name"] for s in stats]
-        assert "ke..." in names
+        assert len(set(names)) == 2
+        assert all(name.startswith("ke...") for name in names)

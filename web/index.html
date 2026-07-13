@@ -4197,6 +4197,7 @@
                 recommended_device: customRecommendedDevice.value,
                 max_context_len: parseInt(customMaxContextLen.value, 10),
                 max_output_tokens: parseInt(customMaxOutputTokens.value, 10),
+                description: customDescription.value.trim() || null,
                 load_after: true
             };
             const previousSubmitText = submitModalBtn.textContent;

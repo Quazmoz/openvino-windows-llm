@@ -123,12 +123,15 @@ def load_catalog(models_file: Path) -> dict[str, ModelConfig]:
     return catalog
 
 
+def is_openvino_model_dir(model_dir: Path) -> bool:
+    """Return whether *model_dir* contains a converted OpenVINO IR model."""
+    model_dir = Path(model_dir)
+    return model_dir.is_dir() and any((model_dir / marker).exists() for marker in _IR_MARKERS)
+
+
 def is_downloaded(cfg: ModelConfig, base_dir: Path) -> bool:
     """True if a converted OpenVINO IR directory exists for this model."""
-    model_dir = cfg.abs_path(base_dir)
-    if not model_dir.is_dir():
-        return False
-    return any((model_dir / marker).exists() for marker in _IR_MARKERS)
+    return is_openvino_model_dir(cfg.abs_path(base_dir))
 
 
 def status_label(status: str) -> str:

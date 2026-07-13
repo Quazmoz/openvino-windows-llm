@@ -67,9 +67,9 @@ class ChatCompletionRequest(BaseModel):
     tool_choice: Any | None = None  # "auto" | "none" | "required" | {type, function}
     stop: str | list[str] | None = None  # stop sequence(s) that end generation
     seed: int | None = None  # seed the sampler for reproducible output (best effort)
-    response_format: Any | None = None  # response format constraint (JSON object or JSON Schema)
+    response_format: dict[str, Any] | None = None  # JSON object or JSON Schema constraint
     lora_path: str | None = None  # path to safetensors LoRA weights
-    lora_alpha: float | None = 1.0  # scaling factor for LoRA weights
+    lora_alpha: float | None = Field(default=1.0, gt=0.0)
 
 
 class ChatCompletionMessage(BaseModel):
@@ -110,7 +110,7 @@ class ResponseRequest(BaseModel):
     temperature: float | None = Field(default=0.7, ge=0.0, le=2.0)
     stream: bool | None = False
     lora_path: str | None = None
-    lora_alpha: float | None = 1.0
+    lora_alpha: float | None = Field(default=1.0, gt=0.0)
 
 
 class ResponseOutputMessage(BaseModel):
@@ -136,16 +136,18 @@ class ResponseObject(BaseModel):
 class ModelLoadRequest(BaseModel):
     model: str
     device: str | None = None  # override the server default device for this load
-    draft_model: str | None = None  # catalog model id or path to draft model for speculative decoding
+    draft_model: str | None = (
+        None  # catalog model id or path to draft model for speculative decoding
+    )
 
 
 class ModelConvertRequest(BaseModel):
     model: str
     device: str | None = None  # optional device to use if loading after conversion
     load_after: bool = True
-    weight_format: str | None = None
-    group_size: int | None = None
-    ratio: float | None = None
+    weight_format: str | None = Field(default=None, pattern=r"^(int4|int8|fp16)$")
+    group_size: int | None = Field(default=None, ge=-1)
+    ratio: float | None = Field(default=None, ge=0.0, le=1.0)
     sym: bool | None = None
 
 
@@ -239,13 +241,23 @@ class DownloadCustomRequest(BaseModel):
     )
     name: str = Field(min_length=1, max_length=160)
     source_model: str = Field(min_length=1, max_length=240)
-    backend: str = Field(default="openvino-genai", pattern=r"^(openvino-genai|openvino-embeddings)$")
+    backend: str = Field(
+        default="openvino-genai", pattern=r"^(openvino-genai|openvino-embeddings)$"
+    )
     weight_format: str = Field(default="int4", pattern=r"^(int4|int8|fp16)$")
-    group_size: int | None = None
-    ratio: float | None = None
+    group_size: int | None = Field(default=None, ge=-1)
+    ratio: float | None = Field(default=None, ge=0.0, le=1.0)
     sym: bool | None = None
     recommended_device: str = Field(default="CPU", min_length=1, max_length=64)
     max_context_len: int = Field(default=2048, ge=128, le=262144)
     max_output_tokens: int = Field(default=512, ge=0, le=65536)
     description: str | None = None
     load_after: bool = True
+
+    @field_validator("recommended_device")
+    @classmethod
+    def validate_recommended_device(cls, value: str) -> str:
+        try:
+            return device_check.validate_device_expression(value)
+        except device_check.DeviceValidationError as exc:
+            raise ValueError(str(exc)) from exc
