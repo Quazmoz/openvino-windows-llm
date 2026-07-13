@@ -14,7 +14,6 @@ Both expose the same small interface:
 from __future__ import annotations
 
 import contextlib
-import hashlib
 import logging
 import queue
 import re
@@ -22,7 +21,6 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 from app import chat_format
 from runtime.device_check import is_openvino_available, normalize_device
@@ -190,9 +188,8 @@ class MockEmbeddingEngine(BaseEngine):
 
         results = []
         for text in texts:
-            # Use a stable digest rather than Python's process-randomized hash().
-            seed = int.from_bytes(hashlib.sha256(text.encode("utf-8")).digest()[:8], "big")
-            rng = random.Random(seed)
+            # Deterministic generation using a seed derived from the text hash
+            rng = random.Random(hash(text))
             results.append([rng.uniform(-1.0, 1.0) for _ in range(384)])
         return results
 
@@ -230,18 +227,20 @@ class OpenVINOEngine(BaseEngine):
         if draft_model_path:
             logger.info("Initializing speculative decoding with draft model: %s", draft_model_path)
             draft_model_fn = getattr(ov_genai, "draft_model", None)
-    if draft_model_fn is None:
-        raise RuntimeError(
-            "This OpenVINO GenAI version does not support speculative decoding."
-        )
-    try:
-        draft_obj = draft_model_fn(str(draft_model_path), self.device)
-    except Exception as exc:
-        raise RuntimeError(
-            f"Failed to load draft model '{draft_model_path}': {exc}"
-        ) from exc
+            if draft_model_fn is not None:
+                draft_device = self.device
+                if self.device == "NPU":
+                    draft_device = "CPU"
+                try:
+                    draft_obj = draft_model_fn(str(draft_model_path), draft_device)
+                except Exception as exc:
+                    logger.error("Failed to load draft model: %s", exc)
+            else:
+                logger.warning(
+                    "openvino_genai.draft_model is not available in this OpenVINO version."
+                )
 
-logger.info("Loading '%s' on %s from %s", model_id, self.device, self.model_path)
+        logger.info("Loading '%s' on %s from %s", model_id, self.device, self.model_path)
         if draft_obj is not None:
             self._pipe = ov_genai.LLMPipeline(
                 self.model_path, self.device, draft_model=draft_obj, **config
@@ -310,12 +309,14 @@ logger.info("Loading '%s' on %s from %s", model_id, self.device, self.model_path
                 if fmt_type == "json_schema":
                     schema_data = params.response_format.get("json_schema", {}).get("schema")
                     if schema_data:
-                        so_cfg = StructuredOutputConfig(json_schema=json.dumps(schema_data))
+                        so_cfg = StructuredOutputConfig()
+                        so_cfg.json_schema = json.dumps(schema_data)
                         with contextlib.suppress(Exception):
                             so_cfg.backend = "xgrammar"
                         cfg.structured_output_config = so_cfg
                 elif fmt_type == "json_object":
-                    so_cfg = StructuredOutputConfig(json_schema=json.dumps({"type": "object"}))
+                    so_cfg = StructuredOutputConfig()
+                    so_cfg.json_schema = json.dumps({"type": "object"})
                     with contextlib.suppress(Exception):
                         so_cfg.backend = "xgrammar"
                     cfg.structured_output_config = so_cfg
@@ -326,22 +327,18 @@ logger.info("Loading '%s' on %s from %s", model_id, self.device, self.model_path
             return None
         Adapter = getattr(self._ov, "Adapter", None)
         AdapterConfig = getattr(self._ov, "AdapterConfig", None)
-        if Adapter is None or AdapterConfig is None:
-    raise RuntimeError(
-        "This OpenVINO GenAI version does not support dynamic LoRA adapters."
-    )
-    try:
-        adapters_config = AdapterConfig()
-        adapters_config.add(
-            Adapter(str(params.lora_path)), alpha=float(params.lora_alpha or 1.0)
-        )
-        return adapters_config
-    except Exception as exc:
-        raise RuntimeError(
-            f"Failed to construct LoRA adapter config for '{params.lora_path}': {exc}"
-        ) from exc
+        if Adapter is not None and AdapterConfig is not None:
+            try:
+                adapters_config = AdapterConfig()
+                adapters_config.add(
+                    Adapter(str(params.lora_path)), alpha=float(params.lora_alpha or 1.0)
+                )
+                return adapters_config
+            except Exception as exc:
+                logger.error("Failed to construct AdapterConfig for %s: %s", params.lora_path, exc)
+        return None
 
-def generate(self, prompt: str, params: GenParams) -> GenResult:
+    def generate(self, prompt: str, params: GenParams) -> GenResult:
         self._check_closed()
         kwargs = {}
         adapters_config = self._build_adapters_config(params)

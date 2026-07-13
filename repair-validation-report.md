@@ -1,291 +1,242 @@
 # Recent feature repair validation
 
+- Patch exit: 1
 - Ruff fix exit: 1
-- Format exit: 2
-- Format check exit: 2
+- Format exit: 0
+- Format check exit: 0
 - Lint exit: 1
-- Test exit: 2
+- Test exit: 1
 
-## Follow-up patch report
+## Patch output
 ```text
-PASS insert draft validator
-PASS load task accepts validated draft path
-FAIL remove unvalidated draft resolution
-PASS pass validated draft path
-PASS fail loudly when speculative decoding cannot initialize
-PASS fail loudly when LoRA cannot initialize
-PASS chain Hugging Face search exception
-PASS remove unused conversion task variable
-PASS sort telemetry local import
-
-Errors:
-remove unvalidated draft resolution: expected one match, found 0
+Traceback (most recent call last):
+  File "<stdin>", line 54, in <module>
+RuntimeError: Could not locate ModelManager._build_engine
 ```
 
 ## Lint output
 ```text
-invalid-syntax: Expected an indented block after function definition
-   --> app/model_manager.py:349:5
+F821 Undefined name `Any`
+   --> runtime/openvino_engine.py:116:60
     |
-347 |     self, model_id: str, draft_model: str | None
-348 | ) -> str | None:
-349 |     if not draft_model:
-    |     ^^
-350 |         return None
-351 |     if draft_model == model_id:
-    |
-
-invalid-syntax: Unexpected indentation
-   --> runtime/openvino_engine.py:245:1
-    |
-244 | logger.info("Loading '%s' on %s from %s", model_id, self.device, self.model_path)
-245 |         if draft_obj is not None:
-    | ^^^^^^^^
-246 |             self._pipe = ov_genai.LLMPipeline(
-247 |                 self.model_path, self.device, draft_model=draft_obj, **config
+114 |         pass
+115 |
+116 |     def _build_adapters_config(self, params: GenParams) -> Any | None:
+    |                                                            ^^^
+117 |         return None
     |
 
-invalid-syntax: unindent does not match any outer indentation level
-   --> runtime/openvino_engine.py:256:1
-    |
-254 |         logger.info("Model '%s' ready on %s", model_id, self.device)
-255 |
-256 |     def _check_closed(self) -> None:
-    | ^^^^
-257 |         if self._closed:
-258 |             raise RuntimeError(f"Engine for '{self.model_id}' is closed")
-    |
-
-invalid-syntax: unindent does not match any outer indentation level
-   --> runtime/openvino_engine.py:260:5
-    |
-258 |             raise RuntimeError(f"Engine for '{self.model_id}' is closed")
-259 |
-260 |     def apply_chat_template(self, messages: list[dict], add_generation_prompt: bool = True) -> str:
-    |     ^
-261 |         self._check_closed()
-262 |         try:
-    |
-
-invalid-syntax: unindent does not match any outer indentation level
-   --> runtime/openvino_engine.py:274:5
-    |
-272 |             return chat_format.render_chatml(messages, add_generation_prompt)
-273 |
-274 |     def count_tokens(self, text: str) -> int:
-    |     ^
-275 |         self._check_closed()
-276 |         try:
-    |
-
-invalid-syntax: unindent does not match any outer indentation level
-   --> runtime/openvino_engine.py:285:5
-    |
-283 |             return max(1, len(text) // 4)
-284 |
-285 |     def _build_config(self, params: GenParams):
-    |     ^
-286 |         cfg = self._ov.GenerationConfig()
-287 |         cfg.max_new_tokens = int(params.max_new_tokens)
-    |
-
-invalid-syntax: unindent does not match any outer indentation level
-   --> runtime/openvino_engine.py:324:1
-    |
-322 |         return cfg
-323 |
-324 |     def _build_adapters_config(self, params: GenParams):
-    | ^^^^
-325 |         if not params.lora_path:
-326 |             return None
-    |
-
-invalid-syntax: unindent does not match any outer indentation level
-   --> runtime/openvino_engine.py:330:1
-    |
-328 |         AdapterConfig = getattr(self._ov, "AdapterConfig", None)
-329 |         if Adapter is None or AdapterConfig is None:
-330 |     raise RuntimeError(
-    | ^^^^
-331 |         "This OpenVINO GenAI version does not support dynamic LoRA adapters."
-332 |     )
-    |
-
-invalid-syntax: Unexpected indentation
-   --> runtime/openvino_engine.py:333:1
-    |
-331 |         "This OpenVINO GenAI version does not support dynamic LoRA adapters."
-332 |     )
-333 |     try:
-    | ^^^^
-334 |         adapters_config = AdapterConfig()
-335 |         adapters_config.add(
-    |
-
-invalid-syntax: unindent does not match any outer indentation level
-   --> runtime/openvino_engine.py:354:1
-    |
-352 |         return GenResult(text=text, completion_tokens=self.count_tokens(text))
-353 |
-354 |     def stream(self, prompt: str, params: GenParams) -> StreamHandle:
-    | ^^^^
-355 |         self._check_closed()
-356 |         handle = StreamHandle()
-    |
-
-invalid-syntax: unindent does not match any outer indentation level
-   --> runtime/openvino_engine.py:379:1
-    |
-377 |         return handle
-378 |
-379 |     def close(self) -> None:
-    | ^^^^
-380 |         if self._closed:
-381 |             return
-    |
-
-invalid-syntax: Expected dedent, found end of file
-   --> runtime/openvino_engine.py:547:1
-    |
-545 |         model_id, model_path, device, plugin_config, draft_model_path=draft_model_path
-546 |     )
-    |      ^
-    |
-
-Found 12 errors.
+Found 1 error.
 ```
 
 ## Test output
 ```text
+...................................................................F.... [ 48%]
+..............FFF..........................................F............ [ 97%]
+....                                                                     [100%]
+=================================== FAILURES ===================================
+_________________ test_resolve_from_catalog_reads_models_json __________________
 
-==================================== ERRORS ====================================
-_________________ ERROR collecting tests/test_benchmark_api.py _________________
-/opt/hostedtoolcache/Python/3.12.13/x64/lib/python3.12/site-packages/_pytest/python.py:508: in importtestmodule
-    mod = import_path(
-/opt/hostedtoolcache/Python/3.12.13/x64/lib/python3.12/site-packages/_pytest/pathlib.py:596: in import_path
-    importlib.import_module(module_name)
-/opt/hostedtoolcache/Python/3.12.13/x64/lib/python3.12/importlib/__init__.py:90: in import_module
-    return _bootstrap._gcd_import(name[level:], package, level)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-<frozen importlib._bootstrap>:1387: in _gcd_import
-    ???
-<frozen importlib._bootstrap>:1360: in _find_and_load
-    ???
-<frozen importlib._bootstrap>:1331: in _find_and_load_unlocked
-    ???
-<frozen importlib._bootstrap>:935: in _load_unlocked
-    ???
-/opt/hostedtoolcache/Python/3.12.13/x64/lib/python3.12/site-packages/_pytest/assertion/rewrite.py:188: in exec_module
-    exec(co, module.__dict__)
-tests/test_benchmark_api.py:6: in <module>
-    from app.server import create_app
-app/server.py:33: in <module>
-    from app import __version__, chat_format, model_manager, tools
-E     File "/home/runner/work/openvino-windows-llm/openvino-windows-llm/app/model_manager.py", line 349
-E       if not draft_model:
-E       ^^
-E   IndentationError: expected an indented block after function definition on line 346
-_______________ ERROR collecting tests/test_benchmark_devices.py _______________
-/opt/hostedtoolcache/Python/3.12.13/x64/lib/python3.12/site-packages/_pytest/python.py:508: in importtestmodule
-    mod = import_path(
-/opt/hostedtoolcache/Python/3.12.13/x64/lib/python3.12/site-packages/_pytest/pathlib.py:596: in import_path
-    importlib.import_module(module_name)
-/opt/hostedtoolcache/Python/3.12.13/x64/lib/python3.12/importlib/__init__.py:90: in import_module
-    return _bootstrap._gcd_import(name[level:], package, level)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-<frozen importlib._bootstrap>:1387: in _gcd_import
-    ???
-<frozen importlib._bootstrap>:1360: in _find_and_load
-    ???
-<frozen importlib._bootstrap>:1331: in _find_and_load_unlocked
-    ???
-<frozen importlib._bootstrap>:935: in _load_unlocked
-    ???
-/opt/hostedtoolcache/Python/3.12.13/x64/lib/python3.12/site-packages/_pytest/assertion/rewrite.py:188: in exec_module
-    exec(co, module.__dict__)
-tests/test_benchmark_devices.py:19: in <module>
-    from scripts import benchmark_devices as bench  # noqa: E402
-    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-scripts/benchmark_devices.py:27: in <module>
-    from runtime.openvino_engine import build_plugin_config  # noqa: E402
-    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-E     File "/home/runner/work/openvino-windows-llm/openvino-windows-llm/runtime/openvino_engine.py", line 245
-E       if draft_obj is not None:
-E   IndentationError: unexpected indent
-______________ ERROR collecting tests/test_model_registration.py _______________
-/opt/hostedtoolcache/Python/3.12.13/x64/lib/python3.12/site-packages/_pytest/python.py:508: in importtestmodule
-    mod = import_path(
-/opt/hostedtoolcache/Python/3.12.13/x64/lib/python3.12/site-packages/_pytest/pathlib.py:596: in import_path
-    importlib.import_module(module_name)
-/opt/hostedtoolcache/Python/3.12.13/x64/lib/python3.12/importlib/__init__.py:90: in import_module
-    return _bootstrap._gcd_import(name[level:], package, level)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-<frozen importlib._bootstrap>:1387: in _gcd_import
-    ???
-<frozen importlib._bootstrap>:1360: in _find_and_load
-    ???
-<frozen importlib._bootstrap>:1331: in _find_and_load_unlocked
-    ???
-<frozen importlib._bootstrap>:935: in _load_unlocked
-    ???
-/opt/hostedtoolcache/Python/3.12.13/x64/lib/python3.12/site-packages/_pytest/assertion/rewrite.py:188: in exec_module
-    exec(co, module.__dict__)
-tests/test_model_registration.py:7: in <module>
-    from app.model_manager import ModelManager
-E     File "/home/runner/work/openvino-windows-llm/openvino-windows-llm/app/model_manager.py", line 349
-E       if not draft_model:
-E       ^^
-E   IndentationError: expected an indented block after function definition on line 346
-__________ ERROR collecting tests/test_recent_feature_regressions.py ___________
-/opt/hostedtoolcache/Python/3.12.13/x64/lib/python3.12/site-packages/_pytest/python.py:508: in importtestmodule
-    mod = import_path(
-/opt/hostedtoolcache/Python/3.12.13/x64/lib/python3.12/site-packages/_pytest/pathlib.py:596: in import_path
-    importlib.import_module(module_name)
-/opt/hostedtoolcache/Python/3.12.13/x64/lib/python3.12/importlib/__init__.py:90: in import_module
-    return _bootstrap._gcd_import(name[level:], package, level)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-<frozen importlib._bootstrap>:1387: in _gcd_import
-    ???
-<frozen importlib._bootstrap>:1360: in _find_and_load
-    ???
-<frozen importlib._bootstrap>:1331: in _find_and_load_unlocked
-    ???
-<frozen importlib._bootstrap>:935: in _load_unlocked
-    ???
-/opt/hostedtoolcache/Python/3.12.13/x64/lib/python3.12/site-packages/_pytest/assertion/rewrite.py:188: in exec_module
-    exec(co, module.__dict__)
-tests/test_recent_feature_regressions.py:10: in <module>
-    from app.server import create_app
-app/server.py:33: in <module>
-    from app import __version__, chat_format, model_manager, tools
-E     File "/home/runner/work/openvino-windows-llm/openvino-windows-llm/app/model_manager.py", line 349
-E       if not draft_model:
-E       ^^
-E   IndentationError: expected an indented block after function definition on line 346
-__________________ ERROR collecting tests/test_server_mock.py __________________
-/opt/hostedtoolcache/Python/3.12.13/x64/lib/python3.12/site-packages/_pytest/python.py:508: in importtestmodule
-    mod = import_path(
-/opt/hostedtoolcache/Python/3.12.13/x64/lib/python3.12/site-packages/_pytest/pathlib.py:596: in import_path
-    importlib.import_module(module_name)
-/opt/hostedtoolcache/Python/3.12.13/x64/lib/python3.12/importlib/__init__.py:90: in import_module
-    return _bootstrap._gcd_import(name[level:], package, level)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-<frozen importlib._bootstrap>:1387: in _gcd_import
-    ???
-<frozen importlib._bootstrap>:1360: in _find_and_load
-    ???
-<frozen importlib._bootstrap>:1331: in _find_and_load_unlocked
-    ???
-<frozen importlib._bootstrap>:935: in _load_unlocked
-    ???
-/opt/hostedtoolcache/Python/3.12.13/x64/lib/python3.12/site-packages/_pytest/assertion/rewrite.py:188: in exec_module
-    exec(co, module.__dict__)
-tests/test_server_mock.py:15: in <module>
-    from app.model_manager import ModelManager
-E     File "/home/runner/work/openvino-windows-llm/openvino-windows-llm/app/model_manager.py", line 349
-E       if not draft_model:
-E       ^^
-E   IndentationError: expected an indented block after function definition on line 346
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f1137948050>
+tmp_path = PosixPath('/home/runner/work/openvino-windows-llm/openvino-windows-llm/.tmp/pytest/test_resolve_from_catalog_read0')
+
+    def test_resolve_from_catalog_reads_models_json(monkeypatch, tmp_path):
+        catalog = {
+            "m1": {
+                "name": "M1",
+                "model_path": "models/openvino/m1",
+                "source_model": "org/m1",
+                "weight_format": "int8",
+            }
+        }
+        catalog_file = tmp_path / "models.json"
+        catalog_file.write_text(json.dumps(catalog), encoding="utf-8")
+        monkeypatch.setenv("OV_LLM_MODELS_FILE", str(catalog_file))
+    
+>       source, output_dir, weight_format = mc._resolve_from_catalog("m1")
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       ValueError: too many values to unpack (expected 3)
+
+tests/test_model_converter.py:66: ValueError
+___________ test_embedding_model_cannot_be_used_as_speculative_draft ___________
+
+tmp_path = PosixPath('/home/runner/work/openvino-windows-llm/openvino-windows-llm/.tmp/pytest/test_embedding_model_cannot_be0')
+
+    def test_embedding_model_cannot_be_used_as_speculative_draft(tmp_path: Path) -> None:
+        with _client(tmp_path) as client:
+            response = client.post(
+                "/v1/models/load",
+                json={"model": MODEL_ID, "draft_model": "bge-small-en-v1.5"},
+            )
+>           assert response.status_code == 400
+E           assert 200 == 400
+E            +  where 200 = <Response [200 OK]>.status_code
+
+tests/test_recent_feature_regressions.py:86: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-07-13 16:12:19 [INFO] [-] Starting OpenVINO Windows LLM server — MOCK (no OpenVINO)
+2026-07-13 16:12:19 [INFO] [-] Using MOCK engine for 'tinyllama-1.1b-chat-fp16' (forced)
+2026-07-13 16:12:19 [INFO] [req-9b83999facf6] HTTP POST /v1/models/load - Status: 200 - Latency: 1.76ms
+2026-07-13 16:12:19 [INFO] [req-9b83999facf6] Loaded 'tinyllama-1.1b-chat-fp16' on CPU
+2026-07-13 16:12:19 [INFO] [-] HTTP Request: POST http://testserver/v1/models/load "HTTP/1.1 200 OK"
+2026-07-13 16:12:19 [INFO] [-] Server stopped; models unloaded.
+------------------------------ Captured log call -------------------------------
+INFO     ov-llm.server:server.py:187 Starting OpenVINO Windows LLM server — MOCK (no OpenVINO)
+INFO     ov-llm.engine:openvino_engine.py:535 Using MOCK engine for 'tinyllama-1.1b-chat-fp16' (forced)
+INFO     ov-llm.server:server.py:229 HTTP POST /v1/models/load - Status: 200 - Latency: 1.76ms
+INFO     ov-llm.manager:model_manager.py:439 Loaded 'tinyllama-1.1b-chat-fp16' on CPU
+INFO     httpx:_client.py:1025 HTTP Request: POST http://testserver/v1/models/load "HTTP/1.1 200 OK"
+INFO     ov-llm.server:server.py:193 Server stopped; models unloaded.
+_____________ test_custom_embedding_registration_preserves_backend _____________
+
+tmp_path = PosixPath('/home/runner/work/openvino-windows-llm/openvino-windows-llm/.tmp/pytest/test_custom_embedding_registra0')
+
+    def test_custom_embedding_registration_preserves_backend(tmp_path: Path) -> None:
+        with _client(tmp_path) as client:
+            manager = client.app.state.manager
+    
+            def fake_schedule_convert(model_id, device=None, **kwargs):
+                manager._set_status(model_id, "queued_convert")
+                return object()
+    
+            manager.schedule_convert = fake_schedule_convert
+            response = client.post(
+                "/v1/models/download-custom",
+                json={
+                    "model_id": "custom-embedding-regression",
+                    "name": "Custom Embedding Regression",
+                    "source_model": "BAAI/bge-small-en-v1.5",
+                    "backend": "openvino-embeddings",
+                    "weight_format": "fp16",
+                    "recommended_device": "CPU",
+                    "max_context_len": 512,
+                    "max_output_tokens": 0,
+                    "load_after": False,
+                },
+            )
+            assert response.status_code == 200, response.text
+            config = manager.catalog["custom-embedding-regression"]
+>           assert config.backend == "openvino-embeddings"
+E           AssertionError: assert 'openvino-genai' == 'openvino-embeddings'
+E             
+E             - openvino-embeddings
+E             + openvino-genai
+
+tests/test_recent_feature_regressions.py:116: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-07-13 16:12:19 [INFO] [-] Starting OpenVINO Windows LLM server — MOCK (no OpenVINO)
+2026-07-13 16:12:19 [INFO] [req-b4de16ec0ed7] HTTP POST /v1/models/download-custom - Status: 200 - Latency: 1.88ms
+2026-07-13 16:12:19 [INFO] [-] HTTP Request: POST http://testserver/v1/models/download-custom "HTTP/1.1 200 OK"
+2026-07-13 16:12:19 [INFO] [-] Server stopped; models unloaded.
+------------------------------ Captured log call -------------------------------
+INFO     ov-llm.server:server.py:187 Starting OpenVINO Windows LLM server — MOCK (no OpenVINO)
+INFO     ov-llm.server:server.py:229 HTTP POST /v1/models/download-custom - Status: 200 - Latency: 1.88ms
+INFO     httpx:_client.py:1025 HTTP Request: POST http://testserver/v1/models/download-custom "HTTP/1.1 200 OK"
+INFO     ov-llm.server:server.py:193 Server stopped; models unloaded.
+__________ test_nonstream_responses_are_attributed_to_the_calling_key __________
+
+tmp_path = PosixPath('/home/runner/work/openvino-windows-llm/openvino-windows-llm/.tmp/pytest/test_nonstream_responses_are_a0')
+
+    def test_nonstream_responses_are_attributed_to_the_calling_key(tmp_path: Path) -> None:
+        beta_headers = {"Authorization": "Bearer beta-key"}
+        alpha_headers = {"Authorization": "Bearer alpha-key"}
+        with _client(tmp_path, api_key="alpha-key,beta-key") as client:
+            _load(client, headers=beta_headers)
+            response = client.post(
+                "/v1/responses",
+                headers=beta_headers,
+                json={"model": MODEL_ID, "input": "hello", "stream": False},
+            )
+            assert response.status_code == 200, response.text
+    
+            stats_response = client.get("/v1/keys/stats", headers=alpha_headers)
+            assert stats_response.status_code == 200
+            stats = stats_response.json()
+            fingerprint = hashlib.sha256(b"beta-key").hexdigest()[:8]
+            beta_stats = next(item for item in stats if item["key_name"].endswith(fingerprint))
+>           assert beta_stats["requests"] == 1
+E           assert 0 == 1
+
+tests/test_recent_feature_regressions.py:137: AssertionError
+----------------------------- Captured stdout call -----------------------------
+2026-07-13 16:12:19 [INFO] [-] Starting OpenVINO Windows LLM server — MOCK (no OpenVINO)
+2026-07-13 16:12:19 [INFO] [-] Using MOCK engine for 'tinyllama-1.1b-chat-fp16' (forced)
+2026-07-13 16:12:19 [INFO] [req-d7b908e628a9] HTTP POST /v1/models/load - Status: 200 - Latency: 1.76ms
+2026-07-13 16:12:19 [INFO] [req-d7b908e628a9] Loaded 'tinyllama-1.1b-chat-fp16' on CPU
+2026-07-13 16:12:19 [INFO] [-] HTTP Request: POST http://testserver/v1/models/load "HTTP/1.1 200 OK"
+2026-07-13 16:12:19 [INFO] [req-f70ea60acea6] HTTP GET /v1/system/status - Status: 200 - Latency: 6.46ms
+2026-07-13 16:12:19 [INFO] [-] HTTP Request: GET http://testserver/v1/system/status "HTTP/1.1 200 OK"
+2026-07-13 16:12:19 [INFO] [req-ae4f53d7c659] HTTP POST /v1/responses - Status: 200 - Latency: 1.76ms
+2026-07-13 16:12:19 [INFO] [-] HTTP Request: POST http://testserver/v1/responses "HTTP/1.1 200 OK"
+2026-07-13 16:12:19 [INFO] [req-e25caedaa687] HTTP GET /v1/keys/stats - Status: 200 - Latency: 0.62ms
+2026-07-13 16:12:19 [INFO] [-] HTTP Request: GET http://testserver/v1/keys/stats "HTTP/1.1 200 OK"
+2026-07-13 16:12:19 [INFO] [-] Server stopped; models unloaded.
+------------------------------ Captured log call -------------------------------
+INFO     ov-llm.server:server.py:187 Starting OpenVINO Windows LLM server — MOCK (no OpenVINO)
+INFO     ov-llm.engine:openvino_engine.py:535 Using MOCK engine for 'tinyllama-1.1b-chat-fp16' (forced)
+INFO     ov-llm.server:server.py:229 HTTP POST /v1/models/load - Status: 200 - Latency: 1.76ms
+INFO     ov-llm.manager:model_manager.py:439 Loaded 'tinyllama-1.1b-chat-fp16' on CPU
+INFO     httpx:_client.py:1025 HTTP Request: POST http://testserver/v1/models/load "HTTP/1.1 200 OK"
+INFO     ov-llm.server:server.py:229 HTTP GET /v1/system/status - Status: 200 - Latency: 6.46ms
+INFO     httpx:_client.py:1025 HTTP Request: GET http://testserver/v1/system/status "HTTP/1.1 200 OK"
+INFO     ov-llm.server:server.py:229 HTTP POST /v1/responses - Status: 200 - Latency: 1.76ms
+INFO     httpx:_client.py:1025 HTTP Request: POST http://testserver/v1/responses "HTTP/1.1 200 OK"
+INFO     ov-llm.server:server.py:229 HTTP GET /v1/keys/stats - Status: 200 - Latency: 0.62ms
+INFO     httpx:_client.py:1025 HTTP Request: GET http://testserver/v1/keys/stats "HTTP/1.1 200 OK"
+INFO     ov-llm.server:server.py:193 Server stopped; models unloaded.
+________________________ test_speculative_decoding_load ________________________
+
+client = <starlette.testclient.TestClient object at 0x7f1127f58d70>
+
+    def test_speculative_decoding_load(client):
+        # Speculative decoding draft model parameter passed to /v1/models/load
+        from unittest.mock import patch
+    
+        manager = client.app.state.manager
+    
+        with patch.object(manager, "_build_engine") as mock_build:
+            resp = client.post(
+                "/v1/models/load",
+                json={
+                    "model": "tinyllama-1.1b-chat-fp16",
+                    "draft_model": "smollm2-135m-fp16",
+                },
+            )
+            assert resp.status_code == 200
+            # Wait for loading to finish
+            import time
+    
+            for _ in range(50):
+                if "tinyllama-1.1b-chat-fp16" not in manager.load_tasks:
+                    break
+                time.sleep(0.02)
+    
+            # Verify draft model path was resolved and passed
+            mock_build.assert_called_once()
+            args = mock_build.call_args[0]
+            # First positional argument is model_id, second is device, third is draft_model_path
+            assert args[0] == "tinyllama-1.1b-chat-fp16"
+>           assert "smollm2-135m-fp16" in args[2]  # draft path contains model name
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           AssertionError: assert 'smollm2-135m-fp16' in '/home/runner/work/openvino-windows-llm/openvino-windows-llm/models/openvino/smollm2-135m-instruct-fp16'
+
+tests/test_server_mock.py:775: AssertionError
+---------------------------- Captured stdout setup -----------------------------
+2026-07-13 16:12:23 [INFO] [-] Starting OpenVINO Windows LLM server — MOCK (no OpenVINO)
+------------------------------ Captured log setup ------------------------------
+INFO     ov-llm.server:server.py:187 Starting OpenVINO Windows LLM server — MOCK (no OpenVINO)
+----------------------------- Captured stdout call -----------------------------
+2026-07-13 16:12:23 [INFO] [req-a3b303a2cb99] HTTP POST /v1/models/load - Status: 200 - Latency: 1.85ms
+2026-07-13 16:12:23 [INFO] [req-a3b303a2cb99] Loaded 'tinyllama-1.1b-chat-fp16' on <MagicMock name='_build_engine().device' id='139711923757056'>
+2026-07-13 16:12:23 [INFO] [-] HTTP Request: POST http://testserver/v1/models/load "HTTP/1.1 200 OK"
+------------------------------ Captured log call -------------------------------
+INFO     ov-llm.server:server.py:229 HTTP POST /v1/models/load - Status: 200 - Latency: 1.85ms
+INFO     ov-llm.manager:model_manager.py:439 Loaded 'tinyllama-1.1b-chat-fp16' on <MagicMock name='_build_engine().device' id='139711923757056'>
+INFO     httpx:_client.py:1025 HTTP Request: POST http://testserver/v1/models/load "HTTP/1.1 200 OK"
+--------------------------- Captured stdout teardown ---------------------------
+2026-07-13 16:12:23 [INFO] [-] Server stopped; models unloaded.
+---------------------------- Captured log teardown -----------------------------
+INFO     ov-llm.server:server.py:193 Server stopped; models unloaded.
 =============================== warnings summary ===============================
 ../../../../../opt/hostedtoolcache/Python/3.12.13/x64/lib/python3.12/site-packages/fastapi/testclient.py:1
   /opt/hostedtoolcache/Python/3.12.13/x64/lib/python3.12/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
@@ -293,11 +244,14 @@ E   IndentationError: expected an indented block after function definition on li
 
 -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
 =========================== short test summary info ============================
-ERROR tests/test_benchmark_api.py
-ERROR tests/test_benchmark_devices.py
-ERROR tests/test_model_registration.py
-ERROR tests/test_recent_feature_regressions.py
-ERROR tests/test_server_mock.py
-!!!!!!!!!!!!!!!!!!! Interrupted: 5 errors during collection !!!!!!!!!!!!!!!!!!!!
-1 warning, 5 errors in 1.15s
+FAILED tests/test_model_converter.py::test_resolve_from_catalog_reads_models_json - ValueError: too many values to unpack (expected 3)
+FAILED tests/test_recent_feature_regressions.py::test_embedding_model_cannot_be_used_as_speculative_draft - assert 200 == 400
+ +  where 200 = <Response [200 OK]>.status_code
+FAILED tests/test_recent_feature_regressions.py::test_custom_embedding_registration_preserves_backend - AssertionError: assert 'openvino-genai' == 'openvino-embeddings'
+  
+  - openvino-embeddings
+  + openvino-genai
+FAILED tests/test_recent_feature_regressions.py::test_nonstream_responses_are_attributed_to_the_calling_key - assert 0 == 1
+FAILED tests/test_server_mock.py::test_speculative_decoding_load - AssertionError: assert 'smollm2-135m-fp16' in '/home/runner/work/openvino-windows-llm/openvino-windows-llm/models/openvino/smollm2-135m-instruct-fp16'
+5 failed, 143 passed, 1 warning in 5.11s
 ```
