@@ -542,7 +542,9 @@ def create_app(settings: Settings) -> FastAPI:
                 data = resp.json()
             except Exception as exc:
                 logger.error("Failed to query Hugging Face API: %s", exc)
-                raise HTTPException(status_code=502, detail=f"Hugging Face API unreachable: {exc}")
+                raise HTTPException(
+                    status_code=502, detail=f"Hugging Face API unreachable: {exc}"
+                ) from exc
 
         results = []
         for item in data:
@@ -579,7 +581,7 @@ def create_app(settings: Settings) -> FastAPI:
 
         # 2. Schedule download and conversion
         device = _normalize_device_or_400(None)
-        task = manager.schedule_convert(
+        manager.schedule_convert(
             req.model_id,
             device,
             load_after=req.load_after,

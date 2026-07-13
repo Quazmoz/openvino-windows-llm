@@ -811,9 +811,9 @@ def test_dynamic_lora_generation(client):
 def test_multiple_api_keys_and_tracking():
     # Test setting multiple API keys via Settings and tracking metrics
     from fastapi.testclient import TestClient
-    from app.config import Settings
+
+    from app.config import BASE_DIR, Settings
     from app.server import create_app
-    from app.config import BASE_DIR
 
     settings = Settings(
         models_file=BASE_DIR / "models.json",
