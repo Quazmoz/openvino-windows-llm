@@ -232,7 +232,7 @@ def test_convert_model_endpoint_schedules_background_task(client):
     manager = client.app.state.manager
     calls = []
 
-    def fake_schedule_convert(model_id, device=None, *, load_after=True):
+    def fake_schedule_convert(model_id, device=None, *, load_after=True, **kwargs):
         calls.append((model_id, device, load_after))
         manager._set_status(model_id, "queued_convert")
         manager._set_progress(model_id, "queued", "Queued conversion...")
@@ -256,7 +256,7 @@ def test_convert_model_accepts_normalized_composite_device(client):
     manager = client.app.state.manager
     calls = []
 
-    def fake_schedule_convert(model_id, device=None, *, load_after=True):
+    def fake_schedule_convert(model_id, device=None, *, load_after=True, **kwargs):
         calls.append((model_id, device, load_after))
         manager._set_status(model_id, "queued_convert")
         return object()
@@ -571,3 +571,267 @@ def test_chat_export_auth_protected(authed_client):
         json={"messages": [{"role": "user", "content": "hi"}]},
     )
     assert resp.status_code == 401
+
+
+def test_embeddings_endpoint_success(client):
+    # First, let's load the embedding model in mock mode
+    _load_and_wait(client, model_id="bge-small-en-v1.5")
+
+    # 1. Single string input, float format
+    resp = client.post(
+        "/v1/embeddings",
+        json={"model": "bge-small-en-v1.5", "input": "hello world"},
+    )
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["object"] == "list"
+    assert len(data["data"]) == 1
+    assert data["data"][0]["index"] == 0
+    assert isinstance(data["data"][0]["embedding"], list)
+    assert len(data["data"][0]["embedding"]) == 384
+    assert data["model"] == "bge-small-en-v1.5"
+    assert data["usage"]["prompt_tokens"] > 0
+
+    # 2. List of strings input, base64 format
+    resp = client.post(
+        "/v1/embeddings",
+        json={
+            "model": "bge-small-en-v1.5",
+            "input": ["hello", "world"],
+            "encoding_format": "base64",
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert len(data["data"]) == 2
+    assert isinstance(data["data"][0]["embedding"], str)
+    # Base64 decoder check
+    import base64
+    import struct
+    decoded = base64.b64decode(data["data"][0]["embedding"])
+    floats = struct.unpack(f"{len(decoded)//4}f", decoded)
+    assert len(floats) == 384
+
+
+def test_embedding_model_guards(client):
+    # Load bge (embedding) and tinyllama (text generation)
+    _load_and_wait(client, model_id="bge-small-en-v1.5")
+    _load_and_wait(client, model_id=MODEL_ID)
+
+    # 1. Chat completions fails with embedding model
+    resp = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "bge-small-en-v1.5",
+            "messages": [{"role": "user", "content": "hi"}],
+        },
+    )
+    assert resp.status_code == 400
+    assert "embedding model" in resp.json()["detail"]
+
+    # 2. Responses API fails with embedding model
+    resp = client.post(
+        "/v1/responses",
+        json={
+            "model": "bge-small-en-v1.5",
+            "input": "hi",
+        },
+    )
+    assert resp.status_code == 400
+    assert "embedding model" in resp.json()["detail"]
+
+    # 3. Embeddings fails with text generation model
+    resp = client.post(
+        "/v1/embeddings",
+        json={
+            "model": MODEL_ID,
+            "input": "hi",
+        },
+    )
+    assert resp.status_code == 400
+    assert "not an embedding model" in resp.json()["detail"]
+
+
+def test_chat_completions_with_structured_output_format(client):
+    _load_and_wait(client)
+    # The server accepts response_format in request payload
+    resp = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": MODEL_ID,
+            "messages": [{"role": "user", "content": "return json please"}],
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "test_schema",
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "name": {"type": "string"},
+                            "age": {"type": "integer"},
+                        },
+                        "required": ["name", "age"],
+                    },
+                },
+            },
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    content = resp.json()["choices"][0]["message"]["content"]
+    assert "Mock engine" in content
+
+
+def test_search_hf_endpoint(client):
+    # Mocking the HTTP request to Hugging Face
+    # Let's verify that the endpoint parses the search query and returns results
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.json = MagicMock(return_value=[
+        {
+            "id": "Qwen/Qwen2.5-0.5B-Instruct",
+            "downloads": 15000,
+            "likes": 350,
+            "pipeline_tag": "text-generation",
+            "tags": ["text-generation", "openvino"],
+        }
+    ])
+
+    with patch("httpx.AsyncClient.get", new_callable=AsyncMock) as mock_get:
+        mock_get.return_value = mock_resp
+        resp = client.get("/v1/models/search-hf?query=qwen")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 1
+        assert data[0]["id"] == "Qwen/Qwen2.5-0.5B-Instruct"
+        assert data[0]["backend"] == "openvino-genai"
+        assert data[0]["suggested_local_id"] == "qwen-qwen2.5-0.5b-instruct"
+        mock_get.assert_called_once()
+
+
+def test_download_custom_endpoint(client):
+    # Backup original models.json to avoid polluting the workspace on disk
+    from app.config import BASE_DIR
+    models_file = BASE_DIR / "models.json"
+    backup = models_file.read_text(encoding="utf-8")
+    try:
+        # Dynamic download/conversion scheduling with custom INT4 options
+        resp = client.post(
+            "/v1/models/download-custom",
+            json={
+                "model_id": "smollm2-135m-custom-int4",
+                "name": "SmolLM2 135M Custom INT4",
+                "source_model": "HuggingFaceTB/SmolLM2-135M-Instruct",
+                "backend": "openvino-genai",
+                "weight_format": "int4",
+                "group_size": -1,
+                "ratio": 0.9,
+                "sym": True,
+                "load_after": False,
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert data["status"] in ("converting", "queued_convert", "ready")
+        assert data["model"]["id"] == "smollm2-135m-custom-int4"
+        assert data["model"]["backend"] == "openvino-genai"
+    finally:
+        models_file.write_text(backup, encoding="utf-8")
+
+
+def test_speculative_decoding_load(client):
+    # Speculative decoding draft model parameter passed to /v1/models/load
+    from unittest.mock import patch
+    manager = client.app.state.manager
+    
+    with patch.object(manager, "_build_engine") as mock_build:
+        resp = client.post(
+            "/v1/models/load",
+            json={
+                "model": "tinyllama-1.1b-chat-fp16",
+                "draft_model": "bge-small-en-v1.5",
+            }
+        )
+        assert resp.status_code == 200
+        # Wait for loading to finish
+        import time
+        for _ in range(50):
+            if "tinyllama-1.1b-chat-fp16" not in manager.load_tasks:
+                break
+            time.sleep(0.02)
+        
+        # Verify draft model path was resolved and passed
+        mock_build.assert_called_once()
+        args = mock_build.call_args[0]
+        # First positional argument is model_id, second is device, third is draft_model_path
+        assert args[0] == "tinyllama-1.1b-chat-fp16"
+        assert "bge-small-en-v1.5" in args[2]  # draft path contains model name
+
+
+def test_dynamic_lora_generation(client):
+    # Dynamic LoRA parameters inside completions call
+    from unittest.mock import patch
+    
+    _load_and_wait(client)
+    engine = client.app.state.manager.engines[MODEL_ID]
+    
+    # Wrap engine.generate to invoke _build_adapters_config (since MockEngine is used in tests)
+    orig_generate = engine.generate
+    def fake_generate(prompt, params):
+        engine._build_adapters_config(params)
+        return orig_generate(prompt, params)
+    engine.generate = fake_generate
+    
+    with patch.object(engine, "_build_adapters_config") as mock_adapters:
+        resp = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": MODEL_ID,
+                "messages": [{"role": "user", "content": "hi"}],
+                "lora_path": "models/adapters/test-lora",
+                "lora_alpha": 0.8,
+            }
+        )
+        assert resp.status_code == 200
+        mock_adapters.assert_called_once()
+        params = mock_adapters.call_args[0][0]
+        assert params.lora_path == "models/adapters/test-lora"
+        assert params.lora_alpha == 0.8
+
+
+def test_multiple_api_keys_and_tracking():
+    # Test setting multiple API keys via Settings and tracking metrics
+    from fastapi.testclient import TestClient
+    from app.config import Settings
+    from app.server import create_app
+    from app.config import BASE_DIR
+    
+    settings = Settings(
+        models_file=BASE_DIR / "models.json",
+        models_dir=BASE_DIR / "models" / "openvino",
+        api_key="key1,key2",
+        force_mock=True,
+    )
+    app = create_app(settings)
+    with TestClient(app) as test_client:
+        # Request with key1
+        resp = test_client.get("/v1/models", headers={"Authorization": "Bearer key1"})
+        assert resp.status_code == 200
+        
+        # Request with key2
+        resp = test_client.get("/v1/models", headers={"Authorization": "Bearer key2"})
+        assert resp.status_code == 200
+        
+        # Request with invalid key
+        resp = test_client.get("/v1/models", headers={"Authorization": "Bearer key3"})
+        assert resp.status_code == 401
+        
+        # Verify stats endpoint
+        resp = test_client.get("/v1/keys/stats", headers={"Authorization": "Bearer key1"})
+        assert resp.status_code == 200
+        stats = resp.json()
+        assert len(stats) == 2
+        # Obfuscated key names should be returned
+        names = [s["key_name"] for s in stats]
+        assert "ke..." in names

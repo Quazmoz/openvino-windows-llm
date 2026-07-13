@@ -38,6 +38,9 @@ class GenParams:
     do_sample: bool = True
     seed: int | None = None
     stop: list[str] | None = None
+    response_format: dict | None = None
+    lora_path: str | None = None
+    lora_alpha: float | None = 1.0
 
 
 @dataclass
@@ -104,8 +107,14 @@ class BaseEngine:
     def stream(self, prompt: str, params: GenParams) -> StreamHandle:
         raise NotImplementedError
 
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        raise NotImplementedError
+
     def close(self) -> None:  # noqa: B027 - intentional no-op default
         pass
+
+    def _build_adapters_config(self, params: GenParams) -> Any | None:
+        return None
 
 
 # --- Mock engine -----------------------------------------------------------
@@ -158,6 +167,35 @@ class MockEngine(BaseEngine):
         return handle
 
 
+class MockEmbeddingEngine(BaseEngine):
+    """A mock engine that yields dummy embeddings (length 384) for testing."""
+
+    backend = "mock-embeddings"
+
+    def __init__(self, model_id: str, model_path: str = "", device: str = "MOCK") -> None:
+        self.model_id = model_id
+        self.model_path = str(model_path)
+        self.device = device
+        self._closed = False
+
+    def count_tokens(self, text: str) -> int:
+        return max(1, len(text) // 4)
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        if self._closed:
+            raise RuntimeError(f"Mock embedding engine for '{self.model_id}' is closed")
+        import random
+        results = []
+        for text in texts:
+            # Deterministic generation using a seed derived from the text hash
+            rng = random.Random(hash(text))
+            results.append([rng.uniform(-1.0, 1.0) for _ in range(384)])
+        return results
+
+    def close(self) -> None:
+        self._closed = True
+
+
 # --- OpenVINO GenAI engine -------------------------------------------------
 
 
@@ -172,6 +210,7 @@ class OpenVINOEngine(BaseEngine):
         model_path: str,
         device: str,
         plugin_config: dict | None = None,
+        draft_model_path: str | None = None,
     ) -> None:
         import openvino_genai as ov_genai  # lazy: only imported on a real load
 
@@ -182,8 +221,26 @@ class OpenVINOEngine(BaseEngine):
         self._closed = False
 
         config = dict(plugin_config or {})
+        
+        draft_obj = None
+        if draft_model_path:
+            logger.info("Initializing speculative decoding with draft model: %s", draft_model_path)
+            draft_model_fn = getattr(ov_genai, "draft_model", None)
+            if draft_model_fn is not None:
+                draft_device = self.device
+                if self.device == "NPU":
+                    draft_device = "CPU"
+                try:
+                    draft_obj = draft_model_fn(str(draft_model_path), draft_device)
+                except Exception as exc:
+                    logger.error("Failed to load draft model: %s", exc)
+            else:
+                logger.warning("openvino_genai.draft_model is not available in this OpenVINO version.")
+
         logger.info("Loading '%s' on %s from %s", model_id, self.device, self.model_path)
-        if config:
+        if draft_obj is not None:
+            self._pipe = ov_genai.LLMPipeline(self.model_path, self.device, draft_model=draft_obj, **config)
+        elif config:
             self._pipe = ov_genai.LLMPipeline(self.model_path, self.device, **config)
         else:
             self._pipe = ov_genai.LLMPipeline(self.model_path, self.device)
@@ -238,11 +295,48 @@ class OpenVINOEngine(BaseEngine):
             with contextlib.suppress(Exception):
                 cfg.stop_strings = set(params.stop)
                 cfg.include_stop_str_in_output = False
+        if params.response_format:
+            StructuredOutputConfig = getattr(self._ov, "StructuredOutputConfig", None)
+            if StructuredOutputConfig is not None:
+                import json
+                fmt_type = params.response_format.get("type")
+                if fmt_type == "json_schema":
+                    schema_data = params.response_format.get("json_schema", {}).get("schema")
+                    if schema_data:
+                        so_cfg = StructuredOutputConfig()
+                        so_cfg.json_schema = json.dumps(schema_data)
+                        with contextlib.suppress(Exception):
+                            so_cfg.backend = "xgrammar"
+                        cfg.structured_output_config = so_cfg
+                elif fmt_type == "json_object":
+                    so_cfg = StructuredOutputConfig()
+                    so_cfg.json_schema = json.dumps({"type": "object"})
+                    with contextlib.suppress(Exception):
+                        so_cfg.backend = "xgrammar"
+                    cfg.structured_output_config = so_cfg
         return cfg
+
+    def _build_adapters_config(self, params: GenParams):
+        if not params.lora_path:
+            return None
+        Adapter = getattr(self._ov, "Adapter", None)
+        AdapterConfig = getattr(self._ov, "AdapterConfig", None)
+        if Adapter is not None and AdapterConfig is not None:
+            try:
+                adapters_config = AdapterConfig()
+                adapters_config.add(Adapter(str(params.lora_path)), alpha=float(params.lora_alpha or 1.0))
+                return adapters_config
+            except Exception as exc:
+                logger.error("Failed to construct AdapterConfig for %s: %s", params.lora_path, exc)
+        return None
 
     def generate(self, prompt: str, params: GenParams) -> GenResult:
         self._check_closed()
-        result = self._pipe.generate(prompt, self._build_config(params))
+        kwargs = {}
+        adapters_config = self._build_adapters_config(params)
+        if adapters_config is not None:
+            kwargs["adapters"] = adapters_config
+        result = self._pipe.generate(prompt, self._build_config(params), **kwargs)
         text = _result_text(result)
         return GenResult(text=text, completion_tokens=self.count_tokens(text))
 
@@ -258,7 +352,11 @@ class OpenVINOEngine(BaseEngine):
 
         def worker() -> None:
             try:
-                pipe.generate(prompt, cfg, streamer)
+                kwargs = {}
+                adapters_config = self._build_adapters_config(params)
+                if adapters_config is not None:
+                    kwargs["adapters"] = adapters_config
+                pipe.generate(prompt, cfg, streamer, **kwargs)
             except BaseException as exc:  # noqa: BLE001 - surface to the consumer
                 handle.finish(error=exc)
                 return
@@ -284,6 +382,87 @@ def _result_text(result) -> str:
     except Exception:
         pass
     return str(result)
+
+
+class OpenVINOEmbeddingEngine(BaseEngine):
+    """Wraps ``openvino_genai.TextEmbeddingPipeline``. Constructed only when OpenVINO exists."""
+
+    backend = "openvino-embeddings"
+
+    def __init__(
+        self,
+        model_id: str,
+        model_path: str,
+        device: str,
+        plugin_config: dict | None = None,
+    ) -> None:
+        import openvino_genai as ov_genai
+
+        self._ov = ov_genai
+        self.model_id = model_id
+        self.model_path = str(model_path)
+        self.device = normalize_device(device)
+        self._closed = False
+
+        config = dict(plugin_config or {})
+        logger.info("Loading embedding model '%s' on %s from %s", model_id, self.device, self.model_path)
+        if config:
+            self._pipe = ov_genai.TextEmbeddingPipeline(self.model_path, self.device, **config)
+        else:
+            self._pipe = ov_genai.TextEmbeddingPipeline(self.model_path, self.device)
+        logger.info("Embedding model '%s' ready on %s", model_id, self.device)
+
+    def _check_closed(self) -> None:
+        if self._closed:
+            raise RuntimeError(f"Embedding engine for '{self.model_id}' is closed")
+
+    def count_tokens(self, text: str) -> int:
+        self._check_closed()
+        return max(1, len(text) // 4)
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        self._check_closed()
+        if hasattr(self._pipe, "embed_documents"):
+            res = self._pipe.embed_documents(texts)
+        elif hasattr(self._pipe, "embed"):
+            res = self._pipe.embed(texts)
+        else:
+            raise AttributeError(
+                "OpenVINO TextEmbeddingPipeline does not have 'embed_documents' or 'embed' methods."
+            )
+
+        # Defensively convert the returned object (numpy array, ov.Tensor or list of lists)
+        # to a standard Python list of lists of floats.
+        if hasattr(res, "tolist"):
+            return res.tolist()
+        if hasattr(res, "embeddings"):
+            embeddings = res.embeddings
+            if hasattr(embeddings, "tolist"):
+                return embeddings.tolist()
+        try:
+            import numpy as np
+            return np.array(res).tolist()
+        except Exception:
+            pass
+
+        # Manual conversion fallback
+        result = []
+        for row in res:
+            if hasattr(row, "tolist"):
+                result.append(row.tolist())
+            else:
+                try:
+                    result.append([float(x) for x in row])
+                except Exception:
+                    result.append(float(row))
+        return result
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        logger.info("Closing embedding engine for '%s'", self.model_id)
+        self._pipe = None
 
 
 # --- Factory ---------------------------------------------------------------
@@ -325,6 +504,8 @@ def create_engine(
     max_prompt_len: int | None = None,
     force_mock: bool = False,
     cache_dir: str | Path | None = None,
+    backend: str = "openvino-genai",
+    draft_model_path: str | None = None,
 ) -> BaseEngine:
     """Create the appropriate engine for the current environment.
 
@@ -332,10 +513,18 @@ def create_engine(
     forced, so the server stays usable for frontend/API work everywhere.
     """
     device = normalize_device(device)
+    is_embedding = "embedding" in backend.lower()
+
     if force_mock or not is_openvino_available():
         reason = "forced" if force_mock else "OpenVINO not installed"
-        logger.info("Using MOCK engine for '%s' (%s)", model_id, reason)
-        return MockEngine(model_id, model_path, device if force_mock else "MOCK")
+        if is_embedding:
+            logger.info("Using MOCK embedding engine for '%s' (%s)", model_id, reason)
+            return MockEmbeddingEngine(model_id, model_path, device if force_mock else "MOCK")
+        else:
+            logger.info("Using MOCK engine for '%s' (%s)", model_id, reason)
+            return MockEngine(model_id, model_path, device if force_mock else "MOCK")
 
     plugin_config = build_plugin_config(device, max_prompt_len, cache_dir)
-    return OpenVINOEngine(model_id, model_path, device, plugin_config)
+    if is_embedding:
+        return OpenVINOEmbeddingEngine(model_id, model_path, device, plugin_config)
+    return OpenVINOEngine(model_id, model_path, device, plugin_config, draft_model_path=draft_model_path)

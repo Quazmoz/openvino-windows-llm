@@ -67,6 +67,9 @@ class ChatCompletionRequest(BaseModel):
     tool_choice: Any | None = None  # "auto" | "none" | "required" | {type, function}
     stop: str | list[str] | None = None  # stop sequence(s) that end generation
     seed: int | None = None  # seed the sampler for reproducible output (best effort)
+    response_format: Any | None = None  # response format constraint (JSON object or JSON Schema)
+    lora_path: str | None = None  # path to safetensors LoRA weights
+    lora_alpha: float | None = 1.0  # scaling factor for LoRA weights
 
 
 class ChatCompletionMessage(BaseModel):
@@ -106,6 +109,8 @@ class ResponseRequest(BaseModel):
     max_output_tokens: int | None = Field(default=512, ge=1)
     temperature: float | None = Field(default=0.7, ge=0.0, le=2.0)
     stream: bool | None = False
+    lora_path: str | None = None
+    lora_alpha: float | None = 1.0
 
 
 class ResponseOutputMessage(BaseModel):
@@ -131,12 +136,17 @@ class ResponseObject(BaseModel):
 class ModelLoadRequest(BaseModel):
     model: str
     device: str | None = None  # override the server default device for this load
+    draft_model: str | None = None  # catalog model id or path to draft model for speculative decoding
 
 
 class ModelConvertRequest(BaseModel):
     model: str
     device: str | None = None  # optional device to use if loading after conversion
     load_after: bool = True
+    weight_format: str | None = None
+    group_size: int | None = None
+    ratio: float | None = None
+    sym: bool | None = None
 
 
 class ModelUnloadRequest(BaseModel):
@@ -190,3 +200,52 @@ class ChatExportRequest(BaseModel):
     messages: list[ChatMessage]
     model: str | None = None
     device: str | None = None
+
+
+# --- Embeddings -----------------------------------------------------------
+
+
+class EmbeddingRequest(BaseModel):
+    model: str
+    input: str | list[str]
+    user: str | None = None
+    encoding_format: str | None = Field(default="float", pattern=r"^(float|base64)$")
+
+
+class EmbeddingResponseData(BaseModel):
+    object: str = "embedding"
+    index: int
+    embedding: list[float] | str
+
+
+class EmbeddingResponseUsage(BaseModel):
+    prompt_tokens: int
+    total_tokens: int
+
+
+class EmbeddingResponse(BaseModel):
+    object: str = "list"
+    data: list[EmbeddingResponseData]
+    model: str
+    usage: EmbeddingResponseUsage
+
+
+class DownloadCustomRequest(BaseModel):
+    model_id: str = Field(
+        min_length=1,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]*$",
+        description="Filesystem-safe model identifier, for example smollm2-135m-int4.",
+    )
+    name: str = Field(min_length=1, max_length=160)
+    source_model: str = Field(min_length=1, max_length=240)
+    backend: str = Field(default="openvino-genai", pattern=r"^(openvino-genai|openvino-embeddings)$")
+    weight_format: str = Field(default="int4", pattern=r"^(int4|int8|fp16)$")
+    group_size: int | None = None
+    ratio: float | None = None
+    sym: bool | None = None
+    recommended_device: str = Field(default="CPU", min_length=1, max_length=64)
+    max_context_len: int = Field(default=2048, ge=128, le=262144)
+    max_output_tokens: int = Field(default=512, ge=0, le=65536)
+    description: str | None = None
+    load_after: bool = True

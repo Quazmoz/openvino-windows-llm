@@ -2086,6 +2086,162 @@
             cursor: not-allowed;
             box-shadow: none;
         }
+
+        /* Hugging Face Explorer & Quantization Styles */
+        .modal-tabs {
+            display: flex;
+            border-bottom: 1px solid var(--border);
+            background: var(--surface-1);
+        }
+        .modal-tab-btn {
+            flex: 1;
+            background: none;
+            border: none;
+            color: var(--text-2);
+            font-size: 11px;
+            font-weight: 600;
+            padding: 14px;
+            cursor: pointer;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            transition: all 0.2s;
+            border-bottom: 2px solid transparent;
+            outline: none;
+        }
+        .modal-tab-btn:hover {
+            color: var(--text-1);
+            background: var(--surface-2);
+        }
+        .modal-tab-btn.active {
+            color: var(--primary);
+            border-bottom-color: var(--primary);
+        }
+        .modal-panel {
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+        .modal-panel.hidden {
+            display: none !important;
+        }
+        .search-row {
+            display: flex;
+            gap: 8px;
+        }
+        .search-row input {
+            flex: 1;
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            color: var(--text-1);
+            font-family: inherit;
+            font-size: 13px;
+            padding: 10px 12px;
+            border-radius: var(--radius-sm);
+            outline: none;
+        }
+        .search-row input:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px var(--primary-glow);
+        }
+        .search-row button {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 10px 16px;
+            font-size: 13px;
+            font-weight: 600;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+        }
+        .search-row button:hover {
+            filter: brightness(1.08);
+        }
+        .search-results-list {
+            max-height: 200px;
+            overflow-y: auto;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            background: var(--surface-2);
+        }
+        .search-result-item {
+            padding: 12px 14px;
+            border-bottom: 1px solid var(--border);
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: background 0.15s;
+        }
+        .search-result-item:last-child {
+            border-bottom: none;
+        }
+        .search-result-item:hover {
+            background: var(--surface-3);
+        }
+        .search-result-name {
+            font-weight: 600;
+            font-size: 13px;
+            color: var(--text-1);
+            margin-bottom: 4px;
+        }
+        .search-result-meta {
+            font-size: 11px;
+            color: var(--text-3);
+            display: flex;
+            gap: 10px;
+        }
+        .search-result-badge {
+            font-size: 9px;
+            padding: 2px 6px;
+            background: var(--border);
+            color: var(--text-2);
+            border-radius: 4px;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+        .search-result-select-btn {
+            background: var(--surface-3);
+            border: 1px solid var(--border);
+            color: var(--text-1);
+            padding: 6px 12px;
+            font-size: 11px;
+            font-weight: 600;
+            border-radius: 12px;
+            cursor: pointer;
+        }
+        .search-result-select-btn:hover {
+            background: var(--primary);
+            color: white;
+            border-color: var(--primary);
+        }
+        .search-empty {
+            padding: 30px 20px;
+            text-align: center;
+            color: var(--text-3);
+            font-size: 13px;
+        }
+        .quant-options-group {
+            border: 1px solid var(--border);
+            padding: 14px;
+            border-radius: var(--radius-sm);
+            background: var(--surface-2);
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            margin-top: 4px;
+        }
+        .quant-options-group.hidden {
+            display: none !important;
+        }
+        .quant-options-title {
+            font-size: 10px;
+            font-weight: 700;
+            color: var(--primary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 4px;
+        }
     </style>
 </head>
 
@@ -2475,59 +2631,124 @@
                 <h3>Add Custom Model</h3>
                 <button id="close-modal-btn" class="close-btn" title="Close modal">&times;</button>
             </div>
-            <form id="custom-model-form" class="modal-form" onsubmit="return false;">
-                <div class="form-group">
-                    <label for="custom-source-model">Hugging Face Repo ID</label>
-                    <input type="text" id="custom-source-model" required
-                        placeholder="e.g. HuggingFaceTB/SmolLM2-135M-Instruct">
-                </div>
-                <div class="form-group">
-                    <label for="custom-model-id">Model ID (Unique Identifier)</label>
-                    <input type="text" id="custom-model-id" required placeholder="e.g. smollm2-135m-int4">
-                </div>
-                <div class="form-group">
-                    <label for="custom-model-name">Display Name</label>
-                    <input type="text" id="custom-model-name" required placeholder="e.g. SmolLM2 135M Instruct INT4">
+            
+            <div class="modal-tabs">
+                <button type="button" class="modal-tab-btn active" id="tab-btn-search">Search HF Hub</button>
+                <button type="button" class="modal-tab-btn" id="tab-btn-manual">Manual Add</button>
+            </div>
+
+            <!-- Panel 1: HF Hub Search -->
+            <div id="modal-panel-search" class="modal-panel">
+                <div class="search-row">
+                    <input type="text" id="hf-search-input" placeholder="Search HF Hub, e.g. Qwen2.5-0.5B or bge-small">
+                    <button type="button" id="hf-search-btn">Search</button>
                 </div>
                 <div class="form-group-row">
                     <div class="form-group">
-                        <label for="custom-weight-format">Weight Format</label>
-                        <select id="custom-weight-format">
-                            <option value="int4">INT4 (Recommended for NPU)</option>
-                            <option value="int8">INT8</option>
-                            <option value="fp16">FP16</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label for="custom-recommended-device">Recommended Device</label>
-                        <select id="custom-recommended-device">
-                            <option value="NPU">NPU</option>
-                            <option value="CPU">CPU</option>
-                            <option value="GPU">GPU</option>
-                            <option value="AUTO">AUTO</option>
+                        <label for="hf-search-task">Task / Type</label>
+                        <select id="hf-search-task">
+                            <option value="text-generation">Text Generation (LLMs)</option>
+                            <option value="embeddings">Embeddings (sentence transformers)</option>
                         </select>
                     </div>
                 </div>
-                <div class="form-group-row">
+                <div class="search-results-list" id="hf-search-results">
+                    <div class="search-empty">Type a query and click Search to browse models on Hugging Face.</div>
+                </div>
+            </div>
+
+            <!-- Panel 2: Manual Registration & Quantization -->
+            <div id="modal-panel-manual" class="modal-panel hidden">
+                <form id="custom-model-form" class="modal-form" onsubmit="return false;" style="padding: 0; gap: 14px;">
                     <div class="form-group">
-                        <label for="custom-max-context-len">Max Context Length</label>
-                        <input type="number" id="custom-max-context-len" required value="2048">
+                        <label for="custom-source-model">Hugging Face Repo ID</label>
+                        <input type="text" id="custom-source-model" required
+                            placeholder="e.g. HuggingFaceTB/SmolLM2-135M-Instruct">
+                    </div>
+                    <div class="form-group-row">
+                        <div class="form-group">
+                            <label for="custom-model-id">Model ID (Unique)</label>
+                            <input type="text" id="custom-model-id" required placeholder="e.g. smollm2-135m-int4">
+                        </div>
+                        <div class="form-group">
+                            <label for="custom-backend">Model Backend</label>
+                            <select id="custom-backend">
+                                <option value="openvino-genai">Text Generation (openvino-genai)</option>
+                                <option value="openvino-embeddings">Embeddings (openvino-embeddings)</option>
+                            </select>
+                        </div>
                     </div>
                     <div class="form-group">
-                        <label for="custom-max-output-tokens">Max Output Tokens</label>
-                        <input type="number" id="custom-max-output-tokens" required value="512">
+                        <label for="custom-model-name">Display Name</label>
+                        <input type="text" id="custom-model-name" required placeholder="e.g. SmolLM2 135M Instruct INT4">
                     </div>
-                </div>
-                <div class="form-group">
-                    <label for="custom-description">Description</label>
-                    <input type="text" id="custom-description" placeholder="Optional description...">
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn-cancel" id="cancel-modal-btn">Cancel</button>
-                    <button type="submit" class="btn-submit" id="submit-modal-btn">Register & Convert</button>
-                </div>
-            </form>
-        </div>
+                    <div class="form-group-row">
+                        <div class="form-group">
+                            <label for="custom-weight-format">Weight Format</label>
+                            <select id="custom-weight-format">
+                                <option value="int4">INT4 (Recommended for NPU)</option>
+                                <option value="int8">INT8</option>
+                                <option value="fp16">FP16</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="custom-recommended-device">Recommended Device</label>
+                            <select id="custom-recommended-device">
+                                <option value="NPU">NPU</option>
+                                <option value="CPU">CPU</option>
+                                <option value="GPU">GPU</option>
+                                <option value="AUTO">AUTO</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Granular INT4 Quantization Options -->
+                    <div class="quant-options-group" id="custom-int4-options">
+                        <div class="quant-options-title">Granular Quantization Options (INT4)</div>
+                        <div class="form-group-row">
+                            <div class="form-group">
+                                <label for="custom-group-size">Group Size</label>
+                                <select id="custom-group-size">
+                                    <option value="128">128 (Standard)</option>
+                                    <option value="-1">-1 (Channel-wise / NPU optimized)</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <div class="setting-label-row">
+                                    <label for="custom-ratio">INT4 Weight Ratio</label>
+                                    <span id="custom-ratio-val" style="font-size: 11px; font-weight: bold; color: var(--text-2);">1.0</span>
+                                </div>
+                                <input type="range" id="custom-ratio" min="0" max="1" step="0.1" value="1.0">
+                            </div>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 8px; margin-top: 4px;">
+                            <input type="checkbox" id="custom-sym" checked style="cursor: pointer; width: auto;">
+                            <label for="custom-sym" style="cursor: pointer; text-transform: none; font-size: 11px; font-weight: normal; color: var(--text-2);">
+                                Enable Symmetric Quantization (Highly recommended for NPUs)
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="form-group-row">
+                        <div class="form-group">
+                            <label for="custom-max-context-len">Max Context Length</label>
+                            <input type="number" id="custom-max-context-len" required value="2048">
+                        </div>
+                        <div class="form-group">
+                            <label for="custom-max-output-tokens">Max Output Tokens</label>
+                            <input type="number" id="custom-max-output-tokens" required value="512">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="custom-description">Description</label>
+                        <input type="text" id="custom-description" placeholder="Optional description...">
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn-cancel" id="cancel-modal-btn">Cancel</button>
+                        <button type="submit" class="btn-submit" id="submit-modal-btn">Download & Convert</button>
+                    </div>
+                </form>
+            </div>
     </div>
 
     <script>
@@ -3808,9 +4029,133 @@
         runBenchmarkBtn.addEventListener('click', runBenchmark);
 
         // ── Custom Model Modal Event Listeners ─────────────────
+        const tabBtnSearch = document.getElementById('tab-btn-search');
+        const tabBtnManual = document.getElementById('tab-btn-manual');
+        const modalPanelSearch = document.getElementById('modal-panel-search');
+        const modalPanelManual = document.getElementById('modal-panel-manual');
+        const hfSearchInput = document.getElementById('hf-search-input');
+        const hfSearchBtn = document.getElementById('hf-search-btn');
+        const hfSearchTask = document.getElementById('hf-search-task');
+        const hfSearchResults = document.getElementById('hf-search-results');
+        const customBackend = document.getElementById('custom-backend');
+        const customInt4Options = document.getElementById('custom-int4-options');
+        const customGroupSize = document.getElementById('custom-group-size');
+        const customRatio = document.getElementById('custom-ratio');
+        const customRatioVal = document.getElementById('custom-ratio-val');
+        const customSym = document.getElementById('custom-sym');
+
+        // Tab Switching
+        tabBtnSearch.addEventListener('click', () => {
+            tabBtnSearch.classList.add('active');
+            tabBtnManual.classList.remove('active');
+            modalPanelSearch.classList.remove('hidden');
+            modalPanelManual.classList.add('hidden');
+        });
+        tabBtnManual.addEventListener('click', () => {
+            tabBtnManual.classList.add('active');
+            tabBtnSearch.classList.remove('active');
+            modalPanelManual.classList.remove('hidden');
+            modalPanelSearch.classList.add('hidden');
+        });
+
+        // Toggle INT4 options
+        function updateInt4Visibility() {
+            if (customWeightFormat.value === 'int4') {
+                customInt4Options.classList.remove('hidden');
+            } else {
+                customInt4Options.classList.add('hidden');
+            }
+        }
+        customWeightFormat.addEventListener('change', updateInt4Visibility);
+        updateInt4Visibility();
+
+        // Update ratio label
+        customRatio.addEventListener('input', () => {
+            customRatioVal.textContent = customRatio.value;
+        });
+
+        // Hugging Face Search
+        async function runHfSearch() {
+            const query = hfSearchInput.value.trim();
+            if (!query) return;
+            hfSearchResults.innerHTML = '<div class="search-empty">Searching Hugging Face Hub…</div>';
+            try {
+                const res = await fetch(`/v1/models/search-hf?query=${encodeURIComponent(query)}&task=${encodeURIComponent(hfSearchTask.value)}`, {
+                    headers: authHeaders()
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+                if (data.length === 0) {
+                    hfSearchResults.innerHTML = '<div class="search-empty">No models found matching your query.</div>';
+                    return;
+                }
+                hfSearchResults.innerHTML = '';
+                data.forEach(item => {
+                    const row = document.createElement('div');
+                    row.className = 'search-result-item';
+                    
+                    const left = document.createElement('div');
+                    
+                    const name = document.createElement('div');
+                    name.className = 'search-result-name';
+                    name.textContent = item.id;
+                    left.appendChild(name);
+                    
+                    const meta = document.createElement('div');
+                    meta.className = 'search-result-meta';
+                    meta.innerHTML = `
+                        <span>⬇️ ${item.downloads.toLocaleString()}</span>
+                        <span>❤️ ${item.likes.toLocaleString()}</span>
+                        <span class="search-result-badge">${item.pipeline_tag || 'model'}</span>
+                    `;
+                    left.appendChild(meta);
+                    row.appendChild(left);
+                    
+                    const right = document.createElement('div');
+                    const selectBtn = document.createElement('button');
+                    selectBtn.type = 'button';
+                    selectBtn.className = 'search-result-select-btn';
+                    selectBtn.textContent = 'Select';
+                    selectBtn.addEventListener('click', () => {
+                        // Populate form
+                        customSourceModel.value = item.id;
+                        customBackend.value = item.backend;
+                        updateAutofilledFields();
+                        // Auto-set context window based on common defaults
+                        if (item.id.toLowerCase().includes('llama-3.2') || item.id.toLowerCase().includes('qwen2.5')) {
+                            customMaxContextLen.value = 4096;
+                        } else if (item.id.toLowerCase().includes('bge') || item.id.toLowerCase().includes('embedding')) {
+                            customMaxContextLen.value = 512;
+                        } else {
+                            customMaxContextLen.value = 2048;
+                        }
+                        // Switch to manual tab
+                        tabBtnManual.click();
+                        customModelName.focus();
+                    });
+                    right.appendChild(selectBtn);
+                    row.appendChild(right);
+                    
+                    hfSearchResults.appendChild(row);
+                });
+            } catch (err) {
+                hfSearchResults.innerHTML = `<div class="search-empty" style="color: var(--danger);">Search failed: ${err.message}</div>`;
+            }
+        }
+        hfSearchBtn.addEventListener('click', runHfSearch);
+        hfSearchInput.addEventListener('keydown', e => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                runHfSearch();
+            }
+        });
+
         addModelBtn.addEventListener('click', () => {
             customModelModal.classList.remove('hidden');
-            customSourceModel.focus();
+            tabBtnSearch.click();
+            hfSearchInput.value = '';
+            hfSearchResults.innerHTML = '<div class="search-empty">Type a query and click Search to browse models on Hugging Face.</div>';
+            hfSearchInput.focus();
         });
         closeModalBtn.addEventListener('click', () => customModelModal.classList.add('hidden'));
         cancelModalBtn.addEventListener('click', () => customModelModal.classList.add('hidden'));
@@ -3837,42 +4182,44 @@
         customSourceModel.addEventListener('input', updateAutofilledFields);
         customWeightFormat.addEventListener('change', updateAutofilledFields);
 
-        // Submit form
+        // Submit form (one-step register and convert)
         customModelForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             const body = {
                 model_id: customModelId.value.trim(),
                 name: customModelName.value.trim(),
                 source_model: customSourceModel.value.trim(),
+                backend: customBackend.value,
                 weight_format: customWeightFormat.value,
+                group_size: customWeightFormat.value === 'int4' ? parseInt(customGroupSize.value, 10) : null,
+                ratio: customWeightFormat.value === 'int4' ? parseFloat(customRatio.value) : null,
+                sym: customWeightFormat.value === 'int4' ? customSym.checked : null,
                 recommended_device: customRecommendedDevice.value,
                 max_context_len: parseInt(customMaxContextLen.value, 10),
                 max_output_tokens: parseInt(customMaxOutputTokens.value, 10),
-                description: customDescription.value.trim() || null
+                load_after: true
             };
             const previousSubmitText = submitModalBtn.textContent;
             submitModalBtn.disabled = true;
             submitModalBtn.textContent = 'Registering...';
             try {
-                const res = await fetch('/v1/models/register', {
+                const res = await fetch('/v1/models/download-custom', {
                     method: 'POST',
                     headers: authHeaders({ 'Content-Type': 'application/json' }),
                     body: JSON.stringify(body)
                 });
                 const data = await res.json();
                 if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
-                showToast(`Registered custom model: ${body.name}`);
+                showToast(`Queued custom model: ${body.name}`);
                 customModelModal.classList.add('hidden');
                 customModelForm.reset();
 
                 // Select the model
                 waitingForModelId = body.model_id;
+                setStatusPolling(1000);
                 await updateStatus();
-
-                // Start conversion
-                await requestModelConvert(body.model_id);
             } catch (err) {
-                showToast(`Failed to register model: ${err.message}`);
+                showToast(`Failed to start custom download: ${err.message}`);
             } finally {
                 submitModalBtn.disabled = false;
                 submitModalBtn.textContent = previousSubmitText;

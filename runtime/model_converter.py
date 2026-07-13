@@ -37,6 +37,9 @@ def build_export_command(
     *,
     trust_remote_code: bool = True,
     task: str | None = None,
+    group_size: int | None = None,
+    ratio: float | None = None,
+    sym: bool | None = None,
 ) -> list[str]:
     """Construct the ``optimum-cli export openvino`` argument list."""
     cmd = [
@@ -52,6 +55,13 @@ def build_export_command(
         cmd += ["--task", task]
     if trust_remote_code:
         cmd.append("--trust-remote-code")
+    if weight_format == "int4":
+        if group_size is not None:
+            cmd += ["--group-size", str(group_size)]
+        if ratio is not None:
+            cmd += ["--ratio", str(ratio)]
+        if sym:
+            cmd.append("--sym")
     cmd.append(str(output_dir))
     return cmd
 
@@ -63,6 +73,9 @@ def export_model(
     *,
     trust_remote_code: bool = True,
     task: str | None = None,
+    group_size: int | None = None,
+    ratio: float | None = None,
+    sym: bool | None = None,
 ) -> Path:
     """Run the export and return the output directory.
 
@@ -84,7 +97,14 @@ def export_model(
             source_model,
         )
     cmd = build_export_command(
-        source_model, output_dir, weight_format, trust_remote_code=trust_remote_code, task=task
+        source_model,
+        output_dir,
+        weight_format,
+        trust_remote_code=trust_remote_code,
+        task=task,
+        group_size=group_size,
+        ratio=ratio,
+        sym=sym,
     )
     logger.info("Running: %s", " ".join(cmd))
     subprocess.run(cmd, check=True)
@@ -125,6 +145,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--task", default=None, help="Optional optimum task override")
     parser.add_argument("--no-trust-remote-code", action="store_true")
+    parser.add_argument("--group-size", type=int, default=None, help="Quantization group size for INT4")
+    parser.add_argument("--ratio", type=float, default=None, help="Quantization ratio for INT4 (0.0 to 1.0)")
+    parser.add_argument("--sym", action="store_true", help="Enable symmetric quantization for INT4")
     args = parser.parse_args(argv)
 
     if args.id:
@@ -144,6 +167,9 @@ def main(argv: list[str] | None = None) -> int:
             weight_format,
             trust_remote_code=not args.no_trust_remote_code,
             task=args.task,
+            group_size=args.group_size,
+            ratio=args.ratio,
+            sym=args.sym,
         )
     except (RuntimeError, subprocess.CalledProcessError) as exc:
         print(f"Conversion failed: {exc}", file=sys.stderr)

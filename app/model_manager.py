@@ -341,7 +341,7 @@ class ModelManager:
 
     # --- loading -----------------------------------------------------------
 
-    def _build_engine(self, model_id: str, device: str) -> BaseEngine:
+    def _build_engine(self, model_id: str, device: str, draft_model_path: str | None = None) -> BaseEngine:
         cfg = self.catalog[model_id]
         return create_engine(
             model_id=model_id,
@@ -350,9 +350,11 @@ class ModelManager:
             max_prompt_len=cfg.max_prompt_len,
             force_mock=self.force_mock,
             cache_dir=self.settings.cache_dir,
+            backend=cfg.backend,
+            draft_model_path=draft_model_path,
         )
 
-    async def _load_task(self, model_id: str, device: str) -> None:
+    async def _load_task(self, model_id: str, device: str, draft_model: str | None = None) -> None:
         cfg = self.catalog[model_id]
         try:
             try:
@@ -402,8 +404,15 @@ class ModelManager:
                                 )
 
                       self._set_progress(model_id, "loading", f"Loading {cfg.name} on {device}…")
+                      draft_model_path = None
+                      if draft_model:
+                          if draft_model in self.catalog:
+                              draft_model_path = str(self.catalog[draft_model].abs_path(BASE_DIR))
+                          else:
+                              draft_model_path = draft_model
+
                       loop = asyncio.get_running_loop()
-                      engine = await loop.run_in_executor(None, self._build_engine, model_id, device)
+                      engine = await loop.run_in_executor(None, self._build_engine, model_id, device, draft_model_path)
 
                       self.engines[model_id] = engine
                       self.locks[model_id] = asyncio.Lock()
@@ -429,7 +438,13 @@ class ModelManager:
         finally:
             self.load_tasks.pop(model_id, None)
 
-    def schedule_load(self, model_id: str, device: str | None = None) -> asyncio.Task | None:
+    def schedule_load(
+        self,
+        model_id: str,
+        device: str | None = None,
+        *,
+        draft_model: str | None = None,
+    ) -> asyncio.Task | None:
         if model_id not in self.catalog:
             logger.warning("Refusing to load unknown model '%s'", model_id)
             return None
@@ -447,7 +462,7 @@ class ModelManager:
         cfg = self.catalog[model_id]
         self._set_status(model_id, "queued")
         self._set_progress(model_id, "queued", f"Queued {cfg.name} to load on {device}…")
-        task = asyncio.create_task(self._load_task(model_id, device))
+        task = asyncio.create_task(self._load_task(model_id, device, draft_model=draft_model))
         self.load_tasks[model_id] = task
         return task
 
@@ -482,13 +497,22 @@ class ModelManager:
 
     # --- conversion --------------------------------------------------------
 
-    async def _convert_task(self, model_id: str, device: str, load_after: bool) -> None:
+    async def _convert_task(
+        self,
+        model_id: str,
+        device: str,
+        load_after: bool,
+        weight_format: str | None = None,
+        group_size: int | None = None,
+        ratio: float | None = None,
+        sym: bool | None = None,
+    ) -> None:
         cfg = self.catalog[model_id]
         proc: asyncio.subprocess.Process | None = None
         try:
             try:
                 async with self._convert_lock:
-                    if registry.is_downloaded(cfg, BASE_DIR):
+                    if registry.is_downloaded(cfg, BASE_DIR) and not weight_format:
                         self._set_progress(model_id, "ready", f"{cfg.name} is already converted.", percent=100)
                         self._clear_status(model_id)
                         if load_after:
@@ -512,6 +536,10 @@ class ModelManager:
                         "runtime.model_converter",
                         "--id",
                         model_id,
+                        *(["--weight-format", weight_format] if weight_format else []),
+                        *(["--group-size", str(group_size)] if group_size is not None else []),
+                        *(["--ratio", str(ratio)] if ratio is not None else []),
+                        *(["--sym"] if sym else []),
                         cwd=str(BASE_DIR),
                         stdout=asyncio.subprocess.PIPE,
                         stderr=asyncio.subprocess.PIPE,
@@ -562,6 +590,10 @@ class ModelManager:
         device: str | None = None,
         *,
         load_after: bool = True,
+        weight_format: str | None = None,
+        group_size: int | None = None,
+        ratio: float | None = None,
+        sym: bool | None = None,
     ) -> asyncio.Task | None:
         if model_id not in self.catalog:
             logger.warning("Refusing to convert unknown model '%s'", model_id)
@@ -577,7 +609,7 @@ class ModelManager:
             return existing
 
         cfg = self.catalog[model_id]
-        if registry.is_downloaded(cfg, BASE_DIR):
+        if registry.is_downloaded(cfg, BASE_DIR) and not weight_format:
             self._set_progress(model_id, "ready", f"{cfg.name} is already converted.", percent=100)
             if load_after:
                 return self.schedule_load(model_id, device)
@@ -586,7 +618,17 @@ class ModelManager:
         device = device_check.normalize_device(device or self.settings.device)
         self._set_status(model_id, "queued_convert")
         self._set_progress(model_id, "queued", f"Queued {cfg.name} for OpenVINO conversion…")
-        task = asyncio.create_task(self._convert_task(model_id, device, load_after))
+        task = asyncio.create_task(
+            self._convert_task(
+                model_id,
+                device,
+                load_after,
+                weight_format=weight_format,
+                group_size=group_size,
+                ratio=ratio,
+                sym=sym,
+            )
+        )
         self.convert_tasks[model_id] = task
         return task
 

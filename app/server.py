@@ -10,12 +10,14 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import base64
 import contextvars
 import json
 import logging
 import os
 import re
 import secrets
+import struct
 import sys
 import time
 import uuid
@@ -37,6 +39,11 @@ from app.openai_api import (
     ChatCompletionResponseChoice,
     ChatExportRequest,
     ChatMessage,
+    DownloadCustomRequest,
+    EmbeddingRequest,
+    EmbeddingResponse,
+    EmbeddingResponseData,
+    EmbeddingResponseUsage,
     ModelConvertRequest,
     ModelDeleteRequest,
     ModelLoadRequest,
@@ -58,6 +65,7 @@ from runtime.benchmark_runner import (
 from runtime.openvino_engine import BaseEngine, GenParams
 
 request_id_var = contextvars.ContextVar("request_id", default="")
+active_key_var = contextvars.ContextVar("active_key", default="default")
 
 # Client-supplied X-Request-ID values must be short and log-safe (no newlines /
 # control characters that could forge log lines); anything else is replaced.
@@ -119,6 +127,8 @@ def _params_for(
     *,
     stop: list[str] | None = None,
     seed: int | None = None,
+    lora_path: str | None = None,
+    lora_alpha: float | None = 1.0,
 ) -> GenParams:
     available = max(max_context_len - prompt_tokens - 8, 16)
     requested = request_max_tokens or 512
@@ -131,6 +141,8 @@ def _params_for(
         do_sample=temp > 0,
         stop=stop or None,
         seed=seed,
+        lora_path=lora_path,
+        lora_alpha=lora_alpha,
     )
 
 
@@ -152,6 +164,13 @@ def _resolve_or_400(manager: model_manager.ModelManager, model_id: str) -> BaseE
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except model_manager.NoModelsLoaded as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+def encode_embedding(embedding: list[float], format_type: str | None) -> list[float] | str:
+    if format_type == "base64":
+        packed = struct.pack(f"{len(embedding)}f", *embedding)
+        return base64.b64encode(packed).decode("utf-8")
+    return embedding
 
 
 def create_app(settings: Settings) -> FastAPI:
@@ -230,23 +249,64 @@ def create_app(settings: Settings) -> FastAPI:
             allow_headers=["*"],
         )
 
-    # --- auth (optional) ---------------------------------------------------
+    # --- auth & enterprise keys tracking -----------------------------------
 
     _auth_failures: dict[str, list[float]] = {}
     _AUTH_FAILURE_WINDOW = 300.0  # seconds
     _AUTH_FAILURE_MAX = 10  # failures in window before adding delay
 
+    valid_keys = [k.strip() for k in (settings.api_key or "").split(",") if k.strip()]
+    key_stats: dict[str, dict] = {}
+    for k in valid_keys:
+        obfuscated = k[:5] + "..." if len(k) > 7 else k[:2] + "..."
+        key_stats[k] = {
+            "key_name": obfuscated,
+            "requests": 0,
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_latency": 0.0,
+        }
+    if not key_stats:
+        key_stats["default"] = {
+            "key_name": "default (no auth)",
+            "requests": 0,
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_latency": 0.0,
+        }
+
+    def record_key_metrics(prompt_tokens: int, completion_tokens: int, latency: float):
+        k = active_key_var.get()
+        if k not in key_stats:
+            k = "default" if "default" in key_stats else list(key_stats.keys())[0] if key_stats else None
+        if k and k in key_stats:
+            stats = key_stats[k]
+            stats["requests"] += 1
+            stats["prompt_tokens"] += prompt_tokens
+            stats["completion_tokens"] += completion_tokens
+            stats["total_latency"] += latency
+
     def require_api_key(authorization: str | None = Header(default=None)) -> None:
         if not settings.api_key:
+            active_key_var.set("default")
             return
 
-        expected = f"Bearer {settings.api_key}"
-        # Constant-time comparison so a wrong key can't be recovered via timing.
-        # Compare bytes to tolerate any non-ASCII header without raising.
-        if authorization is None or not secrets.compare_digest(
-            authorization.encode("utf-8"), expected.encode("utf-8")
-        ):
-            # Track auth failures per-source (uses X-Forwarded-For if behind a proxy).
+        valid_keys_list = [k.strip() for k in settings.api_key.split(",") if k.strip()]
+        if not valid_keys_list:
+            active_key_var.set("default")
+            return
+
+        if authorization is None or not authorization.startswith("Bearer "):
+            raise HTTPException(status_code=401, detail="Invalid or missing API key")
+
+        token = authorization[len("Bearer "):]
+        matched_key = None
+        for k in valid_keys_list:
+            if secrets.compare_digest(token.encode("utf-8"), k.encode("utf-8")):
+                matched_key = k
+                break
+
+        if matched_key is None:
             now = time.monotonic()
             source = "unknown"
             cutoff = now - _AUTH_FAILURE_WINDOW
@@ -258,7 +318,13 @@ def create_app(settings: Settings) -> FastAPI:
                 logger.warning("Repeated auth failures from source '%s' (%d in window)", source, len(failures))
             raise HTTPException(status_code=401, detail="Invalid or missing API key")
 
+        active_key_var.set(matched_key)
+
     auth = [Depends(require_api_key)]
+
+    @app.get("/v1/keys/stats", dependencies=auth)
+    async def get_keys_stats():
+        return list(key_stats.values())
 
     # --- UI + health -------------------------------------------------------
 
@@ -338,7 +404,7 @@ def create_app(settings: Settings) -> FastAPI:
             raise HTTPException(status_code=404, detail=f"Unknown model '{req.model}'")
         device = _normalize_device_or_400(req.device)
 
-        task = manager.schedule_load(req.model, device)
+        task = manager.schedule_load(req.model, device, draft_model=req.draft_model)
         entry = manager.catalog_entry(req.model)
         if task is None and entry["is_loaded"]:
             return {
@@ -363,9 +429,17 @@ def create_app(settings: Settings) -> FastAPI:
                 status_code=400, detail=f"Model '{req.model}' has no source model configured"
             )
 
-        task = manager.schedule_convert(req.model, device, load_after=req.load_after)
+        task = manager.schedule_convert(
+            req.model,
+            device,
+            load_after=req.load_after,
+            weight_format=req.weight_format,
+            group_size=req.group_size,
+            ratio=req.ratio,
+            sym=req.sym,
+        )
         entry = manager.catalog_entry(req.model)
-        if task is None and entry["is_downloaded"]:
+        if task is None and entry["is_downloaded"] and not req.weight_format:
             return {
                 "status": entry["status"],
                 "message": f"{entry['name']} is already converted.",
@@ -426,6 +500,80 @@ def create_app(settings: Settings) -> FastAPI:
             "message": f"Deleted {entry['name']} ({freed_gb} GB freed).",
             "freed_gb": freed_gb,
             "freed_bytes": result["freed_bytes"],
+            "model": entry,
+        }
+
+    @app.get("/v1/models/search-hf", dependencies=auth)
+    async def search_hf(query: str, limit: int = 10, task: str | None = None):
+        import httpx
+        filter_str = task or "text-generation"
+        if task == "embeddings" or task == "embedding":
+            filter_str = "sentence-similarity"
+
+        url = "https://huggingface.co/api/models"
+        params = {
+            "search": query,
+            "filter": filter_str,
+            "sort": "downloads",
+            "direction": -1,
+            "limit": limit,
+        }
+
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            try:
+                resp = await client.get(url, params=params)
+                resp.raise_for_status()
+                data = resp.json()
+            except Exception as exc:
+                logger.error("Failed to query Hugging Face API: %s", exc)
+                raise HTTPException(status_code=502, detail=f"Hugging Face API unreachable: {exc}")
+
+        results = []
+        for item in data:
+            model_id = item.get("id")
+            safe_id = re.sub(r"[^A-Za-z0-9_.-]", "-", model_id.lower())
+
+            pipeline_tag = item.get("pipeline_tag", "")
+            is_embedding = pipeline_tag in ("sentence-similarity", "feature-extraction")
+            backend = "openvino-embeddings" if is_embedding else "openvino-genai"
+
+            results.append({
+                "id": model_id,
+                "suggested_local_id": safe_id,
+                "downloads": item.get("downloads", 0),
+                "likes": item.get("likes", 0),
+                "pipeline_tag": pipeline_tag,
+                "backend": backend,
+                "tags": item.get("tags", []),
+            })
+        return results
+
+    @app.post("/v1/models/download-custom", dependencies=auth)
+    async def download_custom(req: DownloadCustomRequest):
+        # 1. Register the model config in the catalog if not present
+        if req.model_id not in manager.catalog:
+            try:
+                # We need to construct req object compatible with ModelRegisterRequest
+                # Since req shares identical keys, we can just pass it directly
+                manager.register_model(req)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        # 2. Schedule download and conversion
+        device = _normalize_device_or_400(None)
+        task = manager.schedule_convert(
+            req.model_id,
+            device,
+            load_after=req.load_after,
+            weight_format=req.weight_format,
+            group_size=req.group_size,
+            ratio=req.ratio,
+            sym=req.sym,
+        )
+        entry = manager.catalog_entry(req.model_id)
+        return {
+            "status": entry["status"],
+            "message": f"Successfully registered and queued {entry['name']} for download/conversion.",
             "model": entry,
         }
 
@@ -601,6 +749,11 @@ def create_app(settings: Settings) -> FastAPI:
     @app.post("/v1/chat/completions", dependencies=auth)
     async def chat_completions(request: ChatCompletionRequest):
         engine = _resolve_or_400(manager, request.model)
+        if "embedding" in getattr(engine, "backend", "").lower():
+            raise HTTPException(
+                status_code=400,
+                detail=f"Model '{request.model}' is an embedding model and cannot be used for text completions.",
+            )
         cfg = manager.config_for(engine.model_id)
         max_context_len = cfg.max_context_len if cfg else 2048
         max_prompt_len = cfg.max_prompt_len if cfg else 1536
@@ -621,6 +774,8 @@ def create_app(settings: Settings) -> FastAPI:
             max_context_len,
             stop=chat_format.normalize_stop(request.stop),
             seed=request.seed,
+            lora_path=request.lora_path,
+            lora_alpha=request.lora_alpha,
         )
 
         if request.stream:
@@ -679,9 +834,11 @@ def create_app(settings: Settings) -> FastAPI:
                 loop = asyncio.get_running_loop()
                 completion_tokens = await loop.run_in_executor(None, engine.count_tokens, truncated)
 
+        latency = time.perf_counter() - start
         manager.record_request(
-            engine.model_id, current_prompt_tokens, completion_tokens, time.perf_counter() - start
+            engine.model_id, current_prompt_tokens, completion_tokens, latency
         )
+        record_key_metrics(current_prompt_tokens, completion_tokens, latency)
         return ChatCompletionResponse(
             id=f"chatcmpl-{uuid.uuid4().hex}",
             created=int(time.time()),
@@ -784,9 +941,11 @@ def create_app(settings: Settings) -> FastAPI:
 
             loop = asyncio.get_running_loop()
             completion_tokens = await loop.run_in_executor(None, engine.count_tokens, full_text)
+            latency = time.perf_counter() - start
             manager.record_request(
-                engine.model_id, prompt_tokens, completion_tokens, time.perf_counter() - start
+                engine.model_id, prompt_tokens, completion_tokens, latency
             )
+            record_key_metrics(prompt_tokens, completion_tokens, latency)
 
             if request.stream_options and request.stream_options.include_usage:
                 usage_payload = {
@@ -807,11 +966,70 @@ def create_app(settings: Settings) -> FastAPI:
         finally:
             request_id_var.reset(token)
 
+    # --- embeddings API ----------------------------------------------------
+
+    @app.post("/v1/embeddings", dependencies=auth, response_model=EmbeddingResponse)
+    async def create_embeddings(request: EmbeddingRequest):
+        engine = _resolve_or_400(manager, request.model)
+        if "embedding" not in getattr(engine, "backend", "").lower():
+            raise HTTPException(
+                status_code=400,
+                detail=f"Model '{request.model}' is not an embedding model.",
+            )
+
+        inputs = [request.input] if isinstance(request.input, str) else request.input
+        if not inputs:
+            raise HTTPException(status_code=400, detail="Input cannot be empty.")
+
+        start = time.perf_counter()
+        loop = asyncio.get_running_loop()
+        try:
+            embeddings_list = await loop.run_in_executor(None, engine.embed, inputs)
+        except Exception as exc:
+            logger.exception("Embedding generation failed: %s", exc)
+            raise HTTPException(status_code=500, detail=f"Inference failed: {exc}") from exc
+
+        prompt_tokens = 0
+        for text in inputs:
+            prompt_tokens += engine.count_tokens(text)
+
+        latency = time.perf_counter() - start
+        manager.record_request(
+            engine.model_id, prompt_tokens, 0, latency
+        )
+        record_key_metrics(prompt_tokens, 0, latency)
+
+        data = []
+        for idx, emb in enumerate(embeddings_list):
+            encoded = encode_embedding(emb, request.encoding_format)
+            data.append(
+                EmbeddingResponseData(
+                    object="embedding",
+                    index=idx,
+                    embedding=encoded,
+                )
+            )
+
+        return EmbeddingResponse(
+            object="list",
+            data=data,
+            model=request.model,
+            usage=EmbeddingResponseUsage(
+                prompt_tokens=prompt_tokens,
+                total_tokens=prompt_tokens,
+            )
+        )
+
     # --- responses API (n8n) ----------------------------------------------
 
     @app.post("/v1/responses", dependencies=auth)
     async def create_response(request: ResponseRequest):
         engine = _resolve_or_400(manager, request.model)
+        if "embedding" in getattr(engine, "backend", "").lower():
+            raise HTTPException(
+                status_code=400,
+                detail=f"Model '{request.model}' is an embedding model and cannot be used for response generation.",
+            )
         cfg = manager.config_for(engine.model_id)
         max_context_len = cfg.max_context_len if cfg else 2048
         max_prompt_len = cfg.max_prompt_len if cfg else 1536
@@ -827,7 +1045,13 @@ def create_app(settings: Settings) -> FastAPI:
             dict_messages, engine.apply_chat_template, engine.count_tokens, max_prompt_len
         )
         params = _params_for(
-            request.max_output_tokens, request.temperature, 1.0, prompt_tokens, max_context_len
+            request.max_output_tokens,
+            request.temperature,
+            1.0,
+            prompt_tokens,
+            max_context_len,
+            lora_path=request.lora_path,
+            lora_alpha=request.lora_alpha,
         )
 
         response_id = f"resp-{uuid.uuid4().hex}"
@@ -918,9 +1142,11 @@ def create_app(settings: Settings) -> FastAPI:
 
         loop = asyncio.get_running_loop()
         completion_tokens = await loop.run_in_executor(None, engine.count_tokens, full_text)
+        latency = time.perf_counter() - start
         manager.record_request(
-            engine.model_id, prompt_tokens, completion_tokens, time.perf_counter() - start
+            engine.model_id, prompt_tokens, completion_tokens, latency
         )
+        record_key_metrics(prompt_tokens, completion_tokens, latency)
 
         yield event(
             "response.output_text.done",
