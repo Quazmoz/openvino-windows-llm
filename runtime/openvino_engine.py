@@ -14,6 +14,7 @@ Both expose the same small interface:
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import logging
 import queue
 import re
@@ -113,39 +114,26 @@ class BaseEngine:
     def close(self) -> None:  # noqa: B027 - intentional no-op default
         pass
 
-    def _build_adapters_config(self, params: GenParams) -> Any | None:
-        return None
-
-
-# --- Mock engine -----------------------------------------------------------
-
-
-class MockEngine(BaseEngine):
-    """A dependency-free engine that streams a canned reply. For UI/API testing."""
-
-    backend = "mock"
-
-    def __init__(self, model_id: str, model_path: str = "", device: str = "MOCK") -> None:
-        self.model_id = model_id
-        self.model_path = str(model_path)
-        self.device = device
-
-    def apply_chat_template(self, messages: list[dict], add_generation_prompt: bool = True) -> str:
-        return chat_format.render_chatml(messages, add_generation_prompt)
-
-    def count_tokens(self, text: str) -> int:
-        return max(1, len(text) // 4)
-
-    def _reply(self, prompt: str) -> str:
-        matches = re.findall(r"<\|im_start\|>user\n(.*?)<\|im_end\|>", prompt, re.DOTALL)
-        last_user = matches[-1].strip() if matches else "(no user message found)"
-        return (
-            "**Mock engine** — OpenVINO is not active, so this is a canned response.\n\n"
-            f"You said: _{last_user[:400]}_\n\n"
-            "This lets you exercise the full chat UI, streaming, tokens, and the OpenAI API on any "
-            "machine. On Windows with OpenVINO installed and a converted model, you'll get real "
-            f"output instead.\n\n```python\nprint('hello from {self.model_id}')\n```"
-        )
+    def _build_adapters_config(self, params: GenParams):
+        if not params.lora_path:
+            return None
+        Adapter = getattr(self._ov, "Adapter", None)
+        AdapterConfig = getattr(self._ov, "AdapterConfig", None)
+        if Adapter is None or AdapterConfig is None:
+            raise RuntimeError(
+                "This OpenVINO GenAI version does not support dynamic LoRA adapters."
+            )
+        try:
+            adapters_config = AdapterConfig()
+            adapters_config.add(
+                Adapter(str(params.lora_path)),
+                alpha=float(params.lora_alpha or 1.0),
+            )
+            return adapters_config
+        except Exception as exc:
+            raise RuntimeError(
+                f"Failed to construct LoRA adapter config for '{params.lora_path}': {exc}"
+            ) from exc
 
     def generate(self, prompt: str, params: GenParams) -> GenResult:
         text = self._reply(prompt)
@@ -188,8 +176,9 @@ class MockEmbeddingEngine(BaseEngine):
 
         results = []
         for text in texts:
-            # Deterministic generation using a seed derived from the text hash
-            rng = random.Random(hash(text))
+            # Use a stable digest rather than Python's process-randomized hash().
+            seed = int.from_bytes(hashlib.sha256(text.encode("utf-8")).digest()[:8], "big")
+            rng = random.Random(seed)
             results.append([rng.uniform(-1.0, 1.0) for _ in range(384)])
         return results
 
@@ -227,18 +216,16 @@ class OpenVINOEngine(BaseEngine):
         if draft_model_path:
             logger.info("Initializing speculative decoding with draft model: %s", draft_model_path)
             draft_model_fn = getattr(ov_genai, "draft_model", None)
-            if draft_model_fn is not None:
-                draft_device = self.device
-                if self.device == "NPU":
-                    draft_device = "CPU"
-                try:
-                    draft_obj = draft_model_fn(str(draft_model_path), draft_device)
-                except Exception as exc:
-                    logger.error("Failed to load draft model: %s", exc)
-            else:
-                logger.warning(
-                    "openvino_genai.draft_model is not available in this OpenVINO version."
+            if draft_model_fn is None:
+                raise RuntimeError(
+                    "This OpenVINO GenAI version does not support speculative decoding."
                 )
+            try:
+                draft_obj = draft_model_fn(str(draft_model_path), self.device)
+            except Exception as exc:
+                raise RuntimeError(
+                    f"Failed to load draft model '{draft_model_path}': {exc}"
+                ) from exc
 
         logger.info("Loading '%s' on %s from %s", model_id, self.device, self.model_path)
         if draft_obj is not None:
@@ -309,14 +296,12 @@ class OpenVINOEngine(BaseEngine):
                 if fmt_type == "json_schema":
                     schema_data = params.response_format.get("json_schema", {}).get("schema")
                     if schema_data:
-                        so_cfg = StructuredOutputConfig()
-                        so_cfg.json_schema = json.dumps(schema_data)
+                        so_cfg = StructuredOutputConfig(json_schema=json.dumps(schema_data))
                         with contextlib.suppress(Exception):
                             so_cfg.backend = "xgrammar"
                         cfg.structured_output_config = so_cfg
                 elif fmt_type == "json_object":
-                    so_cfg = StructuredOutputConfig()
-                    so_cfg.json_schema = json.dumps({"type": "object"})
+                    so_cfg = StructuredOutputConfig(json_schema=json.dumps({"type": "object"}))
                     with contextlib.suppress(Exception):
                         so_cfg.backend = "xgrammar"
                     cfg.structured_output_config = so_cfg

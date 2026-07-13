@@ -343,6 +343,31 @@ class ModelManager:
 
     # --- loading -----------------------------------------------------------
 
+    def _resolve_draft_model_path(self, model_id: str, draft_model: str | None) -> str | None:
+        if not draft_model:
+            return None
+        if draft_model == model_id:
+            raise ValueError("Draft model must differ from the target model.")
+
+        draft_cfg = self.catalog.get(draft_model)
+        if draft_cfg is not None:
+            if "embedding" in draft_cfg.backend.lower():
+                raise ValueError(
+                    f"Draft model '{draft_model}' is an embedding model; "
+                    "speculative decoding requires a text-generation model."
+                )
+            if not self.force_mock and not registry.is_downloaded(draft_cfg, BASE_DIR):
+                raise ValueError(f"Draft model '{draft_model}' is not converted locally.")
+            return str(draft_cfg.abs_path(BASE_DIR))
+
+        path = Path(draft_model).expanduser()
+        path = path.resolve() if path.is_absolute() else (BASE_DIR / path).resolve()
+        if not path.is_dir():
+            raise ValueError(f"Draft model path does not exist or is not a directory: {path}")
+        if not self.force_mock and not registry.is_openvino_model_dir(path):
+            raise ValueError(f"Draft model path is not a converted OpenVINO model: {path}")
+        return str(path)
+
     def _build_engine(
         self, model_id: str, device: str, draft_model_path: str | None = None
     ) -> BaseEngine:
@@ -358,7 +383,9 @@ class ModelManager:
             draft_model_path=draft_model_path,
         )
 
-    async def _load_task(self, model_id: str, device: str, draft_model: str | None = None) -> None:
+    async def _load_task(
+        self, model_id: str, device: str, draft_model_path: str | None = None
+    ) -> None:
         cfg = self.catalog[model_id]
         try:
             try:
@@ -414,13 +441,6 @@ class ModelManager:
                                     )
 
                         self._set_progress(model_id, "loading", f"Loading {cfg.name} on {device}…")
-                        draft_model_path = None
-                        if draft_model:
-                            if draft_model in self.catalog:
-                                draft_model_path = str(self.catalog[draft_model].abs_path(BASE_DIR))
-                            else:
-                                draft_model_path = draft_model
-
                         loop = asyncio.get_running_loop()
                         engine = await loop.run_in_executor(
                             None, self._build_engine, model_id, device, draft_model_path
@@ -470,11 +490,14 @@ class ModelManager:
         if existing and not existing.done():
             return existing
 
+        draft_model_path = self._resolve_draft_model_path(model_id, draft_model)
         device = device_check.normalize_device(device or self.settings.device)
         cfg = self.catalog[model_id]
         self._set_status(model_id, "queued")
         self._set_progress(model_id, "queued", f"Queued {cfg.name} to load on {device}…")
-        task = asyncio.create_task(self._load_task(model_id, device, draft_model=draft_model))
+        task = asyncio.create_task(
+            self._load_task(model_id, device, draft_model_path=draft_model_path)
+        )
         self.load_tasks[model_id] = task
         return task
 
@@ -714,7 +737,7 @@ class ModelManager:
             name=req.name,
             description=req.description
             or f"Custom model registered via Web UI. Source: {req.source_model}",
-            backend="openvino-genai",
+            backend=getattr(req, "backend", "openvino-genai"),
             model_path=f"models/openvino/{req.model_id}",
             source_model=req.source_model,
             weight_format=req.weight_format,

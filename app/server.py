@@ -296,7 +296,7 @@ def create_app(settings: Settings) -> FastAPI:
             stats["completion_tokens"] += completion_tokens
             stats["total_latency"] += latency
 
-    def require_api_key(authorization: str | None = Header(default=None)) -> None:
+    async def require_api_key(authorization: str | None = Header(default=None)) -> None:
         if not settings.api_key:
             active_key_var.set("default")
             return

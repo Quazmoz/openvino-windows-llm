@@ -112,8 +112,10 @@ def export_model(
     return output_dir
 
 
-def _resolve_from_catalog(model_id: str) -> tuple[str, Path, str, str | None]:
-    """Look up source model, output dir, weight format, and Optimum task."""
+def _resolve_from_catalog(
+    model_id: str, *, include_task: bool = False
+) -> tuple[str, Path, str] | tuple[str, Path, str, str | None]:
+    """Look up catalog conversion settings, optionally including the Optimum task."""
     from app.config import Settings
     from app.model_registry import load_catalog
 
@@ -128,8 +130,11 @@ def _resolve_from_catalog(model_id: str) -> tuple[str, Path, str, str | None]:
         raise SystemExit(f"Model '{model_id}' has no 'source_model' in models.json")
     from app.config import BASE_DIR
 
+    result = (cfg.source_model, cfg.abs_path(BASE_DIR), cfg.weight_format)
+    if not include_task:
+        return result
     task = "feature-extraction" if "embedding" in cfg.backend.lower() else None
-    return cfg.source_model, cfg.abs_path(BASE_DIR), cfg.weight_format, task
+    return (*result, task)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -162,7 +167,9 @@ def main(argv: list[str] | None = None) -> int:
 
     task = args.task
     if args.id:
-        source_model, output_dir, weight_format, catalog_task = _resolve_from_catalog(args.id)
+        source_model, output_dir, weight_format, catalog_task = _resolve_from_catalog(
+            args.id, include_task=True
+        )
         weight_format = args.weight_format or weight_format
         task = task or catalog_task
     else:

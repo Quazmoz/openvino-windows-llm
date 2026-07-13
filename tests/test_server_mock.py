@@ -772,7 +772,7 @@ def test_speculative_decoding_load(client):
         args = mock_build.call_args[0]
         # First positional argument is model_id, second is device, third is draft_model_path
         assert args[0] == "tinyllama-1.1b-chat-fp16"
-        assert "smollm2-135m-fp16" in args[2]  # draft path contains model name
+        assert "smollm2-135m-instruct-fp16" in args[2]
 
 
 def test_dynamic_lora_generation(client):
