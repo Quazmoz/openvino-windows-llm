@@ -1,0 +1,407 @@
+name: Apply recent feature fixes
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/apply-recent-feature-fixes.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply-fixes:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Apply focused fixes and regression coverage
+        shell: bash
+        run: |
+          python <<'PY'
+          from pathlib import Path
+
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              file_path = Path(path)
+              text = file_path.read_text(encoding="utf-8")
+              count = text.count(old)
+              if count != 1:
+                  raise RuntimeError(f"Expected one match in {path}, found {count}: {old[:100]!r}")
+              file_path.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+
+          # app/server.py: actually forward structured-output settings, validate draft
+          # model requests synchronously, make API-key labels distinguishable, and record
+          # non-streaming Responses API key metrics.
+          replace_once(
+              "app/server.py",
+              "import contextvars\nimport json\n",
+              "import contextvars\nimport hashlib\nimport json\n",
+          )
+          replace_once(
+              "app/server.py",
+              "    stop: list[str] | None = None,\n    seed: int | None = None,\n    lora_path: str | None = None,\n",
+              "    stop: list[str] | None = None,\n    seed: int | None = None,\n    response_format: dict | None = None,\n    lora_path: str | None = None,\n",
+          )
+          replace_once(
+              "app/server.py",
+              "        stop=stop or None,\n        seed=seed,\n        lora_path=lora_path,\n",
+              "        stop=stop or None,\n        seed=seed,\n        response_format=response_format,\n        lora_path=lora_path,\n",
+          )
+          replace_once(
+              "app/server.py",
+              "    for k in valid_keys:\n        obfuscated = k[:5] + \"...\" if len(k) > 7 else k[:2] + \"...\"\n        key_stats[k] = {\n            \"key_name\": obfuscated,\n",
+              "    for k in valid_keys:\n        prefix = k[:5] if len(k) > 7 else k[:2]\n        fingerprint = hashlib.sha256(k.encode(\"utf-8\")).hexdigest()[:8]\n        key_stats[k] = {\n            \"key_name\": f\"{prefix}...{fingerprint}\",\n",
+          )
+          replace_once(
+              "app/server.py",
+              "        task = manager.schedule_load(req.model, device, draft_model=req.draft_model)\n        entry = manager.catalog_entry(req.model)\n",
+              "        try:\n            task = manager.schedule_load(req.model, device, draft_model=req.draft_model)\n        except ValueError as exc:\n            raise HTTPException(status_code=400, detail=str(exc)) from exc\n        entry = manager.catalog_entry(req.model)\n",
+          )
+          replace_once(
+              "app/server.py",
+              "            stop=chat_format.normalize_stop(request.stop),\n            seed=request.seed,\n            lora_path=request.lora_path,\n",
+              "            stop=chat_format.normalize_stop(request.stop),\n            seed=request.seed,\n            response_format=request.response_format,\n            lora_path=request.lora_path,\n",
+          )
+          replace_once(
+              "app/server.py",
+              "        start = time.perf_counter()\n        result = await manager.generate(engine, prompt, params)\n        manager.record_request(\n            engine.model_id, prompt_tokens, result.completion_tokens, time.perf_counter() - start\n        )\n        return ResponseObject(\n",
+              "        start = time.perf_counter()\n        result = await manager.generate(engine, prompt, params)\n        latency = time.perf_counter() - start\n        manager.record_request(engine.model_id, prompt_tokens, result.completion_tokens, latency)\n        record_key_metrics(prompt_tokens, result.completion_tokens, latency)\n        return ResponseObject(\n",
+          )
+
+          # app/openai_api.py: reject malformed feature inputs before they reach the
+          # runtime and constrain quantization/LoRA values.
+          replace_once(
+              "app/openai_api.py",
+              "    response_format: Any | None = None  # response format constraint (JSON object or JSON Schema)\n    lora_path: str | None = None  # path to safetensors LoRA weights\n    lora_alpha: float | None = 1.0  # scaling factor for LoRA weights\n",
+              "    response_format: dict[str, Any] | None = None  # JSON object or JSON Schema constraint\n    lora_path: str | None = None  # path to safetensors LoRA weights\n    lora_alpha: float | None = Field(default=1.0, gt=0.0)  # scaling factor for LoRA weights\n",
+          )
+          replace_once(
+              "app/openai_api.py",
+              "    lora_path: str | None = None\n    lora_alpha: float | None = 1.0\n",
+              "    lora_path: str | None = None\n    lora_alpha: float | None = Field(default=1.0, gt=0.0)\n",
+          )
+          replace_once(
+              "app/openai_api.py",
+              "    weight_format: str | None = None\n    group_size: int | None = None\n    ratio: float | None = None\n",
+              "    weight_format: str | None = Field(default=None, pattern=r\"^(int4|int8|fp16)$\")\n    group_size: int | None = Field(default=None, ge=-1)\n    ratio: float | None = Field(default=None, ge=0.0, le=1.0)\n",
+          )
+          replace_once(
+              "app/openai_api.py",
+              "    group_size: int | None = None\n    ratio: float | None = None\n    sym: bool | None = None\n    recommended_device: str = Field(default=\"CPU\", min_length=1, max_length=64)\n",
+              "    group_size: int | None = Field(default=None, ge=-1)\n    ratio: float | None = Field(default=None, ge=0.0, le=1.0)\n    sym: bool | None = None\n    recommended_device: str = Field(default=\"CPU\", min_length=1, max_length=64)\n",
+          )
+          replace_once(
+              "app/openai_api.py",
+              "    description: str | None = None\n    load_after: bool = True\n",
+              "    description: str | None = None\n    load_after: bool = True\n\n    @field_validator(\"recommended_device\")\n    @classmethod\n    def validate_recommended_device(cls, value: str) -> str:\n        try:\n            return device_check.validate_device_expression(value)\n        except device_check.DeviceValidationError as exc:\n            raise ValueError(str(exc)) from exc\n",
+          )
+
+          # app/model_registry.py: expose one canonical IR-directory check so draft
+          # model validation and normal catalog validation cannot drift.
+          replace_once(
+              "app/model_registry.py",
+              "def is_downloaded(cfg: ModelConfig, base_dir: Path) -> bool:\n    \"\"\"True if a converted OpenVINO IR directory exists for this model.\"\"\"\n    model_dir = cfg.abs_path(base_dir)\n    if not model_dir.is_dir():\n        return False\n    return any((model_dir / marker).exists() for marker in _IR_MARKERS)\n",
+              "def is_openvino_model_dir(model_dir: Path) -> bool:\n    \"\"\"Return whether *model_dir* contains a converted OpenVINO IR model.\"\"\"\n    model_dir = Path(model_dir)\n    return model_dir.is_dir() and any((model_dir / marker).exists() for marker in _IR_MARKERS)\n\n\ndef is_downloaded(cfg: ModelConfig, base_dir: Path) -> bool:\n    \"\"\"True if a converted OpenVINO IR directory exists for this model.\"\"\"\n    return is_openvino_model_dir(cfg.abs_path(base_dir))\n",
+          )
+
+          # app/model_manager.py: validate draft models before queuing work and retain
+          # the backend selected for custom embedding models.
+          replace_once(
+              "app/model_manager.py",
+              "    def _build_engine(self, model_id: str, device: str, draft_model_path: str | None = None) -> BaseEngine:\n",
+              "    def _resolve_draft_model_path(self, model_id: str, draft_model: str | None) -> str | None:\n        if not draft_model:\n            return None\n        if draft_model == model_id:\n            raise ValueError(\"Draft model must differ from the target model.\")\n\n        draft_cfg = self.catalog.get(draft_model)\n        if draft_cfg is not None:\n            if \"embedding\" in draft_cfg.backend.lower():\n                raise ValueError(\n                    f\"Draft model '{draft_model}' is an embedding model; speculative decoding requires a text-generation model.\"\n                )\n            if not self.force_mock and not registry.is_downloaded(draft_cfg, BASE_DIR):\n                raise ValueError(f\"Draft model '{draft_model}' is not converted locally.\")\n            return str(draft_cfg.abs_path(BASE_DIR))\n\n        path = Path(draft_model).expanduser()\n        path = path.resolve() if path.is_absolute() else (BASE_DIR / path).resolve()\n        if not path.is_dir():\n            raise ValueError(f\"Draft model path does not exist or is not a directory: {path}\")\n        if not self.force_mock and not registry.is_openvino_model_dir(path):\n            raise ValueError(f\"Draft model path is not a converted OpenVINO model: {path}\")\n        return str(path)\n\n    def _build_engine(self, model_id: str, device: str, draft_model_path: str | None = None) -> BaseEngine:\n",
+          )
+          replace_once(
+              "app/model_manager.py",
+              "    async def _load_task(self, model_id: str, device: str, draft_model: str | None = None) -> None:\n",
+              "    async def _load_task(\n        self, model_id: str, device: str, draft_model_path: str | None = None\n    ) -> None:\n",
+          )
+          replace_once(
+              "app/model_manager.py",
+              "                      draft_model_path = None\n                      if draft_model:\n                          if draft_model in self.catalog:\n                              draft_model_path = str(self.catalog[draft_model].abs_path(BASE_DIR))\n                          else:\n                              draft_model_path = draft_model\n\n                      loop = asyncio.get_running_loop()\n",
+              "                      loop = asyncio.get_running_loop()\n",
+          )
+          replace_once(
+              "app/model_manager.py",
+              "        device = device_check.normalize_device(device or self.settings.device)\n        cfg = self.catalog[model_id]\n",
+              "        draft_model_path = self._resolve_draft_model_path(model_id, draft_model)\n        device = device_check.normalize_device(device or self.settings.device)\n        cfg = self.catalog[model_id]\n",
+          )
+          replace_once(
+              "app/model_manager.py",
+              "        task = asyncio.create_task(self._load_task(model_id, device, draft_model=draft_model))\n",
+              "        task = asyncio.create_task(\n            self._load_task(model_id, device, draft_model_path=draft_model_path)\n        )\n",
+          )
+          replace_once(
+              "app/model_manager.py",
+              "            backend=\"openvino-genai\",\n            model_path=f\"models/openvino/{req.model_id}\",\n",
+              "            backend=getattr(req, \"backend\", \"openvino-genai\"),\n            model_path=f\"models/openvino/{req.model_id}\",\n",
+          )
+
+          # runtime/model_converter.py: infer the correct Optimum task for embedding
+          # models and validate granular INT4 values at the CLI boundary.
+          replace_once(
+              "runtime/model_converter.py",
+              "def _resolve_from_catalog(model_id: str) -> tuple[str, Path, str]:\n    \"\"\"Look up source model, output dir, and weight format from models.json.\"\"\"\n",
+              "def _resolve_from_catalog(model_id: str) -> tuple[str, Path, str, str | None]:\n    \"\"\"Look up source model, output dir, weight format, and Optimum task.\"\"\"\n",
+          )
+          replace_once(
+              "runtime/model_converter.py",
+              "    return cfg.source_model, cfg.abs_path(BASE_DIR), cfg.weight_format\n",
+              "    task = \"feature-extraction\" if \"embedding\" in cfg.backend.lower() else None\n    return cfg.source_model, cfg.abs_path(BASE_DIR), cfg.weight_format, task\n",
+          )
+          replace_once(
+              "runtime/model_converter.py",
+              "    args = parser.parse_args(argv)\n\n    if args.id:\n        source_model, output_dir, weight_format = _resolve_from_catalog(args.id)\n        weight_format = args.weight_format or weight_format\n",
+              "    args = parser.parse_args(argv)\n\n    if args.ratio is not None and not 0.0 <= args.ratio <= 1.0:\n        parser.error(\"--ratio must be between 0.0 and 1.0\")\n    if args.group_size is not None and args.group_size != -1 and args.group_size <= 0:\n        parser.error(\"--group-size must be -1 or a positive integer\")\n\n    task = args.task\n    if args.id:\n        source_model, output_dir, weight_format, catalog_task = _resolve_from_catalog(args.id)\n        weight_format = args.weight_format or weight_format\n        task = task or catalog_task\n",
+          )
+          replace_once(
+              "runtime/model_converter.py",
+              "            task=args.task,\n",
+              "            task=task,\n",
+          )
+
+          # runtime/openvino_engine.py: avoid silently disabling requested features,
+          # follow the current OpenVINO speculative-decoding device guidance, and
+          # make mock embeddings reproducible across Python processes.
+          replace_once(
+              "runtime/openvino_engine.py",
+              "import contextlib\nimport logging\n",
+              "import contextlib\nimport hashlib\nimport logging\n",
+          )
+          replace_once(
+              "runtime/openvino_engine.py",
+              "from pathlib import Path\n",
+              "from pathlib import Path\nfrom typing import Any\n",
+          )
+          replace_once(
+              "runtime/openvino_engine.py",
+              "            # Deterministic generation using a seed derived from the text hash\n            rng = random.Random(hash(text))\n",
+              "            # Use a stable digest rather than Python's process-randomized hash().\n            seed = int.from_bytes(hashlib.sha256(text.encode(\"utf-8\")).digest()[:8], \"big\")\n            rng = random.Random(seed)\n",
+          )
+          replace_once(
+              "runtime/openvino_engine.py",
+              "            draft_model_fn = getattr(ov_genai, \"draft_model\", None)\n            if draft_model_fn is not None:\n                draft_device = self.device\n                if self.device == \"NPU\":\n                    draft_device = \"CPU\"\n                try:\n                    draft_obj = draft_model_fn(str(draft_model_path), draft_device)\n                except Exception as exc:\n                    logger.error(\"Failed to load draft model: %s\", exc)\n            else:\n                logger.warning(\"openvino_genai.draft_model is not available in this OpenVINO version.\")\n",
+              "            draft_model_fn = getattr(ov_genai, \"draft_model\", None)\n            if draft_model_fn is None:\n                raise RuntimeError(\n                    \"This OpenVINO GenAI version does not support speculative decoding.\"\n                )\n            try:\n                draft_obj = draft_model_fn(str(draft_model_path), self.device)\n            except Exception as exc:\n                raise RuntimeError(f\"Failed to load draft model '{draft_model_path}': {exc}\") from exc\n",
+          )
+          replace_once(
+              "runtime/openvino_engine.py",
+              "                        so_cfg = StructuredOutputConfig()\n                        so_cfg.json_schema = json.dumps(schema_data)\n",
+              "                        so_cfg = StructuredOutputConfig(json_schema=json.dumps(schema_data))\n",
+          )
+          replace_once(
+              "runtime/openvino_engine.py",
+              "                    so_cfg = StructuredOutputConfig()\n                    so_cfg.json_schema = json.dumps({\"type\": \"object\"})\n",
+              "                    so_cfg = StructuredOutputConfig(\n                        json_schema=json.dumps({\"type\": \"object\"})\n                    )\n",
+          )
+          replace_once(
+              "runtime/openvino_engine.py",
+              "        if Adapter is not None and AdapterConfig is not None:\n            try:\n                adapters_config = AdapterConfig()\n                adapters_config.add(Adapter(str(params.lora_path)), alpha=float(params.lora_alpha or 1.0))\n                return adapters_config\n            except Exception as exc:\n                logger.error(\"Failed to construct AdapterConfig for %s: %s\", params.lora_path, exc)\n        return None\n",
+              "        if Adapter is None or AdapterConfig is None:\n            raise RuntimeError(\n                \"This OpenVINO GenAI version does not support dynamic LoRA adapters.\"\n            )\n        try:\n            adapters_config = AdapterConfig()\n            adapters_config.add(Adapter(str(params.lora_path)), alpha=float(params.lora_alpha or 1.0))\n            return adapters_config\n        except Exception as exc:\n            raise RuntimeError(\n                f\"Failed to construct LoRA adapter config for '{params.lora_path}': {exc}\"\n            ) from exc\n",
+          )
+
+          # Preserve the description entered in the custom-model UI.
+          replace_once(
+              "web/index.html",
+              "                max_output_tokens: parseInt(customMaxOutputTokens.value, 10),\n                load_after: true\n",
+              "                max_output_tokens: parseInt(customMaxOutputTokens.value, 10),\n                description: customDescription.value.trim() || null,\n                load_after: true\n",
+          )
+
+          # Repair mock-only tests that previously encoded invalid real-runtime behavior.
+          replace_once(
+              "tests/test_server_mock.py",
+              '                "draft_model": "bge-small-en-v1.5",\n',
+              '                "draft_model": "smollm2-135m-fp16",\n',
+          )
+          replace_once(
+              "tests/test_server_mock.py",
+              '        assert "bge-small-en-v1.5" in args[2]  # draft path contains model name\n',
+              '        assert "smollm2-135m-fp16" in args[2]  # draft path contains model name\n',
+          )
+          replace_once(
+              "tests/test_server_mock.py",
+              '        assert "ke..." in names\n',
+              '        assert len(set(names)) == 2\n        assert all(name.startswith("ke...") for name in names)\n',
+          )
+
+          Path("tests/test_recent_feature_regressions.py").write_text(
+              '''"""Regression coverage for the July 2026 OpenVINO feature expansion."""
+
+import hashlib
+import time
+from pathlib import Path
+
+from fastapi.testclient import TestClient
+
+from app.config import BASE_DIR, Settings
+from app.server import create_app
+from runtime.openvino_engine import GenResult
+
+MODEL_ID = "tinyllama-1.1b-chat-fp16"
+
+
+def _client(tmp_path: Path, *, api_key: str | None = None):
+    models_file = tmp_path / "models.json"
+    models_file.write_text((BASE_DIR / "models.json").read_text(encoding="utf-8"), encoding="utf-8")
+    settings = Settings(
+        host="127.0.0.1",
+        port=8000,
+        device="CPU",
+        models_file=models_file,
+        models_dir=BASE_DIR / "models" / "openvino",
+        default_model=None,
+        api_key=api_key,
+        force_mock=True,
+    )
+    return TestClient(create_app(settings))
+
+
+def _load(client: TestClient, model_id: str = MODEL_ID, headers: dict | None = None) -> None:
+    response = client.post("/v1/models/load", json={"model": model_id}, headers=headers or {})
+    assert response.status_code == 200, response.text
+    deadline = time.time() + 5
+    while time.time() < deadline:
+        status = client.get("/v1/system/status", headers=headers or {}).json()
+        if model_id in status["models"]["loaded"]:
+            return
+        time.sleep(0.02)
+    raise AssertionError(f"{model_id} did not load")
+
+
+def test_structured_output_is_forwarded_to_generation(tmp_path):
+    response_format = {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "person",
+            "schema": {
+                "type": "object",
+                "properties": {"name": {"type": "string"}},
+                "required": ["name"],
+            },
+        },
+    }
+    with _client(tmp_path) as client:
+        _load(client)
+        manager = client.app.state.manager
+        captured = {}
+
+        async def fake_generate(engine, prompt, params):
+            captured["response_format"] = params.response_format
+            return GenResult(text='{"name":"Ada"}', completion_tokens=4)
+
+        manager.generate = fake_generate
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": MODEL_ID,
+                "messages": [{"role": "user", "content": "Return a person"}],
+                "response_format": response_format,
+            },
+        )
+        assert response.status_code == 200, response.text
+        assert captured["response_format"] == response_format
+
+
+def test_embedding_model_cannot_be_used_as_speculative_draft(tmp_path):
+    with _client(tmp_path) as client:
+        response = client.post(
+            "/v1/models/load",
+            json={"model": MODEL_ID, "draft_model": "bge-small-en-v1.5"},
+        )
+        assert response.status_code == 400
+        assert "embedding model" in response.json()["detail"]
+        assert MODEL_ID not in client.app.state.manager.load_tasks
+
+
+def test_custom_embedding_registration_preserves_backend(tmp_path):
+    with _client(tmp_path) as client:
+        manager = client.app.state.manager
+
+        def fake_schedule_convert(model_id, device=None, **kwargs):
+            manager._set_status(model_id, "queued_convert")
+            return object()
+
+        manager.schedule_convert = fake_schedule_convert
+        response = client.post(
+            "/v1/models/download-custom",
+            json={
+                "model_id": "custom-embedding-regression",
+                "name": "Custom Embedding Regression",
+                "source_model": "BAAI/bge-small-en-v1.5",
+                "backend": "openvino-embeddings",
+                "weight_format": "fp16",
+                "recommended_device": "CPU",
+                "max_context_len": 512,
+                "max_output_tokens": 0,
+                "load_after": False,
+            },
+        )
+        assert response.status_code == 200, response.text
+        assert manager.catalog["custom-embedding-regression"].backend == "openvino-embeddings"
+        assert response.json()["model"]["backend"] == "openvino-embeddings"
+
+
+def test_nonstream_responses_are_attributed_to_the_calling_key(tmp_path):
+    api_keys = "alpha-key,beta-key"
+    beta_headers = {"Authorization": "Bearer beta-key"}
+    alpha_headers = {"Authorization": "Bearer alpha-key"}
+    with _client(tmp_path, api_key=api_keys) as client:
+        _load(client, headers=beta_headers)
+        response = client.post(
+            "/v1/responses",
+            headers=beta_headers,
+            json={"model": MODEL_ID, "input": "hello", "stream": False},
+        )
+        assert response.status_code == 200, response.text
+
+        stats_response = client.get("/v1/keys/stats", headers=alpha_headers)
+        assert stats_response.status_code == 200
+        stats = stats_response.json()
+        beta_fingerprint = hashlib.sha256(b"beta-key").hexdigest()[:8]
+        beta_stats = next(item for item in stats if item["key_name"].endswith(beta_fingerprint))
+        assert beta_stats["requests"] == 1
+        assert beta_stats["prompt_tokens"] > 0
+        assert beta_stats["completion_tokens"] > 0
+''',
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Install development dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .[dev]
+
+      - name: Format and validate
+        env:
+          OV_LLM_MOCK: "true"
+        run: |
+          ruff format app/server.py app/openai_api.py app/model_registry.py app/model_manager.py runtime/model_converter.py runtime/openvino_engine.py tests/test_server_mock.py tests/test_recent_feature_regressions.py
+          ruff check .
+          ruff format --check .
+          pytest
+
+      - name: Commit fixes to main
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/server.py app/openai_api.py app/model_registry.py app/model_manager.py runtime/model_converter.py runtime/openvino_engine.py web/index.html tests/test_server_mock.py tests/test_recent_feature_regressions.py
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git commit -m "Fix recent OpenVINO feature regressions"
+          git push origin HEAD:main
