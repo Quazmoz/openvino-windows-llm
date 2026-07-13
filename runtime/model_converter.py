@@ -112,8 +112,8 @@ def export_model(
     return output_dir
 
 
-def _resolve_from_catalog(model_id: str) -> tuple[str, Path, str]:
-    """Look up source model, output dir, and weight format from models.json."""
+def _resolve_from_catalog(model_id: str) -> tuple[str, Path, str, str | None]:
+    """Look up source model, output dir, weight format, and Optimum task."""
     from app.config import Settings
     from app.model_registry import load_catalog
 
@@ -128,7 +128,8 @@ def _resolve_from_catalog(model_id: str) -> tuple[str, Path, str]:
         raise SystemExit(f"Model '{model_id}' has no 'source_model' in models.json")
     from app.config import BASE_DIR
 
-    return cfg.source_model, cfg.abs_path(BASE_DIR), cfg.weight_format
+    task = "feature-extraction" if "embedding" in cfg.backend.lower() else None
+    return cfg.source_model, cfg.abs_path(BASE_DIR), cfg.weight_format, task
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -145,14 +146,25 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--task", default=None, help="Optional optimum task override")
     parser.add_argument("--no-trust-remote-code", action="store_true")
-    parser.add_argument("--group-size", type=int, default=None, help="Quantization group size for INT4")
-    parser.add_argument("--ratio", type=float, default=None, help="Quantization ratio for INT4 (0.0 to 1.0)")
+    parser.add_argument(
+        "--group-size", type=int, default=None, help="Quantization group size for INT4"
+    )
+    parser.add_argument(
+        "--ratio", type=float, default=None, help="Quantization ratio for INT4 (0.0 to 1.0)"
+    )
     parser.add_argument("--sym", action="store_true", help="Enable symmetric quantization for INT4")
     args = parser.parse_args(argv)
 
+    if args.ratio is not None and not 0.0 <= args.ratio <= 1.0:
+        parser.error("--ratio must be between 0.0 and 1.0")
+    if args.group_size is not None and args.group_size != -1 and args.group_size <= 0:
+        parser.error("--group-size must be -1 or a positive integer")
+
+    task = args.task
     if args.id:
-        source_model, output_dir, weight_format = _resolve_from_catalog(args.id)
+        source_model, output_dir, weight_format, catalog_task = _resolve_from_catalog(args.id)
         weight_format = args.weight_format or weight_format
+        task = task or catalog_task
     else:
         if not args.model or not args.output:
             parser.error("Provide either --id, or both --model and --output")
@@ -166,7 +178,7 @@ def main(argv: list[str] | None = None) -> int:
             output_dir,
             weight_format,
             trust_remote_code=not args.no_trust_remote_code,
-            task=args.task,
+            task=task,
             group_size=args.group_size,
             ratio=args.ratio,
             sym=args.sym,

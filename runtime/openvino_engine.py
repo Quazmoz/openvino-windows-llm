@@ -14,6 +14,7 @@ Both expose the same small interface:
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import logging
 import queue
 import re
@@ -21,6 +22,7 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from app import chat_format
 from runtime.device_check import is_openvino_available, normalize_device
@@ -185,10 +187,12 @@ class MockEmbeddingEngine(BaseEngine):
         if self._closed:
             raise RuntimeError(f"Mock embedding engine for '{self.model_id}' is closed")
         import random
+
         results = []
         for text in texts:
-            # Deterministic generation using a seed derived from the text hash
-            rng = random.Random(hash(text))
+            # Use a stable digest rather than Python's process-randomized hash().
+            seed = int.from_bytes(hashlib.sha256(text.encode("utf-8")).digest()[:8], "big")
+            rng = random.Random(seed)
             results.append([rng.uniform(-1.0, 1.0) for _ in range(384)])
         return results
 
@@ -221,7 +225,7 @@ class OpenVINOEngine(BaseEngine):
         self._closed = False
 
         config = dict(plugin_config or {})
-        
+
         draft_obj = None
         if draft_model_path:
             logger.info("Initializing speculative decoding with draft model: %s", draft_model_path)
@@ -235,11 +239,15 @@ class OpenVINOEngine(BaseEngine):
                 except Exception as exc:
                     logger.error("Failed to load draft model: %s", exc)
             else:
-                logger.warning("openvino_genai.draft_model is not available in this OpenVINO version.")
+                logger.warning(
+                    "openvino_genai.draft_model is not available in this OpenVINO version."
+                )
 
         logger.info("Loading '%s' on %s from %s", model_id, self.device, self.model_path)
         if draft_obj is not None:
-            self._pipe = ov_genai.LLMPipeline(self.model_path, self.device, draft_model=draft_obj, **config)
+            self._pipe = ov_genai.LLMPipeline(
+                self.model_path, self.device, draft_model=draft_obj, **config
+            )
         elif config:
             self._pipe = ov_genai.LLMPipeline(self.model_path, self.device, **config)
         else:
@@ -299,18 +307,17 @@ class OpenVINOEngine(BaseEngine):
             StructuredOutputConfig = getattr(self._ov, "StructuredOutputConfig", None)
             if StructuredOutputConfig is not None:
                 import json
+
                 fmt_type = params.response_format.get("type")
                 if fmt_type == "json_schema":
                     schema_data = params.response_format.get("json_schema", {}).get("schema")
                     if schema_data:
-                        so_cfg = StructuredOutputConfig()
-                        so_cfg.json_schema = json.dumps(schema_data)
+                        so_cfg = StructuredOutputConfig(json_schema=json.dumps(schema_data))
                         with contextlib.suppress(Exception):
                             so_cfg.backend = "xgrammar"
                         cfg.structured_output_config = so_cfg
                 elif fmt_type == "json_object":
-                    so_cfg = StructuredOutputConfig()
-                    so_cfg.json_schema = json.dumps({"type": "object"})
+                    so_cfg = StructuredOutputConfig(json_schema=json.dumps({"type": "object"}))
                     with contextlib.suppress(Exception):
                         so_cfg.backend = "xgrammar"
                     cfg.structured_output_config = so_cfg
@@ -324,7 +331,9 @@ class OpenVINOEngine(BaseEngine):
         if Adapter is not None and AdapterConfig is not None:
             try:
                 adapters_config = AdapterConfig()
-                adapters_config.add(Adapter(str(params.lora_path)), alpha=float(params.lora_alpha or 1.0))
+                adapters_config.add(
+                    Adapter(str(params.lora_path)), alpha=float(params.lora_alpha or 1.0)
+                )
                 return adapters_config
             except Exception as exc:
                 logger.error("Failed to construct AdapterConfig for %s: %s", params.lora_path, exc)
@@ -405,7 +414,9 @@ class OpenVINOEmbeddingEngine(BaseEngine):
         self._closed = False
 
         config = dict(plugin_config or {})
-        logger.info("Loading embedding model '%s' on %s from %s", model_id, self.device, self.model_path)
+        logger.info(
+            "Loading embedding model '%s' on %s from %s", model_id, self.device, self.model_path
+        )
         if config:
             self._pipe = ov_genai.TextEmbeddingPipeline(self.model_path, self.device, **config)
         else:
@@ -441,6 +452,7 @@ class OpenVINOEmbeddingEngine(BaseEngine):
                 return embeddings.tolist()
         try:
             import numpy as np
+
             return np.array(res).tolist()
         except Exception:
             pass
@@ -527,4 +539,6 @@ def create_engine(
     plugin_config = build_plugin_config(device, max_prompt_len, cache_dir)
     if is_embedding:
         return OpenVINOEmbeddingEngine(model_id, model_path, device, plugin_config)
-    return OpenVINOEngine(model_id, model_path, device, plugin_config, draft_model_path=draft_model_path)
+    return OpenVINOEngine(
+        model_id, model_path, device, plugin_config, draft_model_path=draft_model_path
+    )

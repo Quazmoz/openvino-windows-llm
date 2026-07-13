@@ -12,6 +12,7 @@ import argparse
 import asyncio
 import base64
 import contextvars
+import hashlib
 import json
 import logging
 import os
@@ -127,6 +128,7 @@ def _params_for(
     *,
     stop: list[str] | None = None,
     seed: int | None = None,
+    response_format: dict | None = None,
     lora_path: str | None = None,
     lora_alpha: float | None = 1.0,
 ) -> GenParams:
@@ -141,6 +143,7 @@ def _params_for(
         do_sample=temp > 0,
         stop=stop or None,
         seed=seed,
+        response_format=response_format,
         lora_path=lora_path,
         lora_alpha=lora_alpha,
     )
@@ -258,9 +261,10 @@ def create_app(settings: Settings) -> FastAPI:
     valid_keys = [k.strip() for k in (settings.api_key or "").split(",") if k.strip()]
     key_stats: dict[str, dict] = {}
     for k in valid_keys:
-        obfuscated = k[:5] + "..." if len(k) > 7 else k[:2] + "..."
+        prefix = k[:5] if len(k) > 7 else k[:2]
+        fingerprint = hashlib.sha256(k.encode("utf-8")).hexdigest()[:8]
         key_stats[k] = {
-            "key_name": obfuscated,
+            "key_name": f"{prefix}...{fingerprint}",
             "requests": 0,
             "prompt_tokens": 0,
             "completion_tokens": 0,
@@ -278,7 +282,13 @@ def create_app(settings: Settings) -> FastAPI:
     def record_key_metrics(prompt_tokens: int, completion_tokens: int, latency: float):
         k = active_key_var.get()
         if k not in key_stats:
-            k = "default" if "default" in key_stats else list(key_stats.keys())[0] if key_stats else None
+            k = (
+                "default"
+                if "default" in key_stats
+                else list(key_stats.keys())[0]
+                if key_stats
+                else None
+            )
         if k and k in key_stats:
             stats = key_stats[k]
             stats["requests"] += 1
@@ -299,7 +309,7 @@ def create_app(settings: Settings) -> FastAPI:
         if authorization is None or not authorization.startswith("Bearer "):
             raise HTTPException(status_code=401, detail="Invalid or missing API key")
 
-        token = authorization[len("Bearer "):]
+        token = authorization[len("Bearer ") :]
         matched_key = None
         for k in valid_keys_list:
             if secrets.compare_digest(token.encode("utf-8"), k.encode("utf-8")):
@@ -315,7 +325,9 @@ def create_app(settings: Settings) -> FastAPI:
             failures.append(now)
             _auth_failures[source] = failures
             if len(failures) > _AUTH_FAILURE_MAX:
-                logger.warning("Repeated auth failures from source '%s' (%d in window)", source, len(failures))
+                logger.warning(
+                    "Repeated auth failures from source '%s' (%d in window)", source, len(failures)
+                )
             raise HTTPException(status_code=401, detail="Invalid or missing API key")
 
         active_key_var.set(matched_key)
@@ -404,7 +416,10 @@ def create_app(settings: Settings) -> FastAPI:
             raise HTTPException(status_code=404, detail=f"Unknown model '{req.model}'")
         device = _normalize_device_or_400(req.device)
 
-        task = manager.schedule_load(req.model, device, draft_model=req.draft_model)
+        try:
+            task = manager.schedule_load(req.model, device, draft_model=req.draft_model)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         entry = manager.catalog_entry(req.model)
         if task is None and entry["is_loaded"]:
             return {
@@ -506,6 +521,7 @@ def create_app(settings: Settings) -> FastAPI:
     @app.get("/v1/models/search-hf", dependencies=auth)
     async def search_hf(query: str, limit: int = 10, task: str | None = None):
         import httpx
+
         filter_str = task or "text-generation"
         if task == "embeddings" or task == "embedding":
             filter_str = "sentence-similarity"
@@ -537,15 +553,17 @@ def create_app(settings: Settings) -> FastAPI:
             is_embedding = pipeline_tag in ("sentence-similarity", "feature-extraction")
             backend = "openvino-embeddings" if is_embedding else "openvino-genai"
 
-            results.append({
-                "id": model_id,
-                "suggested_local_id": safe_id,
-                "downloads": item.get("downloads", 0),
-                "likes": item.get("likes", 0),
-                "pipeline_tag": pipeline_tag,
-                "backend": backend,
-                "tags": item.get("tags", []),
-            })
+            results.append(
+                {
+                    "id": model_id,
+                    "suggested_local_id": safe_id,
+                    "downloads": item.get("downloads", 0),
+                    "likes": item.get("likes", 0),
+                    "pipeline_tag": pipeline_tag,
+                    "backend": backend,
+                    "tags": item.get("tags", []),
+                }
+            )
         return results
 
     @app.post("/v1/models/download-custom", dependencies=auth)
@@ -774,6 +792,7 @@ def create_app(settings: Settings) -> FastAPI:
             max_context_len,
             stop=chat_format.normalize_stop(request.stop),
             seed=request.seed,
+            response_format=request.response_format,
             lora_path=request.lora_path,
             lora_alpha=request.lora_alpha,
         )
@@ -835,9 +854,7 @@ def create_app(settings: Settings) -> FastAPI:
                 completion_tokens = await loop.run_in_executor(None, engine.count_tokens, truncated)
 
         latency = time.perf_counter() - start
-        manager.record_request(
-            engine.model_id, current_prompt_tokens, completion_tokens, latency
-        )
+        manager.record_request(engine.model_id, current_prompt_tokens, completion_tokens, latency)
         record_key_metrics(current_prompt_tokens, completion_tokens, latency)
         return ChatCompletionResponse(
             id=f"chatcmpl-{uuid.uuid4().hex}",
@@ -942,9 +959,7 @@ def create_app(settings: Settings) -> FastAPI:
             loop = asyncio.get_running_loop()
             completion_tokens = await loop.run_in_executor(None, engine.count_tokens, full_text)
             latency = time.perf_counter() - start
-            manager.record_request(
-                engine.model_id, prompt_tokens, completion_tokens, latency
-            )
+            manager.record_request(engine.model_id, prompt_tokens, completion_tokens, latency)
             record_key_metrics(prompt_tokens, completion_tokens, latency)
 
             if request.stream_options and request.stream_options.include_usage:
@@ -994,9 +1009,7 @@ def create_app(settings: Settings) -> FastAPI:
             prompt_tokens += engine.count_tokens(text)
 
         latency = time.perf_counter() - start
-        manager.record_request(
-            engine.model_id, prompt_tokens, 0, latency
-        )
+        manager.record_request(engine.model_id, prompt_tokens, 0, latency)
         record_key_metrics(prompt_tokens, 0, latency)
 
         data = []
@@ -1017,7 +1030,7 @@ def create_app(settings: Settings) -> FastAPI:
             usage=EmbeddingResponseUsage(
                 prompt_tokens=prompt_tokens,
                 total_tokens=prompt_tokens,
-            )
+            ),
         )
 
     # --- responses API (n8n) ----------------------------------------------
@@ -1067,9 +1080,9 @@ def create_app(settings: Settings) -> FastAPI:
 
         start = time.perf_counter()
         result = await manager.generate(engine, prompt, params)
-        manager.record_request(
-            engine.model_id, prompt_tokens, result.completion_tokens, time.perf_counter() - start
-        )
+        latency = time.perf_counter() - start
+        manager.record_request(engine.model_id, prompt_tokens, result.completion_tokens, latency)
+        record_key_metrics(prompt_tokens, result.completion_tokens, latency)
         return ResponseObject(
             id=response_id,
             created_at=int(time.time()),
@@ -1143,9 +1156,7 @@ def create_app(settings: Settings) -> FastAPI:
         loop = asyncio.get_running_loop()
         completion_tokens = await loop.run_in_executor(None, engine.count_tokens, full_text)
         latency = time.perf_counter() - start
-        manager.record_request(
-            engine.model_id, prompt_tokens, completion_tokens, latency
-        )
+        manager.record_request(engine.model_id, prompt_tokens, completion_tokens, latency)
         record_key_metrics(prompt_tokens, completion_tokens, latency)
 
         yield event(
