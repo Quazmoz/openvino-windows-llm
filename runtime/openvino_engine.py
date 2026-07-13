@@ -22,6 +22,7 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from app import chat_format
 from runtime.device_check import is_openvino_available, normalize_device
@@ -114,26 +115,39 @@ class BaseEngine:
     def close(self) -> None:  # noqa: B027 - intentional no-op default
         pass
 
-    def _build_adapters_config(self, params: GenParams):
-        if not params.lora_path:
-            return None
-        Adapter = getattr(self._ov, "Adapter", None)
-        AdapterConfig = getattr(self._ov, "AdapterConfig", None)
-        if Adapter is None or AdapterConfig is None:
-            raise RuntimeError(
-                "This OpenVINO GenAI version does not support dynamic LoRA adapters."
-            )
-        try:
-            adapters_config = AdapterConfig()
-            adapters_config.add(
-                Adapter(str(params.lora_path)),
-                alpha=float(params.lora_alpha or 1.0),
-            )
-            return adapters_config
-        except Exception as exc:
-            raise RuntimeError(
-                f"Failed to construct LoRA adapter config for '{params.lora_path}': {exc}"
-            ) from exc
+    def _build_adapters_config(self, params: GenParams) -> Any | None:
+        return None
+
+
+# --- Mock engine -----------------------------------------------------------
+
+
+class MockEngine(BaseEngine):
+    """A dependency-free engine that streams a canned reply. For UI/API testing."""
+
+    backend = "mock"
+
+    def __init__(self, model_id: str, model_path: str = "", device: str = "MOCK") -> None:
+        self.model_id = model_id
+        self.model_path = str(model_path)
+        self.device = device
+
+    def apply_chat_template(self, messages: list[dict], add_generation_prompt: bool = True) -> str:
+        return chat_format.render_chatml(messages, add_generation_prompt)
+
+    def count_tokens(self, text: str) -> int:
+        return max(1, len(text) // 4)
+
+    def _reply(self, prompt: str) -> str:
+        matches = re.findall(r"<\|im_start\|>user\n(.*?)<\|im_end\|>", prompt, re.DOTALL)
+        last_user = matches[-1].strip() if matches else "(no user message found)"
+        return (
+            "**Mock engine** — OpenVINO is not active, so this is a canned response.\n\n"
+            f"You said: _{last_user[:400]}_\n\n"
+            "This lets you exercise the full chat UI, streaming, tokens, and the OpenAI API on any "
+            "machine. On Windows with OpenVINO installed and a converted model, you'll get real "
+            f"output instead.\n\n```python\nprint('hello from {self.model_id}')\n```"
+        )
 
     def generate(self, prompt: str, params: GenParams) -> GenResult:
         text = self._reply(prompt)
@@ -312,16 +326,21 @@ class OpenVINOEngine(BaseEngine):
             return None
         Adapter = getattr(self._ov, "Adapter", None)
         AdapterConfig = getattr(self._ov, "AdapterConfig", None)
-        if Adapter is not None and AdapterConfig is not None:
-            try:
-                adapters_config = AdapterConfig()
-                adapters_config.add(
-                    Adapter(str(params.lora_path)), alpha=float(params.lora_alpha or 1.0)
-                )
-                return adapters_config
-            except Exception as exc:
-                logger.error("Failed to construct AdapterConfig for %s: %s", params.lora_path, exc)
-        return None
+        if Adapter is None or AdapterConfig is None:
+            raise RuntimeError(
+                "This OpenVINO GenAI version does not support dynamic LoRA adapters."
+            )
+        try:
+            adapters_config = AdapterConfig()
+            adapters_config.add(
+                Adapter(str(params.lora_path)),
+                alpha=float(params.lora_alpha or 1.0),
+            )
+            return adapters_config
+        except Exception as exc:
+            raise RuntimeError(
+                f"Failed to construct LoRA adapter config for '{params.lora_path}': {exc}"
+            ) from exc
 
     def generate(self, prompt: str, params: GenParams) -> GenResult:
         self._check_closed()
