@@ -82,20 +82,23 @@ class ModelManager:
         self._events: collections.deque[dict] = collections.deque(maxlen=50)
         self._load_lock = asyncio.Lock()
         self._convert_lock = asyncio.Lock()
+        self._gen_lock = asyncio.Lock()
         self._active_generations = 0
         self._drain_event = asyncio.Event()
         self._drain_event.set()
 
     @contextlib.asynccontextmanager
     async def _track_generation(self):
-        self._active_generations += 1
-        self._drain_event.clear()
+        async with self._gen_lock:
+            self._active_generations += 1
+            self._drain_event.clear()
         try:
             yield
         finally:
-            self._active_generations -= 1
-            if self._active_generations == 0:
-                self._drain_event.set()
+            async with self._gen_lock:
+                self._active_generations -= 1
+                if self._active_generations == 0:
+                    self._drain_event.set()
 
     # --- status helpers ----------------------------------------------------
 
@@ -118,7 +121,7 @@ class ModelManager:
         line = _PROGRESS_SECRET_RE.sub("[redacted]", line)
         # Avoid exposing machine-specific full paths in user-facing progress. Keep
         # the most useful part of path-like strings, which is usually the filename.
-        line = re.sub(r"[A-Za-z]:\\(?:[^\\\s]+\\)+", "...\\", line)
+        line = re.sub(r"[A-Za-z]:\\(?:[^\\\s]+\\)+", r"...\\", line)
         line = re.sub(r"/(?:[^/\s]+/){2,}", ".../", line)
         if len(line) > limit:
             return line[: limit - 1].rstrip() + "…"
@@ -353,17 +356,18 @@ class ModelManager:
         cfg = self.catalog[model_id]
         try:
             try:
-                async with self._load_lock:
-                    if model_id in self.engines:
+                async with asyncio.timeout(600):
+                  async with self._load_lock:
+                      if model_id in self.engines:
                         self._set_progress(model_id, "ready", f"{cfg.name} is already loaded.", percent=100)
                         self._clear_status(model_id)
                         return
 
-                    self._set_status(model_id, "loading")
-                    self._set_progress(model_id, "loading", f"Checking local model files for {cfg.name}…")
+                      self._set_status(model_id, "loading")
+                      self._set_progress(model_id, "loading", f"Checking local model files for {cfg.name}…")
 
-                    # Validate device + on-disk model for real (non-mock) loads.
-                    if not self.force_mock:
+                      # Validate device + on-disk model for real (non-mock) loads.
+                      if not self.force_mock:
                         available = device_check.available_devices()
                         if not device_check.is_device_available(device, available):
                             raise RuntimeError(errors.format_device_error(device, available))
@@ -392,26 +396,27 @@ class ModelManager:
                             else:
                                 raise RuntimeError(
                                     errors.format_model_not_converted(
-                                        cfg.name, str(cfg.abs_path(BASE_DIR)), cfg.source_model
+                                        cfg.name, str(cfg.abs_path(BASE_DIR)), cfg.source_model,
+                                        weight_format=cfg.weight_format,
                                     )
                                 )
 
-                    self._set_progress(model_id, "loading", f"Loading {cfg.name} on {device}…")
-                    loop = asyncio.get_running_loop()
-                    engine = await loop.run_in_executor(None, self._build_engine, model_id, device)
+                      self._set_progress(model_id, "loading", f"Loading {cfg.name} on {device}…")
+                      loop = asyncio.get_running_loop()
+                      engine = await loop.run_in_executor(None, self._build_engine, model_id, device)
 
-                    self.engines[model_id] = engine
-                    self.locks[model_id] = asyncio.Lock()
-                    self.devices[model_id] = engine.device
-                    self._set_progress(
+                      self.engines[model_id] = engine
+                      self.locks[model_id] = asyncio.Lock()
+                      self.devices[model_id] = engine.device
+                      self._set_progress(
                         model_id,
                         "ready",
                         f"{cfg.name} is ready on {engine.device}.",
                         percent=100,
-                    )
-                    self._clear_status(model_id)
-                    logger.info("Loaded '%s' on %s", model_id, engine.device)
-                    self.emit_event("info", f"Loaded {cfg.name} on {engine.device}")
+                      )
+                      self._clear_status(model_id)
+                      logger.info("Loaded '%s' on %s", model_id, engine.device)
+                      self.emit_event("info", f"Loaded {cfg.name} on {engine.device}")
             except Exception as exc:  # noqa: BLE001 - surfaced to the UI as a status
                 self.engines.pop(model_id, None)
                 self.locks.pop(model_id, None)
@@ -614,6 +619,10 @@ class ModelManager:
 
         if model_dir.exists():
             self._ensure_within_models_dir(model_dir)
+            if model_dir.is_symlink():
+                raise ValueError(
+                    f"Refusing to delete symlink target: {model_dir}. Remove the symlink manually."
+                )
             freed = dir_size_bytes(model_dir)
             shutil.rmtree(model_dir)
             deleted = True

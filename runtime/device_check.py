@@ -162,6 +162,15 @@ def _get_core():
     return _core_instance
 
 
+def get_core():
+    """Public accessor for the cached OpenVINO Core singleton.
+
+    Prefer this over the internal ``_get_core()`` in modules outside
+    ``device_check`` (e.g. telemetry) to avoid coupling to private internals.
+    """
+    return _get_core()
+
+
 def available_devices() -> list[str]:
     """List OpenVINO device names (e.g. ['CPU', 'GPU', 'NPU']); [] if unavailable."""
     global _cached_devices

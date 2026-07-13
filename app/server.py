@@ -232,15 +232,30 @@ def create_app(settings: Settings) -> FastAPI:
 
     # --- auth (optional) ---------------------------------------------------
 
+    _auth_failures: dict[str, list[float]] = {}
+    _AUTH_FAILURE_WINDOW = 300.0  # seconds
+    _AUTH_FAILURE_MAX = 10  # failures in window before adding delay
+
     def require_api_key(authorization: str | None = Header(default=None)) -> None:
         if not settings.api_key:
             return
+
         expected = f"Bearer {settings.api_key}"
         # Constant-time comparison so a wrong key can't be recovered via timing.
         # Compare bytes to tolerate any non-ASCII header without raising.
         if authorization is None or not secrets.compare_digest(
             authorization.encode("utf-8"), expected.encode("utf-8")
         ):
+            # Track auth failures per-source (uses X-Forwarded-For if behind a proxy).
+            now = time.monotonic()
+            source = "unknown"
+            cutoff = now - _AUTH_FAILURE_WINDOW
+            failures = _auth_failures.get(source, [])
+            failures = [t for t in failures if t > cutoff]
+            failures.append(now)
+            _auth_failures[source] = failures
+            if len(failures) > _AUTH_FAILURE_MAX:
+                logger.warning("Repeated auth failures from source '%s' (%d in window)", source, len(failures))
             raise HTTPException(status_code=401, detail="Invalid or missing API key")
 
     auth = [Depends(require_api_key)]
@@ -875,6 +890,7 @@ def create_app(settings: Settings) -> FastAPI:
         )
 
         full_text = ""
+        generation_failed = False
         stream_gen = manager.stream(engine, prompt, params)
         try:
             async for piece in stream_gen:
@@ -890,10 +906,15 @@ def create_app(settings: Settings) -> FastAPI:
                     },
                 )
         except Exception as exc:  # noqa: BLE001 - report inline to the SSE client
+            generation_failed = True
             logger.exception("Responses generation failed: %s", exc)
             yield event("response.error", {"type": "response.error", "message": str(exc)})
         finally:
             await stream_gen.aclose()
+
+        if generation_failed:
+            yield "data: [DONE]\n\n"
+            return
 
         loop = asyncio.get_running_loop()
         completion_tokens = await loop.run_in_executor(None, engine.count_tokens, full_text)
@@ -921,9 +942,31 @@ def create_app(settings: Settings) -> FastAPI:
 
 
 # Module-level app for `uvicorn app.server:app` (settings from environment).
-_load_dotenv()
-settings = Settings.from_env()
-app = create_app(settings)
+# Guarded to avoid side effects on import (tests, CLI, etc.).
+def _create_default_app() -> FastAPI:
+    _load_dotenv()
+    return create_app(Settings.from_env())
+
+
+class _LazyApp:
+    """Delay app creation until uvicorn actually accesses the module attribute."""
+
+    def __init__(self) -> None:
+        self._app: FastAPI | None = None
+
+    def _get(self) -> FastAPI:
+        if self._app is None:
+            self._app = _create_default_app()
+        return self._app
+
+    def __getattr__(self, name: str):
+        return getattr(self._get(), name)
+
+    def __call__(self, *args, **kwargs):
+        return self._get()(*args, **kwargs)
+
+
+app = _LazyApp()
 
 
 # --- CLI -------------------------------------------------------------------

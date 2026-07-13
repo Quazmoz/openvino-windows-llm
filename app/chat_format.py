@@ -176,7 +176,13 @@ def normalize_stop(stop: str | list[str] | None) -> list[str]:
         return []
     if isinstance(stop, str):
         return [stop] if stop else []
-    return [s for s in stop if isinstance(s, str) and s]
+    result = []
+    for s in stop:
+        if isinstance(s, str) and s:
+            result.append(s)
+        elif s is not None:
+            logger.warning("Ignoring non-string stop entry: %r", s)
+    return result
 
 
 def truncate_at_stop(text: str, stop: list[str]) -> tuple[str, bool]:

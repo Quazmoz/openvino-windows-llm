@@ -50,15 +50,20 @@ def format_model_convert_error(exc: BaseException) -> str:
 
     # Check for Hugging Face gated repo / authorization error
     if "not in the authorized list" in text.lower() or "403 client error" in text.lower():
-        model_url = "https://huggingface.co/google/gemma-2-2b-it"
+        model_url = None
         for word in text.split():
             clean_word = word.strip("()[].,'\"")
             if "huggingface.co/" in clean_word:
                 model_url = clean_word
                 break
+        visit_hint = (
+            f"Please visit {model_url} to accept the model agreement, then try converting again."
+            if model_url
+            else "Please visit the model's page on huggingface.co to accept the model agreement, then try converting again."
+        )
         return (
             f"Your Hugging Face token is authenticated, but your account is not authorized to access this model. "
-            f"Please visit {model_url} to accept the model agreement, then try converting again."
+            f"{visit_hint}"
         )
 
     if any(

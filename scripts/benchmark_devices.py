@@ -133,35 +133,17 @@ def _resolve_model_path(model: str, models_file: Path) -> Path:
 
 
 def _split_device_targets(raw: str) -> list[str]:
-    """Split targets while preserving priority commas inside META:GPU,CPU values."""
-    if ";" in raw:
-        candidates = [part.strip() for part in raw.split(";")]
-    else:
-        tokens = [part.strip() for part in raw.split(",")]
-        candidates: list[str] = []
-        i = 0
-        while i < len(tokens):
-            token = tokens[i]
-            if ":" in token:
-                parts = [token]
-                i += 1
-                while i < len(tokens) and ":" not in tokens[i]:
-                    parts.append(tokens[i])
-                    i += 1
-                candidates.append(",".join(parts))
-            else:
-                candidates.append(token)
-                i += 1
+    """Split targets while preserving priority commas inside META:GPU,CPU values.
 
-    devices: list[str] = []
-    for candidate in candidates:
-        if not candidate:
-            raise SystemExit("Device list contains an empty entry.")
-        try:
-            devices.append(device_check.validate_device_expression(candidate))
-        except device_check.DeviceValidationError as exc:
-            raise SystemExit(str(exc)) from exc
-    return devices
+    Delegates to :func:`runtime.benchmark_runner.split_device_targets`,
+    converting DeviceValidationError to SystemExit for CLI use.
+    """
+    from runtime.benchmark_runner import split_device_targets
+
+    try:
+        return split_device_targets(raw)
+    except device_check.DeviceValidationError as exc:
+        raise SystemExit(str(exc)) from exc
 
 
 def _format_seconds(value: float | None) -> str:

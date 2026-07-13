@@ -85,9 +85,9 @@ def gpu_stats() -> dict | None:
         return None
 
     try:
-        from runtime.device_check import _get_core, available_devices
+        from runtime.device_check import get_core, available_devices
 
-        core = _get_core()
+        core = get_core()
         devices = available_devices()
         gpu_device = next((d for d in devices if d.startswith("GPU")), None)
         if not gpu_device:
@@ -140,9 +140,9 @@ def gpu_stats() -> dict | None:
 
 
 def _first_stat_gb(stats: dict, keys: tuple[str, ...]) -> float | None:
-    """Return the first matching statistic (by key preference order) in GB."""
+    """Return the first matching statistic (by substring key preference) in GB."""
     for key in keys:
         for k, v in stats.items():
-            if k.lower() == key and isinstance(v, int):
+            if key in k.lower() and isinstance(v, int):
                 return round(v / (1024**3), 2)
     return None

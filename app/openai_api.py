@@ -18,7 +18,7 @@ from runtime import device_check
 
 class ChatMessage(BaseModel):
     role: str
-    content: str | None = None
+    content: Any = None  # str, list of content parts, or None (OpenAI spec allows all three)
     tool_calls: list[dict[str, Any]] | None = None
     tool_call_id: str | None = None
 

@@ -55,7 +55,7 @@ class StreamHandle:
     """
 
     def __init__(self) -> None:
-        self._q: queue.Queue = queue.Queue()
+        self._q: queue.Queue = queue.Queue(maxsize=1024)
         self.error: BaseException | None = None
         self.text = ""
         self._stop = threading.Event()

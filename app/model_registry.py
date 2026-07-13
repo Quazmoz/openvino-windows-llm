@@ -251,7 +251,7 @@ def make_catalog_entry(
 
 
 def save_catalog(models_file: Path, catalog: dict[str, ModelConfig]) -> None:
-    """Save the catalog dictionary to models.json."""
+    """Save the catalog dictionary to models.json (atomic write via tmp+rename)."""
     data = {}
     for model_id, cfg in catalog.items():
         data[model_id] = {
@@ -265,5 +265,8 @@ def save_catalog(models_file: Path, catalog: dict[str, ModelConfig]) -> None:
             "max_context_len": cfg.max_context_len,
             "max_output_tokens": cfg.max_output_tokens,
         }
-    with open(models_file, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2)
+    models_file = Path(models_file)
+    models_file.parent.mkdir(parents=True, exist_ok=True)
+    tmp = models_file.with_suffix(models_file.suffix + ".tmp")
+    tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    tmp.replace(models_file)

@@ -77,6 +77,12 @@ def export_model(
 
     output_dir = Path(output_dir)
     output_dir.parent.mkdir(parents=True, exist_ok=True)
+    if trust_remote_code:
+        logger.warning(
+            "Running with --trust-remote-code: model '%s' may execute arbitrary code from "
+            "the Hugging Face repo during conversion. Only use this with models you trust.",
+            source_model,
+        )
     cmd = build_export_command(
         source_model, output_dir, weight_format, trust_remote_code=trust_remote_code, task=task
     )
