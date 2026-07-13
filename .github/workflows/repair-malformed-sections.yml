@@ -1,0 +1,208 @@
+name: Repair malformed feature sections
+
+on:
+  push:
+    branches:
+      - agent/recent-feature-fixes
+    paths:
+      - .github/workflows/repair-malformed-sections.yml
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repair branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/recent-feature-fixes
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Rebuild malformed sections
+        shell: bash
+        run: |
+          python <<'PY'
+          from pathlib import Path
+
+          manager_path = Path("app/model_manager.py")
+          manager = manager_path.read_text(encoding="utf-8")
+          helper_start = manager.index("    def _resolve_draft_model_path(")
+          helper_end = manager.index("    def _build_engine(", helper_start)
+          helper_lines = [
+              "    def _resolve_draft_model_path(",
+              "        self, model_id: str, draft_model: str | None",
+              "    ) -> str | None:",
+              "        if not draft_model:",
+              "            return None",
+              "        if draft_model == model_id:",
+              '            raise ValueError("Draft model must differ from the target model.")',
+              "",
+              "        draft_cfg = self.catalog.get(draft_model)",
+              "        if draft_cfg is not None:",
+              '            if "embedding" in draft_cfg.backend.lower():',
+              "                raise ValueError(",
+              '                    f"Draft model \'{draft_model}\' is an embedding model; "',
+              '                    "speculative decoding requires a text-generation model."',
+              "                )",
+              "            if not self.force_mock and not registry.is_downloaded(",
+              "                draft_cfg, BASE_DIR",
+              "            ):",
+              "                raise ValueError(",
+              '                    f"Draft model \'{draft_model}\' is not converted locally."',
+              "                )",
+              "            return str(draft_cfg.abs_path(BASE_DIR))",
+              "",
+              "        path = Path(draft_model).expanduser()",
+              "        path = (",
+              "            path.resolve() if path.is_absolute() else (BASE_DIR / path).resolve()",
+              "        )",
+              "        if not path.is_dir():",
+              "            raise ValueError(",
+              '                f"Draft model path does not exist or is not a directory: {path}"',
+              "            )",
+              "        if not self.force_mock and not registry.is_openvino_model_dir(path):",
+              "            raise ValueError(",
+              '                f"Draft model path is not a converted OpenVINO model: {path}"',
+              "            )",
+              "        return str(path)",
+              "",
+              "",
+          ]
+          manager = manager[:helper_start] + "\n".join(helper_lines) + manager[helper_end:]
+          stale_start = manager.index("                        draft_model_path = None\n")
+          loop_marker = "                        loop = asyncio.get_running_loop()\n"
+          stale_end = manager.index(loop_marker, stale_start)
+          manager = manager[:stale_start] + manager[stale_end:]
+          manager_path.write_text(manager, encoding="utf-8")
+
+          engine_path = Path("runtime/openvino_engine.py")
+          engine = engine_path.read_text(encoding="utf-8")
+          draft_start = engine.index("        draft_obj = None\n")
+          load_marker = '        logger.info("Loading \'%s\' on %s from %s", model_id, self.device, self.model_path)\n'
+          draft_end = engine.index(load_marker, draft_start)
+          draft_lines = [
+              "        draft_obj = None",
+              "        if draft_model_path:",
+              '            logger.info("Initializing speculative decoding with draft model: %s", draft_model_path)',
+              '            draft_model_fn = getattr(ov_genai, "draft_model", None)',
+              "            if draft_model_fn is None:",
+              "                raise RuntimeError(",
+              '                    "This OpenVINO GenAI version does not support speculative decoding."',
+              "                )",
+              "            try:",
+              "                draft_obj = draft_model_fn(str(draft_model_path), self.device)",
+              "            except Exception as exc:",
+              "                raise RuntimeError(",
+              '                    f"Failed to load draft model \'{draft_model_path}\': {exc}"',
+              "                ) from exc",
+              "",
+              load_marker.rstrip("\n"),
+          ]
+          engine = engine[:draft_start] + "\n".join(draft_lines) + "\n" + engine[draft_end + len(load_marker):]
+
+          adapters_start = engine.index("    def _build_adapters_config(")
+          stream_start = engine.index("    def stream(", adapters_start)
+          adapter_lines = [
+              "    def _build_adapters_config(self, params: GenParams):",
+              "        if not params.lora_path:",
+              "            return None",
+              '        Adapter = getattr(self._ov, "Adapter", None)',
+              '        AdapterConfig = getattr(self._ov, "AdapterConfig", None)',
+              "        if Adapter is None or AdapterConfig is None:",
+              "            raise RuntimeError(",
+              '                "This OpenVINO GenAI version does not support dynamic LoRA adapters."',
+              "            )",
+              "        try:",
+              "            adapters_config = AdapterConfig()",
+              "            adapters_config.add(",
+              "                Adapter(str(params.lora_path)),",
+              "                alpha=float(params.lora_alpha or 1.0),",
+              "            )",
+              "            return adapters_config",
+              "        except Exception as exc:",
+              "            raise RuntimeError(",
+              '                f"Failed to construct LoRA adapter config for \'{params.lora_path}\': {exc}"',
+              "            ) from exc",
+              "",
+              "    def generate(self, prompt: str, params: GenParams) -> GenResult:",
+              "        self._check_closed()",
+              "        kwargs = {}",
+              "        adapters_config = self._build_adapters_config(params)",
+              "        if adapters_config is not None:",
+              '            kwargs["adapters"] = adapters_config',
+              "        result = self._pipe.generate(prompt, self._build_config(params), **kwargs)",
+              "        text = _result_text(result)",
+              "        return GenResult(text=text, completion_tokens=self.count_tokens(text))",
+              "",
+              "",
+          ]
+          engine = engine[:adapters_start] + "\n".join(adapter_lines) + engine[stream_start:]
+          engine_path.write_text(engine, encoding="utf-8")
+          PY
+
+      - name: Install development dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .[dev]
+
+      - name: Validate
+        shell: bash
+        env:
+          OV_LLM_MOCK: "true"
+        run: |
+          set +e
+          ruff check . --fix > lint-fix-output.txt 2>&1
+          RUFF_FIX_EXIT=$?
+          ruff format . > format-output.txt 2>&1
+          FORMAT_EXIT=$?
+          ruff check . > lint-output.txt 2>&1
+          LINT_EXIT=$?
+          ruff format --check . >> format-output.txt 2>&1
+          FORMAT_CHECK_EXIT=$?
+          pytest > test-output.txt 2>&1
+          TEST_EXIT=$?
+          {
+            echo "# Recent feature repair validation"
+            echo
+            echo "- Ruff fix exit: $RUFF_FIX_EXIT"
+            echo "- Format exit: $FORMAT_EXIT"
+            echo "- Format check exit: $FORMAT_CHECK_EXIT"
+            echo "- Lint exit: $LINT_EXIT"
+            echo "- Test exit: $TEST_EXIT"
+            echo
+            echo "## Lint output"
+            echo '```text'
+            cat lint-output.txt
+            echo '```'
+            echo
+            echo "## Test output"
+            echo '```text'
+            tail -n 400 test-output.txt
+            echo '```'
+          } > repair-validation-report.md
+          echo "$TEST_EXIT" > .repair-test-exit
+          exit 0
+
+      - name: Publish repaired branch
+        shell: bash
+        run: |
+          TEST_EXIT=$(cat .repair-test-exit)
+          rm -f .repair-test-exit lint-fix-output.txt lint-output.txt format-output.txt test-output.txt
+          git rm -f .github/workflows/repair-malformed-sections.yml
+          git add -A
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Repair malformed feature fix sections"
+          git push origin HEAD:agent/recent-feature-fixes
+          if [ "$TEST_EXIT" -ne 0 ]; then
+            echo "Tests failed; see repair-validation-report.md"
+          fi
