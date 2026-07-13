@@ -1,0 +1,96 @@
+name: Publish recent feature fixes
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/publish-recent-feature-fixes.yml
+
+permissions:
+  contents: write
+
+jobs:
+  publish-fixes:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Apply repairs
+        shell: bash
+        run: |
+          set +e
+          python scripts/apply_recent_feature_fixes.py
+          echo "PATCH_EXIT=$?" >> "$GITHUB_ENV"
+          exit 0
+
+      - name: Install development dependencies
+        shell: bash
+        run: |
+          set +e
+          python -m pip install --upgrade pip > install-output.txt 2>&1
+          pip install -e .[dev] >> install-output.txt 2>&1
+          echo "INSTALL_EXIT=$?" >> "$GITHUB_ENV"
+          exit 0
+
+      - name: Format and validate
+        shell: bash
+        env:
+          OV_LLM_MOCK: "true"
+        run: |
+          set +e
+          ruff format app/server.py app/openai_api.py app/model_registry.py app/model_manager.py runtime/model_converter.py runtime/openvino_engine.py tests/test_server_mock.py tests/test_recent_feature_regressions.py > format-output.txt 2>&1
+          FORMAT_EXIT=$?
+          ruff check . > lint-output.txt 2>&1
+          LINT_EXIT=$?
+          ruff format --check . >> format-output.txt 2>&1
+          FORMAT_CHECK_EXIT=$?
+          pytest > test-output.txt 2>&1
+          TEST_EXIT=$?
+          {
+            echo "# Recent feature repair validation"
+            echo
+            echo "- Patch exit: ${PATCH_EXIT:-unknown}"
+            echo "- Install exit: ${INSTALL_EXIT:-unknown}"
+            echo "- Format exit: $FORMAT_EXIT"
+            echo "- Format check exit: $FORMAT_CHECK_EXIT"
+            echo "- Lint exit: $LINT_EXIT"
+            echo "- Test exit: $TEST_EXIT"
+            echo
+            echo "## Patch report"
+            echo '```text'
+            cat repair-apply-report.txt 2>/dev/null || true
+            echo '```'
+            echo
+            echo "## Lint output"
+            echo '```text'
+            tail -n 200 lint-output.txt 2>/dev/null || true
+            echo '```'
+            echo
+            echo "## Test output"
+            echo '```text'
+            tail -n 250 test-output.txt 2>/dev/null || true
+            echo '```'
+          } > repair-validation-report.md
+          exit 0
+
+      - name: Publish repair branch
+        shell: bash
+        run: |
+          git checkout -B agent/recent-feature-fixes
+          git rm -f .github/workflows/apply-recent-feature-fixes.yml .github/workflows/publish-recent-feature-fixes.yml scripts/apply_recent_feature_fixes.py
+          git add app/server.py app/openai_api.py app/model_registry.py app/model_manager.py runtime/model_converter.py runtime/openvino_engine.py web/index.html tests/test_server_mock.py tests/test_recent_feature_regressions.py repair-validation-report.md
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Fix recent OpenVINO feature regressions"
+          git push --force origin agent/recent-feature-fixes
