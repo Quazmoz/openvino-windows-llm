@@ -1,0 +1,35 @@
+name: Delete merged repair branch
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/delete-merged-branch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Delete merged branch and remove this workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if git ls-remote --exit-code --heads origin refs/heads/agent/recent-feature-fixes >/dev/null 2>&1; then
+            git push origin --delete agent/recent-feature-fixes
+          fi
+
+          git rm .github/workflows/delete-merged-branch.yml
+          git commit -m "Remove temporary branch cleanup workflow"
+          git push origin main
