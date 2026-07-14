@@ -1,0 +1,47 @@
+name: Apply Built-in UI UX Pass
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - scripts/apply_ui_ux_pass.py
+      - .github/workflows/apply-ui-ux-pass.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-built-in-ui-ux-pass
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Apply focused UI and accessibility fixes
+        run: python scripts/apply_ui_ux_pass.py
+
+      - name: Run UI regression checks
+        run: |
+          python -m pip install pytest
+          pytest -q tests/test_web_ui_ux.py
+
+      - name: Remove one-shot automation
+        run: |
+          rm scripts/apply_ui_ux_pass.py
+          rm .github/workflows/apply-ui-ux-pass.yml
+
+      - name: Commit directly to main
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Improve built-in UI usability and accessibility"
+          git push origin HEAD:main
