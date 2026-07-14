@@ -636,10 +636,9 @@ class ModelManager:
             logger.warning("Refusing to convert unknown model '%s'", model_id)
             return None
         if model_id in self.engines:
-            cfg = self.catalog[model_id]
-            self._set_progress(model_id, "ready", f"{cfg.name} is already loaded.", percent=100)
-            self._clear_status(model_id)
-            return None
+            raise ValueError(
+                f"Model '{model_id}' is loaded. Unload it before converting or replacing its files."
+            )
 
         existing = self.convert_tasks.get(model_id)
         if existing and not existing.done():

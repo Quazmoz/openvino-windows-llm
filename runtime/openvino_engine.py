@@ -66,14 +66,38 @@ class StreamHandle:
         self._stop = threading.Event()
         self._done = threading.Event()
 
-    def push(self, piece: str) -> None:
-        self.text += piece
-        self._q.put(piece)
+    def push(self, piece: str) -> bool:
+        """Queue a generated chunk unless cancellation was requested.
+
+        A bounded queue prevents unbounded memory growth, but a plain blocking
+        ``put`` can deadlock a generation worker after a client disconnects.
+        Polling with a short timeout lets cancellation release the worker.
+        """
+        while not self.should_stop():
+            try:
+                self._q.put(piece, timeout=0.1)
+            except queue.Full:
+                continue
+            self.text += piece
+            return True
+        return False
 
     def finish(self, error: BaseException | None = None) -> None:
         self.error = error
-        self._q.put(_SENTINEL)
-        self._done.set()
+        try:
+            while True:
+                try:
+                    self._q.put(_SENTINEL, timeout=0.1)
+                    break
+                except queue.Full:
+                    if not self.should_stop():
+                        continue
+                    # The consumer has gone away. Discard one queued chunk so
+                    # blocked ``next_chunk`` workers can still receive EOF.
+                    with contextlib.suppress(queue.Empty):
+                        self._q.get_nowait()
+        finally:
+            self._done.set()
 
     def next_chunk(self) -> str | None:
         item = self._q.get()
@@ -86,9 +110,9 @@ class StreamHandle:
     def should_stop(self) -> bool:
         return self._stop.is_set()
 
-    def wait_closed(self, timeout: float | None = 30.0) -> None:
+    def wait_closed(self, timeout: float | None = 30.0) -> bool:
         """Block until the worker thread has finished, so the engine is free again."""
-        self._done.wait(timeout)
+        return self._done.wait(timeout)
 
 
 class BaseEngine:
@@ -162,7 +186,8 @@ class MockEngine(BaseEngine):
                 if handle.should_stop():
                     break
                 time.sleep(0.015)  # simulate generation latency for the UI
-                handle.push(token)
+                if not handle.push(token):
+                    break
             handle.finish()
 
         threading.Thread(target=worker, daemon=True).start()
@@ -359,8 +384,7 @@ class OpenVINOEngine(BaseEngine):
         pipe = self._pipe
 
         def streamer(subword: str) -> bool:
-            handle.push(subword)
-            return handle.should_stop()  # True => stop generation, False => keep going
+            return not handle.push(subword)  # True => stop generation, False => keep going
 
         def worker() -> None:
             try:

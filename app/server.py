@@ -296,7 +296,27 @@ def create_app(settings: Settings) -> FastAPI:
             stats["completion_tokens"] += completion_tokens
             stats["total_latency"] += latency
 
-    async def require_api_key(authorization: str | None = Header(default=None)) -> None:
+    def auth_failure(source: str) -> HTTPException:
+        now = time.monotonic()
+        cutoff = now - _AUTH_FAILURE_WINDOW
+        failures = [t for t in _auth_failures.get(source, []) if t > cutoff]
+        failures.append(now)
+        _auth_failures[source] = failures
+        if len(failures) > _AUTH_FAILURE_MAX:
+            retry_after = max(1, int(failures[0] + _AUTH_FAILURE_WINDOW - now) + 1)
+            logger.warning(
+                "Repeated auth failures from source '%s' (%d in window)", source, len(failures)
+            )
+            return HTTPException(
+                status_code=429,
+                detail="Too many invalid API-key attempts",
+                headers={"Retry-After": str(retry_after)},
+            )
+        return HTTPException(status_code=401, detail="Invalid or missing API key")
+
+    async def require_api_key(
+        request: Request, authorization: str | None = Header(default=None)
+    ) -> None:
         if not settings.api_key:
             active_key_var.set("default")
             return
@@ -306,8 +326,9 @@ def create_app(settings: Settings) -> FastAPI:
             active_key_var.set("default")
             return
 
+        source = request.client.host if request.client else "unknown"
         if authorization is None or not authorization.startswith("Bearer "):
-            raise HTTPException(status_code=401, detail="Invalid or missing API key")
+            raise auth_failure(source)
 
         token = authorization[len("Bearer ") :]
         matched_key = None
@@ -317,19 +338,9 @@ def create_app(settings: Settings) -> FastAPI:
                 break
 
         if matched_key is None:
-            now = time.monotonic()
-            source = "unknown"
-            cutoff = now - _AUTH_FAILURE_WINDOW
-            failures = _auth_failures.get(source, [])
-            failures = [t for t in failures if t > cutoff]
-            failures.append(now)
-            _auth_failures[source] = failures
-            if len(failures) > _AUTH_FAILURE_MAX:
-                logger.warning(
-                    "Repeated auth failures from source '%s' (%d in window)", source, len(failures)
-                )
-            raise HTTPException(status_code=401, detail="Invalid or missing API key")
+            raise auth_failure(source)
 
+        _auth_failures.pop(source, None)
         active_key_var.set(matched_key)
 
     auth = [Depends(require_api_key)]
@@ -444,15 +455,18 @@ def create_app(settings: Settings) -> FastAPI:
                 status_code=400, detail=f"Model '{req.model}' has no source model configured"
             )
 
-        task = manager.schedule_convert(
-            req.model,
-            device,
-            load_after=req.load_after,
-            weight_format=req.weight_format,
-            group_size=req.group_size,
-            ratio=req.ratio,
-            sym=req.sym,
-        )
+        try:
+            task = manager.schedule_convert(
+                req.model,
+                device,
+                load_after=req.load_after,
+                weight_format=req.weight_format,
+                group_size=req.group_size,
+                ratio=req.ratio,
+                sym=req.sym,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         entry = manager.catalog_entry(req.model)
         if task is None and entry["is_downloaded"] and not req.weight_format:
             return {
@@ -581,15 +595,18 @@ def create_app(settings: Settings) -> FastAPI:
 
         # 2. Schedule download and conversion
         device = _normalize_device_or_400(None)
-        manager.schedule_convert(
-            req.model_id,
-            device,
-            load_after=req.load_after,
-            weight_format=req.weight_format,
-            group_size=req.group_size,
-            ratio=req.ratio,
-            sym=req.sym,
-        )
+        try:
+            manager.schedule_convert(
+                req.model_id,
+                device,
+                load_after=req.load_after,
+                weight_format=req.weight_format,
+                group_size=req.group_size,
+                ratio=req.ratio,
+                sym=req.sym,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         entry = manager.catalog_entry(req.model_id)
         return {
             "status": entry["status"],
