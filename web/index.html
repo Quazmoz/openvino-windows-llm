@@ -2242,6 +2242,309 @@
             letter-spacing: 0.5px;
             margin-bottom: 4px;
         }
+
+
+        /* UX_HARDENING_V1 */
+        /* Accessibility, touch ergonomics, and narrow-screen layout hardening. */
+        :root {
+            --text-3: #71839a;
+        }
+
+        [data-theme="light"] {
+            --text-3: #65758b;
+        }
+
+        #app {
+            height: 100vh;
+            height: 100dvh;
+        }
+
+        button,
+        select,
+        textarea,
+        input {
+            touch-action: manipulation;
+        }
+
+        .icon-btn {
+            width: 36px;
+            height: 36px;
+        }
+
+        .chats-header .icon-btn {
+            width: 32px;
+            height: 32px;
+        }
+
+        .close-btn {
+            min-width: 36px;
+            min-height: 36px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: var(--radius-sm);
+        }
+
+        #model-select,
+        #device-select {
+            min-height: 36px;
+        }
+
+        #settings-sidebar {
+            opacity: 1;
+            transition: margin-right 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+                border-color 0.3s, opacity 0.2s;
+        }
+
+        #settings-sidebar.closed {
+            margin-right: -280px;
+            border-left-color: transparent;
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .bubble {
+            overflow-wrap: anywhere;
+        }
+
+        .bubble table {
+            display: block;
+            max-width: 100%;
+            overflow-x: auto;
+        }
+
+        .chat-item {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 34px;
+            align-items: center;
+            gap: 2px;
+            padding: 0;
+            cursor: default;
+        }
+
+        .chat-item-main {
+            min-width: 0;
+            width: 100%;
+            padding: 9px 8px 9px 11px;
+            border: 0;
+            border-radius: inherit;
+            background: transparent;
+            color: inherit;
+            font: inherit;
+            text-align: left;
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .chat-item-main:focus-visible {
+            outline: 2px solid var(--primary);
+            outline-offset: -2px;
+        }
+
+        .chat-item-delete {
+            position: static;
+            transform: none;
+            width: 30px;
+            height: 30px;
+            opacity: 0;
+        }
+
+        .chat-item:hover .chat-item-delete,
+        .chat-item:focus-within .chat-item-delete {
+            opacity: 1;
+        }
+
+        .modal-card {
+            overscroll-behavior: contain;
+        }
+
+        .modal-tab-btn[aria-selected="true"] {
+            color: var(--primary);
+            border-bottom-color: var(--primary);
+        }
+
+        @media (hover: none), (pointer: coarse) {
+            .icon-btn,
+            .close-btn {
+                min-width: 44px;
+                min-height: 44px;
+            }
+
+            .chip,
+            .action-btn,
+            .benchmark-run-btn,
+            .btn-cancel,
+            .btn-submit,
+            .search-result-select-btn,
+            .search-row button {
+                min-height: 44px;
+            }
+
+            .meta-btn {
+                width: 36px;
+                height: 36px;
+                opacity: 1;
+            }
+
+            .code-copy,
+            .chat-item-delete {
+                opacity: 1;
+            }
+
+            .chat-item-delete {
+                width: 44px;
+                height: 44px;
+            }
+        }
+
+        @media (max-width: 950px) {
+            .header-right {
+                display: flex;
+                flex-wrap: wrap;
+                align-items: center;
+            }
+
+            .model-select-wrap {
+                flex: 1 0 100%;
+            }
+
+            .device-select-wrap {
+                flex: 1 1 180px;
+            }
+
+            #device-chip {
+                flex: 0 1 auto;
+            }
+
+            .btn-group {
+                display: inline-flex;
+            }
+
+            #chats-sidebar,
+            #settings-sidebar {
+                width: min(340px, 92vw);
+            }
+
+            #chats-sidebar.collapsed {
+                margin-left: min(-340px, -92vw);
+            }
+
+            #settings-sidebar.closed {
+                margin-right: min(-340px, -92vw);
+            }
+        }
+
+        @media (max-width: 700px) {
+            header {
+                padding: 10px 12px;
+                gap: 10px;
+            }
+
+            .header-left {
+                justify-content: space-between;
+            }
+
+            .header-right {
+                display: flex;
+                gap: 8px;
+            }
+
+            .model-select-wrap {
+                flex: 1 0 100%;
+                order: 0;
+            }
+
+            .device-select-wrap {
+                flex: 1 1 170px;
+                order: 1;
+            }
+
+            #device-chip {
+                min-height: 44px;
+                order: 2;
+            }
+
+            .btn-group {
+                order: 3;
+            }
+
+            #new-chat-btn,
+            #add-model-btn,
+            #export-chat-btn,
+            #theme-toggle-btn,
+            #settings-toggle-btn {
+                order: 4;
+            }
+
+            #model-select,
+            #device-select,
+            #device-select.has-advanced-value {
+                min-height: 44px;
+                width: 100%;
+                max-width: none;
+                font-size: 13px;
+            }
+
+            #input-area {
+                padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+            }
+
+            #user-input {
+                min-height: 48px;
+                font-size: 16px;
+            }
+
+            #send-btn {
+                width: 48px;
+                height: 48px;
+            }
+
+            .footer-meta > span:first-child {
+                display: none;
+            }
+
+            .footer-meta {
+                margin-top: 6px;
+            }
+
+            .footer-right {
+                width: 100%;
+            }
+
+            .msg-row.ai {
+                align-items: stretch;
+            }
+
+            .msg-row.ai .msg-col {
+                width: 100%;
+                max-width: 100%;
+            }
+
+            .msg-row.user {
+                align-items: flex-end;
+            }
+
+            .msg-row.user .msg-col {
+                width: auto;
+                max-width: 92%;
+                align-items: flex-end;
+            }
+
+            .empty-state h2 {
+                font-size: 21px;
+            }
+
+            .empty-state p {
+                font-size: 13px;
+            }
+
+            #toast {
+                bottom: calc(96px + env(safe-area-inset-bottom));
+            }
+        }
+
     </style>
 </head>
 
@@ -2250,7 +2553,7 @@
         <header>
             <div class="header-left">
                 <button class="icon-btn" id="chats-toggle-btn" title="Toggle conversations (Ctrl+B)"
-                    aria-label="Toggle conversation list">
+                    aria-label="Toggle conversation list" aria-controls="chats-sidebar" aria-expanded="true">
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                         stroke-linecap="round" stroke-linejoin="round">
                         <path d="M3 6h18" />
@@ -2380,7 +2683,7 @@
                 </button>
                 <button class="icon-btn" id="theme-toggle-btn" title="Toggle light/dark theme"
                     aria-label="Toggle light/dark theme"></button>
-                <button class="icon-btn" id="settings-toggle-btn" title="Toggle Settings" aria-label="Toggle Settings">
+                <button class="icon-btn" id="settings-toggle-btn" title="Toggle settings" aria-label="Toggle settings" aria-controls="settings-sidebar" aria-expanded="false">
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                         stroke-linecap="round" stroke-linejoin="round">
                         <circle cx="12" cy="12" r="3" />
@@ -2392,7 +2695,7 @@
         </header>
 
         <div class="main-body">
-            <aside id="chats-sidebar" aria-label="Conversations">
+            <aside id="chats-sidebar" aria-label="Conversations" aria-hidden="false">
                 <div class="chats-header">
                     <h3>Conversations</h3>
                     <button class="icon-btn" id="new-chat-side-btn" title="New chat (Ctrl+L)" aria-label="Start new chat">
@@ -2473,8 +2776,8 @@
                     </button>
                     <form id="chat-form" class="input-row" onsubmit="return false;">
                         <textarea id="user-input" placeholder="Message the model… (Enter to send, Shift+Enter for newline)"
-                            rows="1" autocomplete="off"></textarea>
-                        <button type="submit" id="send-btn" title="Send (Enter)">
+                            rows="1" autocomplete="off" aria-label="Message the selected model"></textarea>
+                        <button type="submit" id="send-btn" title="Send (Enter)" aria-label="Send message">
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                 stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                                 <path d="M22 2L11 13" />
@@ -2486,14 +2789,14 @@
                         <span><kbd>Enter</kbd> send &middot; <kbd>Shift+Enter</kbd> newline &middot;
                             <kbd>Ctrl+L</kbd> new chat &middot; <kbd>Esc</kbd> stop</span>
                         <div class="footer-right">
-                            <span id="model-status">Loading model catalog…</span>
+                            <span id="model-status" role="status" aria-live="polite">Loading model catalog…</span>
                             <span id="token-counter">0 tokens</span>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <div id="settings-sidebar" class="hidden">
+            <aside id="settings-sidebar" class="closed" aria-label="Generation settings" aria-hidden="true">
                 <div class="sidebar-header">
                     <h3>Generation Settings</h3>
                     <button id="close-sidebar-btn" class="close-btn" title="Close settings"
@@ -2619,28 +2922,28 @@
                         <span class="activity-empty">No events yet</span>
                     </div>
                 </div>
-            </div>
+            </aside>
         </div>
     </div>
 
-    <div id="toast"></div>
+    <div id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
 
-    <div id="custom-model-modal" class="modal-overlay hidden">
-        <div class="modal-card">
+    <div id="custom-model-modal" class="modal-overlay hidden" aria-hidden="true">
+        <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="custom-model-title">
             <div class="modal-header">
-                <h3>Add Custom Model</h3>
-                <button id="close-modal-btn" class="close-btn" title="Close modal">&times;</button>
+                <h3 id="custom-model-title">Add Custom Model</h3>
+                <button id="close-modal-btn" class="close-btn" title="Close modal" aria-label="Close add custom model dialog">&times;</button>
             </div>
             
-            <div class="modal-tabs">
-                <button type="button" class="modal-tab-btn active" id="tab-btn-search">Search HF Hub</button>
-                <button type="button" class="modal-tab-btn" id="tab-btn-manual">Manual Add</button>
+            <div class="modal-tabs" role="tablist" aria-label="Custom model source">
+                <button type="button" class="modal-tab-btn active" id="tab-btn-search" role="tab" aria-selected="true" aria-controls="modal-panel-search">Search HF Hub</button>
+                <button type="button" class="modal-tab-btn" id="tab-btn-manual" role="tab" aria-selected="false" aria-controls="modal-panel-manual">Manual Add</button>
             </div>
 
             <!-- Panel 1: HF Hub Search -->
-            <div id="modal-panel-search" class="modal-panel">
+            <div id="modal-panel-search" class="modal-panel" role="tabpanel" aria-labelledby="tab-btn-search">
                 <div class="search-row">
-                    <input type="text" id="hf-search-input" placeholder="Search HF Hub, e.g. Qwen2.5-0.5B or bge-small">
+                    <input type="text" id="hf-search-input" aria-label="Search Hugging Face Hub" placeholder="Search HF Hub, e.g. Qwen2.5-0.5B or bge-small">
                     <button type="button" id="hf-search-btn">Search</button>
                 </div>
                 <div class="form-group-row">
@@ -2658,7 +2961,7 @@
             </div>
 
             <!-- Panel 2: Manual Registration & Quantization -->
-            <div id="modal-panel-manual" class="modal-panel hidden">
+            <div id="modal-panel-manual" class="modal-panel hidden" role="tabpanel" aria-labelledby="tab-btn-manual">
                 <form id="custom-model-form" class="modal-form" onsubmit="return false;" style="padding: 0; gap: 14px;">
                     <div class="form-group">
                         <label for="custom-source-model">Hugging Face Repo ID</label>
@@ -2873,7 +3176,9 @@
             if (theme === 'light') document.documentElement.dataset.theme = 'light';
             else delete document.documentElement.dataset.theme;
             themeToggleBtn.innerHTML = theme === 'light' ? MOON_ICON : SUN_ICON;
-            themeToggleBtn.title = theme === 'light' ? 'Switch to dark theme' : 'Switch to light theme';
+            const label = theme === 'light' ? 'Switch to dark theme' : 'Switch to light theme';
+            themeToggleBtn.title = label;
+            themeToggleBtn.setAttribute('aria-label', label);
         }
         let currentTheme = localStorage.getItem(THEME_KEY) || 'dark';
         applyTheme(currentTheme);
@@ -2912,6 +3217,7 @@
                 const btn = document.createElement('button');
                 btn.className = 'code-copy';
                 btn.type = 'button';
+                btn.setAttribute('aria-label', 'Copy code block');
                 btn.textContent = 'Copy';
                 btn.addEventListener('click', () => {
                     navigator.clipboard.writeText(code ? code.innerText : pre.innerText).then(() => {
@@ -3550,8 +3856,7 @@
             updateSendButtonState();
             if (!authPromptShown) {
                 authPromptShown = true;
-                settingsSidebar.classList.remove('hidden');
-                settingsToggleBtn.classList.add('active');
+                setSettingsSidebarOpen(true);
                 settingsApiKey.focus();
                 showToast(apiKey ? 'API key rejected' : 'This server requires an API key');
             }
@@ -3663,34 +3968,36 @@
             const sorted = [...chats].sort((a, b) => (b.updated || 0) - (a.updated || 0));
             chatsList.innerHTML = '';
             sorted.forEach(chat => {
-                const item = document.createElement('button');
-                item.type = 'button';
+                const item = document.createElement('div');
                 item.className = `chat-item${chat.id === activeChatId ? ' active' : ''}`;
                 item.dataset.chatId = chat.id;
 
-                const title = document.createElement('div');
+                const selectButton = document.createElement('button');
+                selectButton.type = 'button';
+                selectButton.className = 'chat-item-main';
+                selectButton.setAttribute('aria-current', chat.id === activeChatId ? 'true' : 'false');
+
+                const title = document.createElement('span');
                 title.className = 'chat-item-title';
                 title.textContent = chat.title || 'New chat';
-                const sub = document.createElement('div');
+                const sub = document.createElement('span');
                 sub.className = 'chat-item-sub';
                 sub.textContent = chatSubtitle(chat);
 
-                const del = document.createElement('span');
+                selectButton.appendChild(title);
+                selectButton.appendChild(sub);
+                selectButton.addEventListener('click', () => switchChat(chat.id));
+
+                const del = document.createElement('button');
+                del.type = 'button';
                 del.className = 'chat-item-delete';
                 del.title = 'Delete chat';
-                del.setAttribute('role', 'button');
                 del.setAttribute('aria-label', `Delete chat: ${chat.title || 'New chat'}`);
-                del.tabIndex = 0;
                 del.innerHTML = TRASH_ICON;
-                del.addEventListener('click', e => { e.stopPropagation(); deleteChat(chat.id); });
-                del.addEventListener('keydown', e => {
-                    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); deleteChat(chat.id); }
-                });
+                del.addEventListener('click', () => deleteChat(chat.id));
 
-                item.appendChild(title);
-                item.appendChild(sub);
+                item.appendChild(selectButton);
                 item.appendChild(del);
-                item.addEventListener('click', () => switchChat(chat.id));
                 chatsList.appendChild(item);
             });
             chatsFooter.textContent = `${chats.length} chat${chats.length === 1 ? '' : 's'} · stored in this browser`;
@@ -3792,6 +4099,10 @@
         function setChatsSidebarCollapsed(collapsed) {
             chatsSidebar.classList.toggle('collapsed', collapsed);
             chatsToggleBtn.classList.toggle('active', !collapsed);
+            chatsToggleBtn.setAttribute('aria-expanded', String(!collapsed));
+            chatsSidebar.setAttribute('aria-hidden', String(collapsed));
+            chatsSidebar.inert = collapsed;
+            if (!collapsed && window.innerWidth <= 950) setSettingsSidebarOpen(false);
             try { localStorage.setItem(CHATLIST_KEY, collapsed ? 'closed' : 'open'); } catch { }
         }
         const savedChatlist = localStorage.getItem(CHATLIST_KEY);
@@ -3799,6 +4110,14 @@
         chatsToggleBtn.addEventListener('click', () => {
             setChatsSidebarCollapsed(!chatsSidebar.classList.contains('collapsed'));
         });
+
+        function closeMobilePanelsFromContent() {
+            if (window.innerWidth > 950) return;
+            setChatsSidebarCollapsed(true);
+            setSettingsSidebarOpen(false);
+        }
+        chatArea.addEventListener('pointerdown', closeMobilePanelsFromContent);
+        document.getElementById('input-area').addEventListener('pointerdown', closeMobilePanelsFromContent);
 
         newChatBtn.addEventListener('click', newChat);
         newChatSideBtn.addEventListener('click', newChat);
@@ -3870,6 +4189,7 @@
             row.className = `msg-row ${role}`;
             const avatar = document.createElement('div');
             avatar.className = `avatar ${role}`;
+            avatar.setAttribute('aria-hidden', 'true');
             if (role === 'ai') {
                 avatar.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="color: white;"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>';
             } else {
@@ -3908,6 +4228,7 @@
             copyBtn.className = 'meta-btn';
             copyBtn.type = 'button';
             copyBtn.title = 'Copy message';
+            copyBtn.setAttribute('aria-label', 'Copy message');
             copyBtn.innerHTML = COPY_ICON;
             copyBtn.addEventListener('click', () => {
                 navigator.clipboard.writeText(bubbleContent.innerText).then(() => showToast('Copied!'));
@@ -3918,6 +4239,7 @@
                 regenBtn.className = 'meta-btn regen';
                 regenBtn.type = 'button';
                 regenBtn.title = 'Regenerate response';
+                regenBtn.setAttribute('aria-label', 'Regenerate response');
                 regenBtn.innerHTML = REGEN_ICON;
                 regenBtn.addEventListener('click', regenerateLast);
                 metaBar.appendChild(regenBtn);
@@ -4007,7 +4329,14 @@
             if (e.key === 'Escape') {
                 if (!customModelModal.classList.contains('hidden')) {
                     e.preventDefault();
-                    customModelModal.classList.add('hidden');
+                    setCustomModelModalOpen(false);
+                } else if (!settingsSidebar.classList.contains('closed')) {
+                    e.preventDefault();
+                    setSettingsSidebarOpen(false, true);
+                } else if (window.innerWidth <= 950 && !chatsSidebar.classList.contains('collapsed')) {
+                    e.preventDefault();
+                    setChatsSidebarCollapsed(true);
+                    chatsToggleBtn.focus();
                 } else if (isGenerating) {
                     e.preventDefault();
                     stopGeneration();
@@ -4045,18 +4374,17 @@
         const customSym = document.getElementById('custom-sym');
 
         // Tab Switching
-        tabBtnSearch.addEventListener('click', () => {
-            tabBtnSearch.classList.add('active');
-            tabBtnManual.classList.remove('active');
-            modalPanelSearch.classList.remove('hidden');
-            modalPanelManual.classList.add('hidden');
-        });
-        tabBtnManual.addEventListener('click', () => {
-            tabBtnManual.classList.add('active');
-            tabBtnSearch.classList.remove('active');
-            modalPanelManual.classList.remove('hidden');
-            modalPanelSearch.classList.add('hidden');
-        });
+        function selectCustomModelTab(tab) {
+            const searchSelected = tab === 'search';
+            tabBtnSearch.classList.toggle('active', searchSelected);
+            tabBtnManual.classList.toggle('active', !searchSelected);
+            tabBtnSearch.setAttribute('aria-selected', String(searchSelected));
+            tabBtnManual.setAttribute('aria-selected', String(!searchSelected));
+            modalPanelSearch.classList.toggle('hidden', !searchSelected);
+            modalPanelManual.classList.toggle('hidden', searchSelected);
+        }
+        tabBtnSearch.addEventListener('click', () => selectCustomModelTab('search'));
+        tabBtnManual.addEventListener('click', () => selectCustomModelTab('manual'));
 
         // Toggle INT4 options
         function updateInt4Visibility() {
@@ -4150,17 +4478,26 @@
             }
         });
 
-        addModelBtn.addEventListener('click', () => {
-            customModelModal.classList.remove('hidden');
-            tabBtnSearch.click();
-            hfSearchInput.value = '';
-            hfSearchResults.innerHTML = '<div class="search-empty">Type a query and click Search to browse models on Hugging Face.</div>';
-            hfSearchInput.focus();
-        });
-        closeModalBtn.addEventListener('click', () => customModelModal.classList.add('hidden'));
-        cancelModalBtn.addEventListener('click', () => customModelModal.classList.add('hidden'));
+        let modalReturnFocus = null;
+        function setCustomModelModalOpen(open) {
+            customModelModal.classList.toggle('hidden', !open);
+            customModelModal.setAttribute('aria-hidden', String(!open));
+            if (open) {
+                modalReturnFocus = document.activeElement;
+                selectCustomModelTab('search');
+                hfSearchInput.value = '';
+                hfSearchResults.innerHTML = '<div class="search-empty">Type a query and click Search to browse models on Hugging Face.</div>';
+                hfSearchInput.focus();
+            } else if (modalReturnFocus instanceof HTMLElement) {
+                modalReturnFocus.focus();
+                modalReturnFocus = null;
+            }
+        }
+        addModelBtn.addEventListener('click', () => setCustomModelModalOpen(true));
+        closeModalBtn.addEventListener('click', () => setCustomModelModalOpen(false));
+        cancelModalBtn.addEventListener('click', () => setCustomModelModalOpen(false));
         customModelModal.addEventListener('click', e => {
-            if (e.target === customModelModal) customModelModal.classList.add('hidden');
+            if (e.target === customModelModal) setCustomModelModalOpen(false);
         });
 
         // Autocomplete Model ID and Name on input
@@ -4212,7 +4549,7 @@
                 const data = await res.json();
                 if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
                 showToast(`Queued custom model: ${body.name}`);
-                customModelModal.classList.add('hidden');
+                setCustomModelModalOpen(false);
                 customModelForm.reset();
 
                 // Select the model
@@ -4249,6 +4586,7 @@
             sendBtn.innerHTML = stop ? STOP_ICON : SEND_ICON;
             sendBtn.classList.toggle('stop', stop);
             sendBtn.title = stop ? 'Stop generating' : 'Send (Enter)';
+            sendBtn.setAttribute('aria-label', stop ? 'Stop generating' : 'Send message');
         }
 
         function stopGeneration() {
@@ -4436,15 +4774,21 @@
         }
 
         // ── Settings Sidebar Event Handlers & Persistence ──────
-        // Toggle sidebar
+        // Toggle sidebar while keeping visual, focus, and accessibility state aligned.
+        function setSettingsSidebarOpen(open, restoreFocus = false) {
+            settingsSidebar.classList.toggle('closed', !open);
+            settingsToggleBtn.classList.toggle('active', open);
+            settingsToggleBtn.setAttribute('aria-expanded', String(open));
+            settingsSidebar.setAttribute('aria-hidden', String(!open));
+            settingsSidebar.inert = !open;
+            if (open && window.innerWidth <= 950) setChatsSidebarCollapsed(true);
+            if (restoreFocus) settingsToggleBtn.focus();
+        }
         settingsToggleBtn.addEventListener('click', () => {
-            settingsSidebar.classList.toggle('hidden');
-            settingsToggleBtn.classList.toggle('active');
+            setSettingsSidebarOpen(settingsSidebar.classList.contains('closed'));
         });
-        closeSidebarBtn.addEventListener('click', () => {
-            settingsSidebar.classList.add('hidden');
-            settingsToggleBtn.classList.remove('active');
-        });
+        closeSidebarBtn.addEventListener('click', () => setSettingsSidebarOpen(false, true));
+        setSettingsSidebarOpen(false);
 
         // Handle inputs and sliders
         settingsTemperature.addEventListener('input', () => {
