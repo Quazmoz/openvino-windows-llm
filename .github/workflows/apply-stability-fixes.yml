@@ -22,348 +22,330 @@ jobs:
       - name: Apply focused stability fixes
         shell: bash
         run: |
-          python <<'PY'
-          from pathlib import Path
+          cat > /tmp/stability.patch <<'PATCH'
+          diff --git a/runtime/openvino_engine.py b/runtime/openvino_engine.py
+          index 22d2aa6..0000000 100644
+          --- a/runtime/openvino_engine.py
+          +++ b/runtime/openvino_engine.py
+          @@ -68,14 +68,38 @@ class StreamHandle:
+                   self._stop = threading.Event()
+                   self._done = threading.Event()
+           
+          -    def push(self, piece: str) -> None:
+          -        self.text += piece
+          -        self._q.put(piece)
+          +    def push(self, piece: str) -> bool:
+          +        """Queue a generated chunk unless cancellation was requested.
+          +
+          +        A bounded queue prevents unbounded memory growth, but a plain blocking
+          +        ``put`` can deadlock a generation worker after a client disconnects.
+          +        Polling with a short timeout lets cancellation release the worker.
+          +        """
+          +        while not self.should_stop():
+          +            try:
+          +                self._q.put(piece, timeout=0.1)
+          +            except queue.Full:
+          +                continue
+          +            self.text += piece
+          +            return True
+          +        return False
+           
+               def finish(self, error: BaseException | None = None) -> None:
+                   self.error = error
+          -        self._q.put(_SENTINEL)
+          -        self._done.set()
+          +        try:
+          +            while True:
+          +                try:
+          +                    self._q.put(_SENTINEL, timeout=0.1)
+          +                    break
+          +                except queue.Full:
+          +                    if not self.should_stop():
+          +                        continue
+          +                    # The consumer has gone away. Discard one queued chunk so
+          +                    # blocked ``next_chunk`` workers can still receive EOF.
+          +                    with contextlib.suppress(queue.Empty):
+          +                        self._q.get_nowait()
+          +        finally:
+          +            self._done.set()
+           
+               def next_chunk(self) -> str | None:
+                   item = self._q.get()
+          @@ -88,9 +112,9 @@ class StreamHandle:
+               def should_stop(self) -> bool:
+                   return self._stop.is_set()
+           
+          -    def wait_closed(self, timeout: float | None = 30.0) -> None:
+          +    def wait_closed(self, timeout: float | None = 30.0) -> bool:
+                   """Block until the worker thread has finished, so the engine is free again."""
+          -        self._done.wait(timeout)
+          +        return self._done.wait(timeout)
+           
+           
+           class BaseEngine:
+          @@ -164,7 +188,8 @@ class MockEngine(BaseEngine):
+                               break
+                           time.sleep(0.015)  # simulate generation latency for the UI
+          -                handle.push(token)
+          +                if not handle.push(token):
+          +                    break
+                       handle.finish()
+           
+                   threading.Thread(target=worker, daemon=True).start()
+          @@ -361,8 +386,7 @@ class OpenVINOEngine(BaseEngine):
+                   pipe = self._pipe
+           
+                   def streamer(subword: str) -> bool:
+          -            handle.push(subword)
+          -            return handle.should_stop()  # True => stop generation, False => keep going
+          +            return not handle.push(subword)  # True => stop generation, False => keep going
+           
+                   def worker() -> None:
+                       try:
+          diff --git a/app/model_manager.py b/app/model_manager.py
+          index 3a799e5..0000000 100644
+          --- a/app/model_manager.py
+          +++ b/app/model_manager.py
+          @@ -635,11 +635,9 @@ class ModelManager:
+                       logger.warning("Refusing to convert unknown model '%s'", model_id)
+                       return None
+                   if model_id in self.engines:
+          -            cfg = self.catalog[model_id]
+          -            self._set_progress(model_id, "ready", f"{cfg.name} is already loaded.", percent=100)
+          -            self._clear_status(model_id)
+          -            return None
+          +            raise ValueError(
+          +                f"Model '{model_id}' is loaded. Unload it before converting or replacing its files."
+          +            )
+           
+                   existing = self.convert_tasks.get(model_id)
+                   if existing and not existing.done():
+          diff --git a/app/server.py b/app/server.py
+          index ab79e3a..0000000 100644
+          --- a/app/server.py
+          +++ b/app/server.py
+          @@ -298,34 +298,50 @@ def create_app(settings: Settings) -> FastAPI:
+                       stats["completion_tokens"] += completion_tokens
+                       stats["total_latency"] += latency
+           
+          -    async def require_api_key(authorization: str | None = Header(default=None)) -> None:
+          +    def auth_failure(source: str) -> HTTPException:
+          +        now = time.monotonic()
+          +        cutoff = now - _AUTH_FAILURE_WINDOW
+          +        failures = [t for t in _auth_failures.get(source, []) if t > cutoff]
+          +        failures.append(now)
+          +        _auth_failures[source] = failures
+          +        if len(failures) > _AUTH_FAILURE_MAX:
+          +            retry_after = max(1, int(failures[0] + _AUTH_FAILURE_WINDOW - now) + 1)
+          +            logger.warning(
+          +                "Repeated auth failures from source '%s' (%d in window)", source, len(failures)
+          +            )
+          +            return HTTPException(
+          +                status_code=429,
+          +                detail="Too many invalid API-key attempts",
+          +                headers={"Retry-After": str(retry_after)},
+          +            )
+          +        return HTTPException(status_code=401, detail="Invalid or missing API key")
+          +
+          +    async def require_api_key(
+          +        request: Request, authorization: str | None = Header(default=None)
+          +    ) -> None:
+                       if not settings.api_key:
+                           active_key_var.set("default")
+                           return
+           
+                       valid_keys_list = [k.strip() for k in settings.api_key.split(",") if k.strip()]
+                       if not valid_keys_list:
+                           active_key_var.set("default")
+                           return
+           
+          +        source = request.client.host if request.client else "unknown"
+                       if authorization is None or not authorization.startswith("Bearer "):
+          -            raise HTTPException(status_code=401, detail="Invalid or missing API key")
+          +            raise auth_failure(source)
+           
+                       token = authorization[len("Bearer ") :]
+                       matched_key = None
+                       for k in valid_keys_list:
+                           if secrets.compare_digest(token.encode("utf-8"), k.encode("utf-8")):
+                               matched_key = k
+                               break
+           
+                       if matched_key is None:
+          -            now = time.monotonic()
+          -            source = "unknown"
+          -            cutoff = now - _AUTH_FAILURE_WINDOW
+          -            failures = _auth_failures.get(source, [])
+          -            failures = [t for t in failures if t > cutoff]
+          -            failures.append(now)
+          -            _auth_failures[source] = failures
+          -            if len(failures) > _AUTH_FAILURE_MAX:
+          -                logger.warning(
+          -                    "Repeated auth failures from source '%s' (%d in window)", source, len(failures)
+          -                )
+          -            raise HTTPException(status_code=401, detail="Invalid or missing API key")
+          +            raise auth_failure(source)
+           
+          +        _auth_failures.pop(source, None)
+                       active_key_var.set(matched_key)
+           
+               auth = [Depends(require_api_key)]
+          @@ -447,15 +463,18 @@ def create_app(settings: Settings) -> FastAPI:
+                           status_code=400, detail=f"Model '{req.model}' has no source model configured"
+                       )
+           
+          -        task = manager.schedule_convert(
+          -            req.model,
+          -            device,
+          -            load_after=req.load_after,
+          -            weight_format=req.weight_format,
+          -            group_size=req.group_size,
+          -            ratio=req.ratio,
+          -            sym=req.sym,
+          -        )
+          +        try:
+          +            task = manager.schedule_convert(
+          +                req.model,
+          +                device,
+          +                load_after=req.load_after,
+          +                weight_format=req.weight_format,
+          +                group_size=req.group_size,
+          +                ratio=req.ratio,
+          +                sym=req.sym,
+          +            )
+          +        except ValueError as exc:
+          +            raise HTTPException(status_code=409, detail=str(exc)) from exc
+                   entry = manager.catalog_entry(req.model)
+                   if task is None and entry["is_downloaded"] and not req.weight_format:
+                       return {
+          @@ -588,15 +607,18 @@ def create_app(settings: Settings) -> FastAPI:
+           
+                   # 2. Schedule download and conversion
+                   device = _normalize_device_or_400(None)
+          -        manager.schedule_convert(
+          -            req.model_id,
+          -            device,
+          -            load_after=req.load_after,
+          -            weight_format=req.weight_format,
+          -            group_size=req.group_size,
+          -            ratio=req.ratio,
+          -            sym=req.sym,
+          -        )
+          +        try:
+          +            manager.schedule_convert(
+          +                req.model_id,
+          +                device,
+          +                load_after=req.load_after,
+          +                weight_format=req.weight_format,
+          +                group_size=req.group_size,
+          +                ratio=req.ratio,
+          +                sym=req.sym,
+          +            )
+          +        except ValueError as exc:
+          +            raise HTTPException(status_code=409, detail=str(exc)) from exc
+                   entry = manager.catalog_entry(req.model_id)
+                   return {
+                       "status": entry["status"],
+          diff --git a/tests/test_stability_regressions.py b/tests/test_stability_regressions.py
+          new file mode 100644
+          index 0000000..0000000
+          --- /dev/null
+          +++ b/tests/test_stability_regressions.py
+          @@ -0,0 +1,88 @@
+          +"""Regression tests for streaming cancellation, auth throttling, and conversion conflicts."""
+          +
+          +import asyncio
+          +import threading
+          +import time
+          +
+          +from fastapi.testclient import TestClient
+          +
+          +from app.config import BASE_DIR, Settings
+          +from app.server import create_app
+          +from runtime.openvino_engine import MockEngine, StreamHandle
+          +
+          +MODEL_ID = "tinyllama-1.1b-chat-fp16"
+          +
+          +
+          +def make_settings(*, api_key: str | None = None) -> Settings:
+          +    return Settings(
+          +        host="127.0.0.1",
+          +        port=8000,
+          +        device="CPU",
+          +        models_file=BASE_DIR / "models.json",
+          +        models_dir=BASE_DIR / "models" / "openvino",
+          +        default_model=None,
+          +        api_key=api_key,
+          +        force_mock=True,
+          +    )
+          +
+          +
+          +def test_stream_handle_cancellation_releases_full_queue() -> None:
+          +    handle = StreamHandle()
+          +    for index in range(handle._q.maxsize):
+          +        handle._q.put_nowait(str(index))
+          +
+          +    started = threading.Event()
+          +    push_results: list[bool] = []
+          +
+          +    def producer() -> None:
+          +        started.set()
+          +        push_results.append(handle.push("blocked"))
+          +        handle.finish()
+          +
+          +    worker = threading.Thread(target=producer, daemon=True)
+          +    worker.start()
+          +    assert started.wait(0.5)
+          +    time.sleep(0.05)
+          +
+          +    handle.request_stop()
+          +    worker.join(timeout=1.0)
+          +
+          +    assert not worker.is_alive()
+          +    assert push_results == [False]
+          +    assert handle.wait_closed(timeout=0.1)
+          +
+          +
+          +def test_convert_loaded_model_returns_conflict() -> None:
+          +    app = create_app(make_settings())
+          +    with TestClient(app) as client:
+          +        manager = client.app.state.manager
+          +        manager.engines[MODEL_ID] = MockEngine(MODEL_ID)
+          +        manager.locks[MODEL_ID] = asyncio.Lock()
+          +
+          +        response = client.post(
+          +            "/v1/models/convert",
+          +            json={"model": MODEL_ID, "weight_format": "int4"},
+          +        )
+          +
+          +        assert response.status_code == 409
+          +        assert "Unload it before converting" in response.json()["detail"]
+          +        assert MODEL_ID not in manager.convert_tasks
+          +
+          +
+          +def test_invalid_api_keys_are_throttled_and_success_resets_client() -> None:
+          +    app = create_app(make_settings(api_key="correct-key"))
+          +    wrong_headers = {"Authorization": "Bearer wrong-key"}
+          +    good_headers = {"Authorization": "Bearer correct-key"}
+          +
+          +    with TestClient(app) as client:
+          +        for _ in range(10):
+          +            response = client.get("/v1/models", headers=wrong_headers)
+          +            assert response.status_code == 401
+          +
+          +        blocked = client.get("/v1/models", headers=wrong_headers)
+          +        assert blocked.status_code == 429
+          +        assert int(blocked.headers["Retry-After"]) >= 1
+          +
+          +        accepted = client.get("/v1/models", headers=good_headers)
+          +        assert accepted.status_code == 200
+          +
+          +        after_reset = client.get("/v1/models", headers=wrong_headers)
+          +        assert after_reset.status_code == 401
+          PATCH
 
-
-          def replace_once(path: str, old: str, new: str) -> None:
-              file_path = Path(path)
-              text = file_path.read_text(encoding="utf-8")
-              count = text.count(old)
-              if count != 1:
-                  raise RuntimeError(f"Expected one match in {path}, found {count}")
-              file_path.write_text(text.replace(old, new, 1), encoding="utf-8")
-
-
-          replace_once(
-              "runtime/openvino_engine.py",
-              '''    def push(self, piece: str) -> None:
-                  self.text += piece
-                  self._q.put(piece)
-
-              def finish(self, error: BaseException | None = None) -> None:
-                  self.error = error
-                  self._q.put(_SENTINEL)
-                  self._done.set()
-''',
-              '''    def push(self, piece: str) -> bool:
-                  """Queue a generated chunk unless cancellation was requested.
-
-                  A bounded queue prevents unbounded memory growth, but a plain blocking
-                  ``put`` can deadlock a generation worker after a client disconnects.
-                  Polling with a short timeout lets cancellation release the worker.
-                  """
-                  while not self.should_stop():
-                      try:
-                          self._q.put(piece, timeout=0.1)
-                      except queue.Full:
-                          continue
-                      self.text += piece
-                      return True
-                  return False
-
-              def finish(self, error: BaseException | None = None) -> None:
-                  self.error = error
-                  try:
-                      while True:
-                          try:
-                              self._q.put(_SENTINEL, timeout=0.1)
-                              break
-                          except queue.Full:
-                              if not self.should_stop():
-                                  continue
-                              # The consumer has gone away. Discard one queued chunk so
-                              # blocked ``next_chunk`` workers can still receive EOF.
-                              with contextlib.suppress(queue.Empty):
-                                  self._q.get_nowait()
-                  finally:
-                      self._done.set()
-''',
-          )
-
-          replace_once(
-              "runtime/openvino_engine.py",
-              '''    def wait_closed(self, timeout: float | None = 30.0) -> None:
-                  """Block until the worker thread has finished, so the engine is free again."""
-                  self._done.wait(timeout)
-''',
-              '''    def wait_closed(self, timeout: float | None = 30.0) -> bool:
-                  """Block until the worker thread has finished, so the engine is free again."""
-                  return self._done.wait(timeout)
-''',
-          )
-
-          replace_once(
-              "runtime/openvino_engine.py",
-              '''                time.sleep(0.015)  # simulate generation latency for the UI
-                          handle.push(token)
-''',
-              '''                time.sleep(0.015)  # simulate generation latency for the UI
-                          if not handle.push(token):
-                              break
-''',
-          )
-
-          replace_once(
-              "runtime/openvino_engine.py",
-              '''        def streamer(subword: str) -> bool:
-                  handle.push(subword)
-                  return handle.should_stop()  # True => stop generation, False => keep going
-''',
-              '''        def streamer(subword: str) -> bool:
-                  return not handle.push(subword)  # True => stop generation, False => keep going
-''',
-          )
-
-          replace_once(
-              "app/model_manager.py",
-              '''        if model_id in self.engines:
-                  cfg = self.catalog[model_id]
-                  self._set_progress(model_id, "ready", f"{cfg.name} is already loaded.", percent=100)
-                  self._clear_status(model_id)
-                  return None
-''',
-              '''        if model_id in self.engines:
-                  raise ValueError(
-                      f"Model '{model_id}' is loaded. Unload it before converting or replacing its files."
-                  )
-''',
-          )
-
-          replace_once(
-              "app/server.py",
-              '''    async def require_api_key(authorization: str | None = Header(default=None)) -> None:
-                  if not settings.api_key:
-                      active_key_var.set("default")
-                      return
-
-                  valid_keys_list = [k.strip() for k in settings.api_key.split(",") if k.strip()]
-                  if not valid_keys_list:
-                      active_key_var.set("default")
-                      return
-
-                  if authorization is None or not authorization.startswith("Bearer "):
-                      raise HTTPException(status_code=401, detail="Invalid or missing API key")
-
-                  token = authorization[len("Bearer ") :]
-                  matched_key = None
-                  for k in valid_keys_list:
-                      if secrets.compare_digest(token.encode("utf-8"), k.encode("utf-8")):
-                          matched_key = k
-                          break
-
-                  if matched_key is None:
-                      now = time.monotonic()
-                      source = "unknown"
-                      cutoff = now - _AUTH_FAILURE_WINDOW
-                      failures = _auth_failures.get(source, [])
-                      failures = [t for t in failures if t > cutoff]
-                      failures.append(now)
-                      _auth_failures[source] = failures
-                      if len(failures) > _AUTH_FAILURE_MAX:
-                          logger.warning(
-                              "Repeated auth failures from source '%s' (%d in window)", source, len(failures)
-                          )
-                      raise HTTPException(status_code=401, detail="Invalid or missing API key")
-
-                  active_key_var.set(matched_key)
-''',
-              '''    def auth_failure(source: str) -> HTTPException:
-                  now = time.monotonic()
-                  cutoff = now - _AUTH_FAILURE_WINDOW
-                  failures = [t for t in _auth_failures.get(source, []) if t > cutoff]
-                  failures.append(now)
-                  _auth_failures[source] = failures
-                  if len(failures) > _AUTH_FAILURE_MAX:
-                      retry_after = max(1, int(failures[0] + _AUTH_FAILURE_WINDOW - now) + 1)
-                      logger.warning(
-                          "Repeated auth failures from source '%s' (%d in window)", source, len(failures)
-                      )
-                      return HTTPException(
-                          status_code=429,
-                          detail="Too many invalid API-key attempts",
-                          headers={"Retry-After": str(retry_after)},
-                      )
-                  return HTTPException(status_code=401, detail="Invalid or missing API key")
-
-              async def require_api_key(
-                  request: Request, authorization: str | None = Header(default=None)
-              ) -> None:
-                  if not settings.api_key:
-                      active_key_var.set("default")
-                      return
-
-                  valid_keys_list = [k.strip() for k in settings.api_key.split(",") if k.strip()]
-                  if not valid_keys_list:
-                      active_key_var.set("default")
-                      return
-
-                  source = request.client.host if request.client else "unknown"
-                  if authorization is None or not authorization.startswith("Bearer "):
-                      raise auth_failure(source)
-
-                  token = authorization[len("Bearer ") :]
-                  matched_key = None
-                  for k in valid_keys_list:
-                      if secrets.compare_digest(token.encode("utf-8"), k.encode("utf-8")):
-                          matched_key = k
-                          break
-
-                  if matched_key is None:
-                      raise auth_failure(source)
-
-                  _auth_failures.pop(source, None)
-                  active_key_var.set(matched_key)
-''',
-          )
-
-          replace_once(
-              "app/server.py",
-              '''        task = manager.schedule_convert(
-                  req.model,
-                  device,
-                  load_after=req.load_after,
-                  weight_format=req.weight_format,
-                  group_size=req.group_size,
-                  ratio=req.ratio,
-                  sym=req.sym,
-              )
-''',
-              '''        try:
-                  task = manager.schedule_convert(
-                      req.model,
-                      device,
-                      load_after=req.load_after,
-                      weight_format=req.weight_format,
-                      group_size=req.group_size,
-                      ratio=req.ratio,
-                      sym=req.sym,
-                  )
-              except ValueError as exc:
-                  raise HTTPException(status_code=409, detail=str(exc)) from exc
-''',
-          )
-
-          replace_once(
-              "app/server.py",
-              '''        manager.schedule_convert(
-                  req.model_id,
-                  device,
-                  load_after=req.load_after,
-                  weight_format=req.weight_format,
-                  group_size=req.group_size,
-                  ratio=req.ratio,
-                  sym=req.sym,
-              )
-''',
-              '''        try:
-                  manager.schedule_convert(
-                      req.model_id,
-                      device,
-                      load_after=req.load_after,
-                      weight_format=req.weight_format,
-                      group_size=req.group_size,
-                      ratio=req.ratio,
-                      sym=req.sym,
-                  )
-              except ValueError as exc:
-                  raise HTTPException(status_code=409, detail=str(exc)) from exc
-''',
-          )
-
-          Path("tests/test_stability_regressions.py").write_text(
-              '''"""Regression tests for streaming cancellation, auth throttling, and conversion conflicts."""
-
-              import asyncio
-              import threading
-              import time
-
-              from fastapi.testclient import TestClient
-
-              from app.config import BASE_DIR, Settings
-              from app.server import create_app
-              from runtime.openvino_engine import MockEngine, StreamHandle
-
-              MODEL_ID = "tinyllama-1.1b-chat-fp16"
-
-
-              def make_settings(*, api_key: str | None = None) -> Settings:
-                  return Settings(
-                      host="127.0.0.1",
-                      port=8000,
-                      device="CPU",
-                      models_file=BASE_DIR / "models.json",
-                      models_dir=BASE_DIR / "models" / "openvino",
-                      default_model=None,
-                      api_key=api_key,
-                      force_mock=True,
-                  )
-
-
-              def test_stream_handle_cancellation_releases_full_queue() -> None:
-                  handle = StreamHandle()
-                  for index in range(handle._q.maxsize):
-                      handle._q.put_nowait(str(index))
-
-                  started = threading.Event()
-
-                  def producer() -> None:
-                      started.set()
-                      assert handle.push("blocked") is False
-                      handle.finish()
-
-                  worker = threading.Thread(target=producer, daemon=True)
-                  worker.start()
-                  assert started.wait(0.5)
-                  time.sleep(0.05)
-
-                  handle.request_stop()
-                  worker.join(timeout=1.0)
-
-                  assert not worker.is_alive()
-                  assert handle.wait_closed(timeout=0.1)
-
-
-              def test_convert_loaded_model_returns_conflict() -> None:
-                  app = create_app(make_settings())
-                  with TestClient(app) as client:
-                      manager = client.app.state.manager
-                      manager.engines[MODEL_ID] = MockEngine(MODEL_ID)
-                      manager.locks[MODEL_ID] = asyncio.Lock()
-
-                      response = client.post(
-                          "/v1/models/convert",
-                          json={"model": MODEL_ID, "weight_format": "int4"},
-                      )
-
-                      assert response.status_code == 409
-                      assert "Unload it before converting" in response.json()["detail"]
-                      assert MODEL_ID not in manager.convert_tasks
-
-
-              def test_invalid_api_keys_are_throttled_and_success_resets_client() -> None:
-                  app = create_app(make_settings(api_key="correct-key"))
-                  wrong_headers = {"Authorization": "Bearer wrong-key"}
-                  good_headers = {"Authorization": "Bearer correct-key"}
-
-                  with TestClient(app) as client:
-                      for _ in range(10):
-                          response = client.get("/v1/models", headers=wrong_headers)
-                          assert response.status_code == 401
-
-                      blocked = client.get("/v1/models", headers=wrong_headers)
-                      assert blocked.status_code == 429
-                      assert int(blocked.headers["Retry-After"]) >= 1
-
-                      accepted = client.get("/v1/models", headers=good_headers)
-                      assert accepted.status_code == 200
-
-                      after_reset = client.get("/v1/models", headers=wrong_headers)
-                      assert after_reset.status_code == 401
-              ''',
-              encoding="utf-8",
-          )
-          PY
+          git apply --check /tmp/stability.patch
+          git apply /tmp/stability.patch
 
       - name: Install development dependencies
         run: |
