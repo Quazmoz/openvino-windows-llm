@@ -1,19 +1,20 @@
 # Quickstart
 
-This is the shortest path to get the server running. Windows remains the primary, stable target. Linux support is experimental and currently supports Ubuntu and Fedora.
+Windows is the primary target. Ubuntu and Fedora support is experimental.
 
-## Windows Quickstart
+## Windows
 
 ### Requirements
 
-- **OS**: Windows 11
-- **Python**: 3.11, 3.12, or 3.13
-- **Hardware**: Intel CPU, with Intel GPU/NPU supported when OpenVINO sees the device and drivers are installed
+- Windows 11
+- Python 3.11, 3.12, or 3.13
+- Intel CPU
+- Intel GPU or NPU only when OpenVINO and the installed drivers expose the device
 
-> [!TIP]
-> If `python` or `py` opens the Microsoft Store, turn off **App execution aliases** for Python in Windows Settings.
+If `python` or `py` opens the Microsoft Store, disable the Python App execution aliases
+in Windows Settings.
 
-### 1. Install & Setup
+### 1. Install
 
 ```powershell
 git clone https://github.com/Quazmoz/openvino-windows-llm.git
@@ -21,144 +22,135 @@ cd openvino-windows-llm
 .\setup.bat
 ```
 
-To install only runtime dependencies and skip Hugging Face conversion tools:
+Use `.\setup.bat -Minimal` only when you do not need local model conversion.
 
-```powershell
-.\setup.bat -Minimal
-```
-
-### 2. Start the Server
-
-Launch the server in mock mode to verify the stack works end-to-end without needing model files:
+### 2. Verify the stack in mock mode
 
 ```powershell
 .\start_server.bat --mock
 ```
 
-Open **http://localhost:8000** in your browser. You'll land in the built-in chat UI:
-pick a model in the header, click the onboarding card's **Load** button (or just type a
-message — the UI converts/loads the model for you, then answers). The left sidebar keeps
-your conversation history, and the ⚙ panel holds generation settings, request metrics,
-and the hardware benchmark. In mock mode responses are canned, but every feature —
-streaming, model lifecycle, benchmarks, export — behaves exactly like the real thing.
+Open `http://127.0.0.1:8000`. Mock mode exercises the API, streaming, lifecycle,
+benchmarks, and browser UI without real OpenVINO inference.
 
-### 3. Convert a Catalog Model
+### 3. Check real devices
+
+```powershell
+.\start_server.bat --check-devices
+```
+
+OpenVINO discovery is the source of truth. Start with CPU when GPU or NPU is not listed.
+
+### 4. Start real inference
+
+The shortest first-run flow downloads and converts TinyLlama when needed:
+
+```powershell
+.\start_server.bat `
+  --model tinyllama-1.1b-chat-fp16 `
+  --device CPU `
+  --auto-convert
+```
+
+For an explicit conversion step:
 
 ```powershell
 .\setup\convert_model.ps1 -Id tinyllama-1.1b-chat-fp16
-```
-
-> [!IMPORTANT]
-> **Converting Gated Models (e.g. Gemma 2, Llama 3.2, Llama 3.1)**:
-> 1. Accept the model license on Hugging Face.
-> 2. Create a token at https://huggingface.co/settings/tokens.
-> 3. Configure it in `.env` as `HF_TOKEN=your_token`.
-
-### 4. Run Local Inference
-
-```powershell
-# Run on Intel NPU
-.\start_server.bat --model tinyllama-1.1b-chat-fp16 --device NPU
-
-# Fallback to CPU if NPU is not available or drivers are outdated
 .\start_server.bat --model tinyllama-1.1b-chat-fp16 --device CPU
 ```
 
-## Experimental Linux Quickstart
+Use an NPU only after it appears in device discovery:
 
-Linux support is experimental and currently supports Ubuntu and Fedora. CPU inference is the recommended first validation path. Linux GPU/NPU support is hardware/driver-dependent and experimental.
+```powershell
+.\start_server.bat --model tinyllama-1.1b-chat-fp16 --device NPU
+```
 
-### Requirements
+Gated models require accepted Hugging Face terms and `HF_TOKEN`.
 
-- **OS**: Ubuntu 22.04/24.04 or Fedora 40+ expected
-- **Python**: 3.11, 3.12, or 3.13
-- **Hardware**: CPU first; Intel GPU/NPU only with compatible Linux drivers
+### 5. Certify the Windows hardware path
 
-### 1. Install & Setup
+```powershell
+.\scripts\validate_windows.ps1
+```
 
-Ubuntu:
+This runs real API, streaming, lifecycle, benchmark, and device checks and creates
+sanitized JSON and Markdown reports. Add `-IncludeEmbeddings` for the embedding route.
+
+See [Windows hardware certification](docs/WINDOWS_CERTIFICATION.md).
+
+## Experimental Linux
+
+### Ubuntu prerequisites
 
 ```bash
 sudo apt update
 sudo apt install -y python3 python3-venv python3-pip git
 ```
 
-Fedora:
+### Fedora prerequisites
 
 ```bash
 sudo dnf install -y python3 python3-pip python3-devel git
 ```
 
-Then:
+### Setup and run
 
 ```bash
 git clone https://github.com/Quazmoz/openvino-windows-llm.git
 cd openvino-windows-llm
 chmod +x setup.sh start_server.sh setup/*.sh setup/linux/*.sh
 ./setup.sh --minimal
-```
-
-If your `python3` is not 3.11-3.13, install a supported interpreter and pass it explicitly:
-
-```bash
-./setup.sh --minimal --python python3.11
-```
-
-### 2. Start the Server
-
-```bash
 ./start_server.sh --mock
+./start_server.sh --check-devices
 ```
 
-### 3. Convert a Catalog Model
-
-Install conversion dependencies, then export TinyLlama:
+Install conversion dependencies and run CPU inference:
 
 ```bash
 ./setup.sh
 ./setup/linux/convert_model.sh --id tinyllama-1.1b-chat-fp16
-```
-
-### 4. Run Local Inference
-
-```bash
-./start_server.sh --model tinyllama-1.1b-chat-fp16 --device CPU
-./start_server.sh --check-devices
-```
-
-## Device modes: CPU, GPU, NPU, AUTO, and experimental multi-device routing
-
-Use `CPU`, `GPU`, or `NPU` to run on one target. `AUTO` lets OpenVINO choose an available target, while `AUTO:NPU,GPU,CPU` and `AUTO:GPU,NPU,CPU` set explicit fallback priorities.
-
-```powershell
-.\start_server.bat --model tinyllama-1.1b-chat-fp16 --device AUTO:NPU,GPU,CPU
-.\start_server.bat --model tinyllama-1.1b-chat-fp16 --device AUTO:GPU,NPU,CPU
-```
-
-Linux uses the same CLI arguments:
-
-```bash
 ./start_server.sh --model tinyllama-1.1b-chat-fp16 --device CPU
 ```
 
-`MULTI` and `HETERO` are experimental. They may help some throughput or graph partitioning cases, but they do not guarantee faster single-prompt generation:
+Linux GPU and NPU paths remain driver-dependent and experimental.
 
-```powershell
-.\start_server.bat --model tinyllama-1.1b-chat-fp16 --device MULTI:NPU,GPU,CPU
+## Device expressions
+
+Simple targets:
+
+```text
+CPU
+GPU
+NPU
+AUTO
 ```
 
-Benchmark your own hardware before choosing an advanced mode:
+Advanced examples:
 
-```powershell
-python scripts\benchmark_devices.py tinyllama-1.1b-chat-fp16 --experimental
+```text
+AUTO:NPU,GPU,CPU
+AUTO:GPU,NPU,CPU
+MULTI:NPU,GPU,CPU
+HETERO:NPU,GPU,CPU
 ```
 
-## Useful Commands
+Advanced routing does not guarantee faster single-request generation. Benchmark the
+actual model and machine:
 
-- **List catalog models**: `.\start_server.bat --list` or `./start_server.sh --list`
-- **Show detected hardware**: `.\start_server.bat --check-devices` or `./start_server.sh --check-devices`
-- **Run tests (mock mode)**:
-  ```powershell
-  .venv\Scripts\python.exe -m pip install -r requirements-dev.txt
-  .venv\Scripts\python.exe -m pytest
-  ```
+```powershell
+python -m app.server `
+  --benchmark `
+  --benchmark-model tinyllama-1.1b-chat-fp16 `
+  --benchmark-devices "CPU;GPU;NPU;AUTO;AUTO:NPU,GPU,CPU"
+```
+
+## Useful commands
+
+```powershell
+.\start_server.bat --list
+.\start_server.bat --check-devices
+python scripts\validate_api_contract.py --profile full --expect-real
+python -m pytest
+ruff check .
+ruff format --check .
+```
