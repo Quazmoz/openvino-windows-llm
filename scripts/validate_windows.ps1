@@ -7,7 +7,7 @@ param(
     [switch]$SkipConversion,
     [switch]$ContinueOnFailure,
     [switch]$KeepServerLogs,
-    [string]$ApiKey = "",
+    [string]$ApiKey = $env:OV_LLM_API_KEY,
     [string]$OutputDirectory = "certification/results",
     [int]$Port = 8765,
     [int]$LoadTimeoutSeconds = 900,
@@ -35,7 +35,13 @@ function Stop-Server([AllowNull()][System.Diagnostics.Process]$Process) {
     if ($Process -and -not $Process.HasExited) {
         Stop-Process -Id $Process.Id -Force -ErrorAction SilentlyContinue
         $Process.WaitForExit(10000) | Out-Null
+        Start-Sleep -Milliseconds 250
     }
+}
+
+function Assert-PortFree([int]$LocalPort) {
+    $listener = Get-NetTCPConnection -LocalPort $LocalPort -State Listen -ErrorAction SilentlyContinue
+    if ($listener) { throw "Port $LocalPort is already in use." }
 }
 
 function Wait-Health(
@@ -164,6 +170,7 @@ print(json.dumps(versions))
         )
         if (-not $SkipConversion) { $serverArgs += "--auto-convert" }
 
+        Assert-PortFree $Port
         Write-Host "Validating $Model on $device..."
         $start = @{
             FilePath = $python
