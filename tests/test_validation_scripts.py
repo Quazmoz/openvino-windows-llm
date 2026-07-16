@@ -1,4 +1,9 @@
+from pathlib import Path
+
 from scripts.validate_api_contract import Check, markdown, parse_sse, sanitize
+
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_parse_sse_extracts_events_payloads_and_done():
@@ -50,3 +55,13 @@ def test_check_dataclass_shape_is_report_safe():
     check = Check("Contract", "pass", 1.2, "ok")
     assert check.name == "Contract"
     assert check.status == "pass"
+
+
+def test_windows_harness_forces_real_local_validation():
+    script = (ROOT / "scripts" / "validate_windows.ps1").read_text(encoding="utf-8")
+    assert '$env:OV_LLM_MOCK = ""' in script
+    assert '"--expect-real"' in script
+    assert "Assert-PortFree $Port" in script
+    assert "OV_LLM_API_KEY" in script
+    assert '"--api-key"' not in script
+    assert "certification/results" in script
