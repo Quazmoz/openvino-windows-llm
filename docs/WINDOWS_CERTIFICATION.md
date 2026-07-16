@@ -16,8 +16,8 @@ For each requested OpenVINO device target, the harness:
 6. Cancels a stream early and confirms the next generation can acquire the model lock.
 7. Exercises stop, seed, tool-call request, and structured-output request fields.
 8. Runs the n8n-oriented Responses API in streaming and non-streaming modes.
-9. Verifies unload protection, unload, and reload behavior.
-10. Runs a short benchmark without keeping a second serving copy of the model in memory.
+9. Verifies request metrics, unload protection, unload, and reload behavior.
+10. Runs a short benchmark after confirming the serving model was unloaded.
 11. Optionally converts, loads, and validates the embedding model on CPU.
 12. Produces sanitized JSON and Markdown reports.
 
@@ -57,12 +57,12 @@ A fuller run that also validates the embedding endpoint is:
 To require API-key authentication during certification:
 
 ```powershell
-.\scripts\validate_windows.ps1 `
-  -Devices CPU,NPU `
-  -ApiKey "replace-with-a-local-test-key"
+$env:OV_LLM_API_KEY = "replace-with-a-local-test-key"
+.\scripts\validate_windows.ps1 -Devices CPU,NPU
 ```
 
-The key is passed to the local server and validator but is never written to the report.
+The inherited key is passed to the local server and validator but is never written to
+the report or placed in a child-process argument list.
 
 ## Useful options
 
@@ -73,10 +73,13 @@ The key is passed to the local server and validator but is never written to the 
 | `-IncludeEmbeddings` | Validate `/v1/embeddings` with the configured embedding model. |
 | `-EmbeddingModel <id>` | Override the default `bge-small-en-v1.5` model. |
 | `-SkipConversion` | Require model files to exist instead of downloading/converting. |
-| `-ApiKey <key>` | Start the server with authentication and verify 401/200 behavior. |
+| `-ApiKey <key>` | Override `OV_LLM_API_KEY` and verify 401/200 behavior. Prefer the environment variable to avoid shell history. |
 | `-ContinueOnFailure` | Continue through remaining devices after a failed profile. |
 | `-KeepServerLogs` | Retain raw local server logs for private troubleshooting. |
 | `-OutputDirectory <path>` | Change the report root. |
+
+The harness refuses to start if its selected localhost port is already listening, which
+prevents an unrelated process from being mistaken for the certification server.
 
 Raw server logs may contain machine-specific paths or generated text. They are deleted
 by default and must not be attached publicly without review.
