@@ -327,7 +327,7 @@ class Validator:
             "/v1/chat/completions",
             {
                 "model": self.args.model,
-                "messages": [{"role": "user", "content": "Return {\"status\":\"ok\"}."}],
+                "messages": [{"role": "user", "content": 'Return {"status":"ok"}.'}],
                 "response_format": {"type": "json_object"},
                 "temperature": 0,
                 "max_tokens": 48,
@@ -396,10 +396,20 @@ class Validator:
         require(size > 0, "Embedding vector is empty")
         return f"dimensions={size}"
 
+    def metrics(self) -> str:
+        data = self.client.json("GET", "/v1/system/status")
+        metrics = data.get("metrics", {}).get("per_model", {}).get(self.args.model, {})
+        requests = int(metrics.get("requests") or 0)
+        require(requests > 0, "Request metrics did not record generation")
+        return f"requests={requests}"
+
     def benchmark(self) -> str | tuple[str, str]:
         if not self.args.run_benchmark:
             return "skip", "Not requested"
-        self.client.request("POST", "/v1/models/unload", {"model": self.args.model})
+        status, _, _ = self.client.request(
+            "POST", "/v1/models/unload", {"model": self.args.model}
+        )
+        require(status == 200, f"Benchmark preflight unload returned HTTP {status}")
         try:
             data = self.client.json(
                 "POST",
@@ -444,6 +454,7 @@ class Validator:
             self.check("Open WebUI streaming", self.chat_stream)
             self.check("Stream cancellation recovery", self.cancellation)
             self.check("Tool and structured-output requests", self.tools_and_json)
+            self.check("Request metrics", self.metrics)
         if self.args.profile in {"n8n", "full"}:
             self.check("n8n Responses API", self.responses)
         self.check("Embeddings", self.embeddings)
@@ -457,7 +468,6 @@ class Validator:
             "schema_version": 1,
             "generated_at": datetime.now(UTC).isoformat(),
             "profile": self.args.profile,
-            "base_url": self.args.base_url,
             "model": self.args.model,
             "embedding_model": self.args.embedding_model
             if self.args.include_embeddings
