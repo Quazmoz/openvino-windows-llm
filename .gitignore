@@ -39,6 +39,7 @@ htmlcov/
 *.log
 diagnostics-*.json
 benchmark/results/
+certification/results/
 
 # --- IDE ---
 .vscode/
