@@ -2,15 +2,12 @@ from pathlib import Path
 
 from scripts.validate_api_contract import Check, markdown, parse_sse, sanitize
 
-
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_parse_sse_extracts_events_payloads_and_done():
     events, payloads, done = parse_sse(
-        'event: response.created\n'
-        'data: {"type":"response.created"}\n\n'
-        'data: [DONE]\n\n'
+        'event: response.created\ndata: {"type":"response.created"}\n\ndata: [DONE]\n\n'
     )
     assert events == ["response.created"]
     assert payloads == [{"type": "response.created"}]
