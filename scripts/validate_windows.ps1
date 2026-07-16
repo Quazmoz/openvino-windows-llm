@@ -187,7 +187,6 @@ print(json.dumps(versions))
                 "--load-timeout", "$LoadTimeoutSeconds",
                 "--output-json", $jsonReport, "--output-markdown", $mdReport
             )
-            if ($ApiKey) { $validatorArgs += @("--api-key", $ApiKey) }
             if ($embeddingPending) {
                 $validatorArgs += @("--include-embeddings", "--embedding-model", $EmbeddingModel)
             }
