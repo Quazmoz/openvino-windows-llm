@@ -453,7 +453,9 @@ class OpenVINOVisionEngine(OpenVINOEngine):
         self._closed = False
         config = dict(plugin_config or {})
 
-        logger.info("Loading vision model '%s' on %s from %s", model_id, self.device, self.model_path)
+        logger.info(
+            "Loading vision model '%s' on %s from %s", model_id, self.device, self.model_path
+        )
         if self.device == "NPU" and config:
             # VLM NPU plugin options are nested under DEVICE_PROPERTIES.
             self._pipe = ov_genai.VLMPipeline(

@@ -11,10 +11,11 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 _SECRET_RE = re.compile(
     r"Bearer\s+\S+|hf_[A-Za-z0-9_=-]{8,}|token\s*[:=]\s*\S+",
@@ -75,9 +76,7 @@ class Client:
                 exc.read(),
             )
         except urllib.error.URLError as exc:
-            raise ValidationError(
-                f"Cannot reach {request.full_url}: {exc.reason}"
-            ) from exc
+            raise ValidationError(f"Cannot reach {request.full_url}: {exc.reason}") from exc
 
     def json(
         self,
@@ -90,17 +89,13 @@ class Client:
     ) -> Any:
         status, _, body = self.request(method, path, payload, auth=auth)
         if status not in expected:
-            raise ValidationError(
-                f"{method} {path} returned HTTP {status}: {body[:400]!r}"
-            )
+            raise ValidationError(f"{method} {path} returned HTTP {status}: {body[:400]!r}")
         try:
             return json.loads(body.decode())
         except json.JSONDecodeError as exc:
             raise ValidationError(f"{method} {path} returned invalid JSON") from exc
 
-    def sse(
-        self, path: str, payload: dict[str, Any], *, first_event_only: bool = False
-    ) -> str:
+    def sse(self, path: str, payload: dict[str, Any], *, first_event_only: bool = False) -> str:
         request = urllib.request.Request(
             f"{self.base_url}{path}",
             data=json.dumps(payload).encode(),
@@ -167,9 +162,7 @@ class Validator:
         except Exception as exc:  # noqa: BLE001
             status, detail = "fail", sanitize(exc, self.args.api_key)
         self.checks.append(
-            Check(
-                name, status, round((time.perf_counter() - started) * 1000, 1), detail
-            )
+            Check(name, status, round((time.perf_counter() - started) * 1000, 1), detail)
         )
 
     def wait(self) -> None:
@@ -222,9 +215,7 @@ class Validator:
         ids = {item.get("id") for item in data.get("data", [])}
         require(self.args.model in ids, f"Missing model {self.args.model}")
         if self.args.include_embeddings:
-            require(
-                self.args.embedding_model in ids, "Embedding model is not cataloged"
-            )
+            require(self.args.embedding_model in ids, "Embedding model is not cataloged")
         return f"catalog={len(ids)}"
 
     def load(self, model: str, device: str | None) -> str:
@@ -286,9 +277,7 @@ class Validator:
             "/v1/chat/completions",
             {
                 "model": self.args.model,
-                "messages": [
-                    {"role": "user", "content": "Generate several sentences."}
-                ],
+                "messages": [{"role": "user", "content": "Generate several sentences."}],
                 "stream": True,
                 "max_tokens": 128,
             },
@@ -333,9 +322,7 @@ class Validator:
                 "max_tokens": 48,
             },
         )
-        content = (
-            (json_data.get("choices") or [{}])[0].get("message", {}).get("content")
-        )
+        content = (json_data.get("choices") or [{}])[0].get("message", {}).get("content")
         strict_json = False
         try:
             strict_json = isinstance(json.loads(content or ""), dict)
@@ -376,9 +363,7 @@ class Validator:
             "response.output_text.delta",
             "response.completed",
         }
-        require(
-            done and required.issubset(events), "Responses SSE sequence is incomplete"
-        )
+        require(done and required.issubset(events), "Responses SSE sequence is incomplete")
         return "streaming and non-streaming passed"
 
     def embeddings(self) -> str | tuple[str, str]:
@@ -406,9 +391,7 @@ class Validator:
     def benchmark(self) -> str | tuple[str, str]:
         if not self.args.run_benchmark:
             return "skip", "Not requested"
-        status, _, _ = self.client.request(
-            "POST", "/v1/models/unload", {"model": self.args.model}
-        )
+        status, _, _ = self.client.request("POST", "/v1/models/unload", {"model": self.args.model})
         require(status == 200, f"Benchmark preflight unload returned HTTP {status}")
         try:
             data = self.client.json(
@@ -430,9 +413,7 @@ class Validator:
     def lifecycle(self) -> str | tuple[str, str]:
         if not self.args.exercise_lifecycle:
             return "skip", "Not requested"
-        status, _, _ = self.client.request(
-            "POST", "/v1/models/unload", {"model": self.args.model}
-        )
+        status, _, _ = self.client.request("POST", "/v1/models/unload", {"model": self.args.model})
         require(status == 200, f"Unload returned HTTP {status}")
         status, _, _ = self.client.request(
             "POST",
@@ -469,9 +450,7 @@ class Validator:
             "generated_at": datetime.now(UTC).isoformat(),
             "profile": self.args.profile,
             "model": self.args.model,
-            "embedding_model": self.args.embedding_model
-            if self.args.include_embeddings
-            else None,
+            "embedding_model": self.args.embedding_model if self.args.include_embeddings else None,
             "requested_device": self.args.device,
             "server": self.server,
             "summary": summary,
@@ -512,9 +491,7 @@ def markdown(report: dict[str, Any]) -> str:
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description=__doc__)
     result.add_argument("--base-url", default="http://127.0.0.1:8000")
-    result.add_argument(
-        "--profile", choices=("core", "openwebui", "n8n", "full"), default="full"
-    )
+    result.add_argument("--profile", choices=("core", "openwebui", "n8n", "full"), default="full")
     result.add_argument("--model", default="tinyllama-1.1b-chat-fp16")
     result.add_argument("--embedding-model", default="bge-small-en-v1.5")
     result.add_argument("--device")
@@ -546,9 +523,7 @@ def main(argv: list[str] | None = None) -> int:
     rendered = markdown(report)
     if args.output_json:
         args.output_json.parent.mkdir(parents=True, exist_ok=True)
-        args.output_json.write_text(
-            json.dumps(report, indent=2) + "\n", encoding="utf-8"
-        )
+        args.output_json.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     if args.output_markdown:
         args.output_markdown.parent.mkdir(parents=True, exist_ok=True)
         args.output_markdown.write_text(rendered, encoding="utf-8")

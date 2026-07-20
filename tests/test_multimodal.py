@@ -83,9 +83,7 @@ def test_transport_markers_become_openvino_image_tags_and_are_consumed_once():
     prepared, context_key = multimodal.prepare_vision_messages(messages)
     assert context_key
     assert "<ov_genai_image_0>" in prepared[0]["content"]
-    prompt = multimodal.append_prompt_context(
-        chat_format.render_chatml(prepared), context_key
-    )
+    prompt = multimodal.append_prompt_context(chat_format.render_chatml(prepared), context_key)
 
     clean_prompt, payloads = multimodal.consume_prompt_context(prompt)
     assert "ovllm-image-context" not in clean_prompt

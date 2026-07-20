@@ -197,7 +197,9 @@ def content_to_transport_text(content: Any) -> str:
 
 
 def _purge_contexts_locked(now: float) -> None:
-    expired = [key for key, (created, _) in _contexts.items() if now - created > _CONTEXT_TTL_SECONDS]
+    expired = [
+        key for key, (created, _) in _contexts.items() if now - created > _CONTEXT_TTL_SECONDS
+    ]
     for key in expired:
         _contexts.pop(key, None)
     while len(_contexts) >= _CONTEXT_LIMIT:
@@ -298,7 +300,9 @@ def to_openvino_tensors(payloads: list[ImagePayload]) -> list[Any]:
         from openvino import Tensor
         from PIL import Image
     except ImportError as exc:  # pragma: no cover - real OpenVINO environments provide these
-        raise RuntimeError("OpenVINO, NumPy, and Pillow are required for vision inference.") from exc
+        raise RuntimeError(
+            "OpenVINO, NumPy, and Pillow are required for vision inference."
+        ) from exc
 
     tensors: list[Any] = []
     for payload in payloads:
