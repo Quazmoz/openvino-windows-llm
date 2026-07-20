@@ -1,8 +1,9 @@
 """OpenAI-compatible request/response models (Pydantic v2).
 
 These mirror the subset of the OpenAI API the server implements: chat
-completions (with streaming + tool calling) and the Responses API used by tools
-like n8n. They are plain data models with no OpenVINO dependency.
+completions (with streaming + tool calling), multimodal image inputs, and the
+Responses API used by tools like n8n. They are plain data models with no
+OpenVINO dependency.
 """
 
 from __future__ import annotations
@@ -11,6 +12,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
+from app import multimodal
 from runtime import device_check
 
 # --- Chat messages ---------------------------------------------------------
@@ -21,6 +23,11 @@ class ChatMessage(BaseModel):
     content: Any = None  # str, list of content parts, or None (OpenAI spec allows all three)
     tool_calls: list[dict[str, Any]] | None = None
     tool_call_id: str | None = None
+
+    @field_validator("content")
+    @classmethod
+    def validate_multimodal_content(cls, value: Any) -> Any:
+        return multimodal.validate_content(value)
 
 
 # --- Tool / function calling ----------------------------------------------
@@ -112,6 +119,15 @@ class ResponseRequest(BaseModel):
     lora_path: str | None = None
     lora_alpha: float | None = Field(default=1.0, gt=0.0)
 
+    @field_validator("input")
+    @classmethod
+    def validate_multimodal_input(cls, value: Any) -> Any:
+        if isinstance(value, list):
+            for message in value:
+                if isinstance(message, dict):
+                    multimodal.validate_content(message.get("content"))
+        return value
+
 
 class ResponseOutputMessage(BaseModel):
     type: str = "message"
@@ -168,6 +184,10 @@ class ModelRegisterRequest(BaseModel):
     )
     name: str = Field(min_length=1, max_length=160)
     source_model: str = Field(min_length=1, max_length=240)
+    backend: str = Field(
+        default="openvino-genai",
+        pattern=r"^(openvino-genai|openvino-embeddings|openvino-vlm)$",
+    )
     weight_format: str = Field(default="int4", pattern=r"^(int4|int8|fp16)$")
     recommended_device: str = Field(default="NPU", min_length=1, max_length=64)
     max_context_len: int = Field(default=2048, ge=128, le=262144)
@@ -242,7 +262,8 @@ class DownloadCustomRequest(BaseModel):
     name: str = Field(min_length=1, max_length=160)
     source_model: str = Field(min_length=1, max_length=240)
     backend: str = Field(
-        default="openvino-genai", pattern=r"^(openvino-genai|openvino-embeddings)$"
+        default="openvino-genai",
+        pattern=r"^(openvino-genai|openvino-embeddings|openvino-vlm)$",
     )
     weight_format: str = Field(default="int4", pattern=r"^(int4|int8|fp16)$")
     group_size: int | None = Field(default=None, ge=-1)
