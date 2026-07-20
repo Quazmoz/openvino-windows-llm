@@ -6,13 +6,13 @@ tool parsing, the model catalog) has no hard dependency on OpenVINO and can be
 imported, tested, and run in mock mode on any platform.
 """
 
-__version__ = "0.2.0"
-
-# The browser client intentionally remains a single checked-in HTML file.  Install a
-# narrow FileResponse extension at package import time so multimodal controls can be
-# added without duplicating or rewriting that large asset.
 from app.ui_extension import install_ui_extension
 
+__version__ = "0.2.0"
+
+# The browser client intentionally remains a single checked-in HTML file. Install a
+# narrow FileResponse extension at package import time so multimodal controls can be
+# added without duplicating or rewriting that large asset.
 install_ui_extension()
 
 __all__ = [
