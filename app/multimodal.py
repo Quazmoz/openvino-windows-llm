@@ -1,16 +1,8 @@
 """Validated image inputs and request-local transport for vision-language models.
 
-The OpenAI APIs represent images as content parts while the existing server passes a
-rendered prompt string into its engine abstraction.  This module bridges those two
-shapes without putting image bytes into the tokenizer prompt:
-
-* only local ``data:`` URLs are accepted (remote fetching is intentionally disabled)
-* image type, decoded size, dimensions, and per-request counts are bounded
-* normalized chat messages carry temporary image markers until an engine renders them
-* VLM engines exchange the markers for OpenVINO image tags and consume a short-lived
-  in-memory image context when generation starts
-
-Image payloads are never written to disk or added to browser conversation history.
+OpenAI APIs represent images as content parts while the server's established engine
+abstraction passes a rendered prompt string. This module bridges the two shapes without
+placing encoded image bytes in tokenizer prompts.
 """
 
 from __future__ import annotations
@@ -71,7 +63,6 @@ def _image_url_from_part(part: dict[str, Any]) -> str | None:
     part_type = str(part.get("type") or "").lower()
     if part_type not in {"image_url", "input_image"}:
         return None
-
     candidate: Any = part.get("image_url")
     if isinstance(candidate, dict):
         candidate = candidate.get("url")
@@ -81,10 +72,10 @@ def _image_url_from_part(part: dict[str, Any]) -> str | None:
 
 
 def decode_data_url(url: str) -> ImagePayload:
-    """Decode and verify one image data URL.
+    """Decode and verify one local image data URL.
 
-    Remote URLs are deliberately rejected.  This keeps the local server from becoming
-    an SSRF-capable fetch proxy and makes the privacy boundary explicit.
+    Remote URLs are deliberately rejected so the local API cannot become an SSRF-capable
+    fetch proxy and the privacy boundary remains explicit.
     """
 
     if not isinstance(url, str) or not url.startswith("data:"):
@@ -105,7 +96,6 @@ def decode_data_url(url: str) -> ImagePayload:
     if "base64" not in pieces[1:]:
         raise ValueError("Image data URLs must be base64 encoded.")
 
-    # Refuse obviously oversized payloads before allocating the decoded bytes.
     estimated_size = (len(encoded) * 3) // 4
     if estimated_size > MAX_IMAGE_BYTES + 3:
         raise ValueError(f"Each image must be {MAX_IMAGE_BYTES // (1024 * 1024)} MiB or smaller.")
@@ -120,7 +110,7 @@ def decode_data_url(url: str) -> ImagePayload:
 
     try:
         from PIL import Image, UnidentifiedImageError
-    except ImportError as exc:  # pragma: no cover - dependency is declared by the package
+    except ImportError as exc:  # pragma: no cover - declared dependency
         raise RuntimeError("Pillow is required for image validation.") from exc
 
     format_to_mime = {"JPEG": "image/jpeg", "PNG": "image/png", "WEBP": "image/webp"}
@@ -140,7 +130,6 @@ def decode_data_url(url: str) -> ImagePayload:
         raise ValueError("Image dimensions must be positive.")
     if width * height > MAX_IMAGE_PIXELS:
         raise ValueError(f"Image exceeds the {MAX_IMAGE_PIXELS:,}-pixel safety limit.")
-
     return ImagePayload(mime_type=mime_type, data=data, width=width, height=height)
 
 
@@ -225,7 +214,7 @@ def _store_context(payloads: list[ImagePayload]) -> str:
 
 
 def prepare_text_messages(messages: list[dict]) -> list[dict]:
-    """Remove private image bytes before a text-only tokenizer sees the messages."""
+    """Remove private image bytes before a text-only tokenizer sees messages."""
 
     prepared: list[dict] = []
     replacement = "[Image attached, but the selected model is not vision-capable.]"
@@ -242,7 +231,6 @@ def prepare_vision_messages(messages: list[dict]) -> tuple[list[dict], str | Non
 
     payloads: list[ImagePayload] = []
     prepared: list[dict] = []
-
     for message in messages:
         item = dict(message)
         content = str(item.get("content") or "")
@@ -275,6 +263,16 @@ def strip_prompt_context(prompt: str) -> str:
     return _CONTEXT_MARKER_RE.sub("", prompt)
 
 
+def discard_prompt_context(prompt: str) -> None:
+    """Release an image context for a prompt rendered only for token budgeting."""
+
+    match = _CONTEXT_MARKER_RE.search(prompt)
+    if not match:
+        return
+    with _context_lock:
+        _contexts.pop(match.group(1), None)
+
+
 def consume_prompt_context(prompt: str) -> tuple[str, list[ImagePayload]]:
     """Remove a prompt context marker and return its image payloads exactly once."""
 
@@ -305,7 +303,6 @@ def to_openvino_tensors(payloads: list[ImagePayload]) -> list[Any]:
     tensors: list[Any] = []
     for payload in payloads:
         with Image.open(io.BytesIO(payload.data)) as image:
-            # RGB conversion intentionally discards metadata such as EXIF before inference.
             rgb = image.convert("RGB")
             array = np.asarray(rgb, dtype=np.uint8)
         tensors.append(Tensor(array.reshape(1, array.shape[0], array.shape[1], 3)))
