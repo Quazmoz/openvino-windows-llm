@@ -1,23 +1,55 @@
-name: Apply multimodal hardening
+name: CI
 
 on:
+  push:
+    branches: [main, "dev/*"]
   pull_request:
-    branches: [main]
+    branches: [main, "dev/*"]
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  apply-test-publish:
-    if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+  lint-and-test:
+    name: Lint & Test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .[dev]
+
+      - name: Run Ruff lint and format checks
+        run: |
+          ruff check .
+          ruff format --check .
+
+      - name: Run pytest in mock mode
+        env:
+          OV_LLM_MOCK: "true"
+        run: pytest
+
+  external-contract-smoke:
+    name: External API Contract Smoke
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout feature branch
+      - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.head_ref }}
-          fetch-depth: 0
 
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
@@ -26,84 +58,88 @@ jobs:
           cache: pip
           cache-dependency-path: pyproject.toml
 
-      - name: Reconstruct and verify patch
-        shell: bash
-        run: |
-          set -euo pipefail
-          cat .github/hardening-patch-* | base64 --decode | gzip --decompress > /tmp/hardening.patch
-          echo "c60332ffdfa825e39d7ed2bc033983f0d431f34677892b06a2b5250a13f9a185  /tmp/hardening.patch" | sha256sum -c -
-          git apply --check /tmp/hardening.patch
-          git apply /tmp/hardening.patch
-
-      - name: Restore repository CI and remove staging files
-        shell: bash
-        run: |
-          set -euo pipefail
-          git fetch origin main
-          git show origin/main:.github/workflows/ci.yml > .github/workflows/ci.yml
-          rm -f .github/hardening-patch-* .github/workflows/export-hardening-source.yml
-          test ! -e .github/workflows/export-hardening-source.yml
-          test -z "$(find .github -maxdepth 1 -name 'hardening-patch-*' -print -quit)"
-
-      - name: Install dependencies
+      - name: Install runtime and test dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -e .[dev]
 
-      - name: Run Python quality gates
+      - name: Start mock server
         env:
           OV_LLM_MOCK: "true"
         run: |
-          ruff check .
-          ruff format --check .
-          pytest
-          python -m compileall -q app runtime tests
-          git diff --check
+          python -m app.server \
+            --mock \
+            --host 127.0.0.1 \
+            --port 8123 \
+            --model tinyllama-1.1b-chat-fp16 \
+            > contract-server.log 2>&1 &
+          echo $! > contract-server.pid
 
-      - name: Validate browser JavaScript syntax
-        shell: bash
+      - name: Validate external OpenAI and integration contracts
         run: |
-          set -euo pipefail
-          python - <<'PY'
-          from pathlib import Path
-          import re
+          python scripts/validate_api_contract.py \
+            --base-url http://127.0.0.1:8123 \
+            --profile full \
+            --model tinyllama-1.1b-chat-fp16 \
+            --device CPU \
+            --expect-mock \
+            --include-embeddings \
+            --run-benchmark \
+            --exercise-lifecycle \
+            --load-timeout 60 \
+            --timeout 30 \
+            --output-json contract-report.json \
+            --output-markdown contract-report.md
 
-          from app.ui_extension import VISION_EXTENSION_JS
+      - name: Show server log on failure
+        if: failure()
+        run: tail -200 contract-server.log
 
-          html = Path("web/index.html").read_text(encoding="utf-8")
-          matches = list(re.finditer(r'<script(?:\s[^>]*)?>(.*?)</script>', html, re.S))
-          if not matches:
-              raise SystemExit("No inline browser scripts found")
-          for index, match in enumerate(matches, 1):
-              Path(f"/tmp/web-inline-{index}.js").write_text(match.group(1), encoding="utf-8")
-          Path("/tmp/vision-extension.js").write_text(VISION_EXTENSION_JS, encoding="utf-8")
-          PY
-          for script in /tmp/web-inline-*.js /tmp/vision-extension.js; do
-            node --check "$script"
-          done
-
-      - name: Verify final scope
-        shell: bash
+      - name: Stop mock server
+        if: always()
         run: |
-          set -euo pipefail
-          cmp -s .github/workflows/ci.yml <(git show origin/main:.github/workflows/ci.yml) || {
-            echo "Normal CI workflow was not restored" >&2
+          if [ -f contract-server.pid ]; then
+            kill "$(cat contract-server.pid)" 2>/dev/null || true
+          fi
+
+      - name: Upload contract report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: external-api-contract-report
+          path: |
+            contract-report.json
+            contract-report.md
+          if-no-files-found: ignore
+          retention-days: 14
+
+  windows-harness-smoke:
+    name: Windows Harness Syntax
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Parse PowerShell certification harness
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path "scripts/validate_windows.ps1"),
+            [ref]$tokens,
+            [ref]$errors
+          ) | Out-Null
+          if ($errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Error $_.Message }
             exit 1
           }
-          test ! -e .github/workflows/export-hardening-source.yml
-          test -z "$(find .github -maxdepth 1 -name 'hardening-patch-*' -print -quit)"
-          git status --short
 
-      - name: Commit hardened implementation
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
-          if git diff --cached --quiet; then
-            echo "No hardened changes to commit" >&2
-            exit 1
-          fi
-          git commit -m "Harden multimodal vision for production"
-          git push origin HEAD:${{ github.head_ref }}
+      - name: Compile Python contract validator
+        run: python -m py_compile scripts/validate_api_contract.py

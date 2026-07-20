@@ -25,6 +25,7 @@ def test_load_catalog_parses_entries(tmp_path):
                 "source_model": "org/model-one",
                 "max_context_len": 4096,
                 "max_output_tokens": 1024,
+                "trust_remote_code": True,
             }
         },
     )
@@ -34,6 +35,7 @@ def test_load_catalog_parses_entries(tmp_path):
     assert cfg.name == "Model One"
     assert cfg.max_prompt_len == 4096 - 1024
     assert cfg.recommended_device == "NPU"
+    assert cfg.trust_remote_code is True
 
 
 def test_shipped_catalog_is_fp16_with_supported_recommended_devices():
@@ -45,6 +47,19 @@ def test_shipped_catalog_is_fp16_with_supported_recommended_devices():
 
 def test_load_catalog_missing_file_returns_empty(tmp_path):
     assert load_catalog(tmp_path / "nope.json") == {}
+
+
+def test_load_catalog_rejects_non_boolean_remote_code_policy(tmp_path):
+    path = _write_catalog(
+        tmp_path,
+        {
+            "safe": {"name": "Safe", "trust_remote_code": False},
+            "ambiguous": {"name": "Ambiguous", "trust_remote_code": "false"},
+        },
+    )
+    catalog = load_catalog(path)
+    assert catalog["safe"].trust_remote_code is False
+    assert "ambiguous" not in catalog
 
 
 def test_load_catalog_skips_malformed_entries(tmp_path):

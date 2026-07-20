@@ -64,6 +64,7 @@ class ModelConfig:
     recommended_device: str
     max_context_len: int
     max_output_tokens: int
+    trust_remote_code: bool = False
 
     @property
     def max_prompt_len(self) -> int:
@@ -87,6 +88,9 @@ class ModelConfig:
 
 
 def _coerce_entry(model_id: str, raw: dict) -> ModelConfig:
+    trust_remote_code = raw.get("trust_remote_code", False)
+    if not isinstance(trust_remote_code, bool):
+        raise ValueError("trust_remote_code must be a JSON boolean")
     return ModelConfig(
         id=model_id,
         name=raw.get("name", model_id),
@@ -98,6 +102,7 @@ def _coerce_entry(model_id: str, raw: dict) -> ModelConfig:
         recommended_device=raw.get("recommended_device", "NPU"),
         max_context_len=int(raw.get("max_context_len", 2048)),
         max_output_tokens=int(raw.get("max_output_tokens", 512)),
+        trust_remote_code=trust_remote_code,
     )
 
 
@@ -249,6 +254,7 @@ def make_catalog_entry(
         "source_model": cfg.source_model,
         "max_context_len": cfg.max_context_len,
         "max_output_tokens": cfg.max_output_tokens,
+        "trust_remote_code": cfg.trust_remote_code,
         "backend": cfg.backend,
         "capabilities": capabilities,
         "supports_vision": cfg.supports_vision,
@@ -280,6 +286,7 @@ def save_catalog(models_file: Path, catalog: dict[str, ModelConfig]) -> None:
             "recommended_device": cfg.recommended_device,
             "max_context_len": cfg.max_context_len,
             "max_output_tokens": cfg.max_output_tokens,
+            "trust_remote_code": cfg.trust_remote_code,
         }
     models_file = Path(models_file)
     models_file.parent.mkdir(parents=True, exist_ok=True)

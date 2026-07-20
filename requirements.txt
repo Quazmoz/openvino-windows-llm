@@ -6,7 +6,7 @@
 
 # --- Inference backend ---
 # openvino-genai pulls in a matching openvino runtime as a dependency.
-openvino-genai>=2025.0.0
+openvino-genai>=2025.1.0
 
 # --- Web server stack ---
 fastapi>=0.110.0

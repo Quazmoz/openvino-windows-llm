@@ -27,7 +27,7 @@ def build_export_command(
     output_dir: str | Path,
     weight_format: str = "int4",
     *,
-    trust_remote_code: bool = True,
+    trust_remote_code: bool = False,
     task: str | None = None,
     group_size: int | None = None,
     ratio: float | None = None,
@@ -64,7 +64,7 @@ def export_model(
     output_dir: str | Path,
     weight_format: str = "int4",
     *,
-    trust_remote_code: bool = True,
+    trust_remote_code: bool = False,
     task: str | None = None,
     group_size: int | None = None,
     ratio: float | None = None,
@@ -104,7 +104,7 @@ def export_model(
 
 def _resolve_from_catalog(
     model_id: str, *, include_task: bool = False
-) -> tuple[str, Path, str] | tuple[str, Path, str, str | None]:
+) -> tuple[str, Path, str] | tuple[str, Path, str, str | None, bool]:
     """Look up catalog conversion settings, optionally including the Optimum task."""
 
     from app.config import Settings
@@ -133,7 +133,7 @@ def _resolve_from_catalog(
         task = "image-text-to-text"
     else:
         task = None
-    return (*result, task)
+    return (*result, task, cfg.trust_remote_code)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -149,7 +149,15 @@ def main(argv: list[str] | None = None) -> int:
         help="Override output weights. With --id, defaults to the catalog value; otherwise int4.",
     )
     parser.add_argument("--task", default=None, help="Optional optimum task override")
-    parser.add_argument("--no-trust-remote-code", action="store_true")
+    parser.add_argument(
+        "--trust-remote-code",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help=(
+            "Allow Hugging Face repository code to execute during export. Disabled by "
+            "default; with --id, the catalog setting is used when this flag is omitted."
+        ),
+    )
     parser.add_argument(
         "--group-size", type=int, default=None, help="Quantization group size for INT4"
     )
@@ -165,9 +173,10 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--group-size must be -1 or a positive integer")
 
     task = args.task
+    catalog_trust_remote_code = False
     if args.id:
-        source_model, output_dir, weight_format, catalog_task = _resolve_from_catalog(
-            args.id, include_task=True
+        source_model, output_dir, weight_format, catalog_task, catalog_trust_remote_code = (
+            _resolve_from_catalog(args.id, include_task=True)
         )
         weight_format = args.weight_format or weight_format
         task = task or catalog_task
@@ -183,7 +192,11 @@ def main(argv: list[str] | None = None) -> int:
             source_model,
             output_dir,
             weight_format,
-            trust_remote_code=not args.no_trust_remote_code,
+            trust_remote_code=(
+                args.trust_remote_code
+                if args.trust_remote_code is not None
+                else catalog_trust_remote_code
+            ),
             task=task,
             group_size=args.group_size,
             ratio=args.ratio,

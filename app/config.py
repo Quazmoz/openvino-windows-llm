@@ -49,8 +49,9 @@ class Settings:
     api_key: str | None = None
     force_mock: bool = False
     auto_convert: bool = False
-    cors_origins: str = "*"
+    cors_origins: str = ""
     rate_limit: int = 0  # requests per minute per IP; 0 = disabled
+    max_request_body_mb: int = 40
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -68,8 +69,9 @@ class Settings:
             api_key=(os.environ.get("OV_LLM_API_KEY") or "").strip() or None,
             force_mock=_bool_env("OV_LLM_MOCK"),
             auto_convert=_bool_env("OV_LLM_AUTO_CONVERT"),
-            cors_origins=os.environ.get("OV_LLM_CORS_ORIGINS", "*"),
+            cors_origins=os.environ.get("OV_LLM_CORS_ORIGINS", ""),
             rate_limit=int(os.environ.get("OV_LLM_RATE_LIMIT", "0")),
+            max_request_body_mb=int(os.environ.get("OV_LLM_MAX_REQUEST_BODY_MB", "40")),
         )
 
     def replace(self, **changes) -> Settings:
@@ -96,6 +98,18 @@ class Settings:
 
         if self.rate_limit < 0:
             warnings.append(f"Rate limit {self.rate_limit} is negative; treating as disabled (0)")
+
+        if self.max_request_body_mb < 1:
+            warnings.append(
+                f"Request body limit {self.max_request_body_mb} MiB is invalid; use at least 1 MiB"
+            )
+
+        origins = {origin.strip() for origin in self.cors_origins.split(",") if origin.strip()}
+        if "*" in origins and not self.api_key:
+            warnings.append(
+                "Wildcard CORS allows arbitrary websites to call the local API. Set explicit "
+                "OV_LLM_CORS_ORIGINS values or configure OV_LLM_API_KEY."
+            )
 
         if self.host.strip() in {"0.0.0.0", "::"} and not self.api_key:
             warnings.append(

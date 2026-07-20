@@ -24,7 +24,7 @@ ApplyTemplate = Callable[[list[dict]], str]
 CountTokens = Callable[[str], int]
 
 
-def _content_to_text(content: object) -> str:
+def _content_to_text(content: object) -> str | multimodal.MultimodalContent:
     """Convert OpenAI content to text plus private multimodal transport markers."""
 
     return multimodal.content_to_transport_text(content)
@@ -42,7 +42,7 @@ def normalize_messages(
 
     if system_override:
         if has_leading_system:
-            original_system = _content_to_text(msgs[0].content).strip()
+            original_system = multimodal.plain_text(_content_to_text(msgs[0].content)).strip()
             combined_system = (
                 f"{original_system}\n\n{system_override.strip()}"
                 if original_system

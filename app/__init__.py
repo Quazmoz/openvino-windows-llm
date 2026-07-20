@@ -1,22 +1,15 @@
-"""OpenVINO Windows LLM - application package.
+"""OpenVINO Windows LLM application package.
 
-A Windows-first, OpenAI-compatible local LLM server built on OpenVINO GenAI.
-The package is split so that the pure request/response logic (prompt building,
-tool parsing, the model catalog) has no hard dependency on OpenVINO and can be
-imported, tested, and run in mock mode on any platform.
+A Windows-first, OpenAI-compatible local LLM and VLM server built on OpenVINO
+GenAI. Pure request/response logic remains importable in mock mode without an
+OpenVINO runtime.
 """
 
-from app.ui_extension import install_ui_extension
-
-__version__ = "0.2.0"
-
-# The browser client intentionally remains a single checked-in HTML file. Install a
-# narrow FileResponse extension at package import time so multimodal controls can be
-# added without duplicating or rewriting that large asset.
-install_ui_extension()
+__version__ = "0.2.1"
 
 __all__ = [
     "__version__",
+    "body_limit",
     "chat_format",
     "config",
     "errors",

@@ -541,6 +541,7 @@ class ModelManager:
         group_size: int | None = None,
         ratio: float | None = None,
         sym: bool | None = None,
+        trust_remote_code: bool | None = None,
     ) -> None:
         cfg = self.catalog[model_id]
         proc: asyncio.subprocess.Process | None = None
@@ -577,6 +578,13 @@ class ModelManager:
                         *(["--group-size", str(group_size)] if group_size is not None else []),
                         *(["--ratio", str(ratio)] if ratio is not None else []),
                         *(["--sym"] if sym else []),
+                        *(
+                            ["--trust-remote-code"]
+                            if trust_remote_code is True
+                            else ["--no-trust-remote-code"]
+                            if trust_remote_code is False
+                            else []
+                        ),
                         cwd=str(BASE_DIR),
                         stdout=asyncio.subprocess.PIPE,
                         stderr=asyncio.subprocess.PIPE,
@@ -631,6 +639,7 @@ class ModelManager:
         group_size: int | None = None,
         ratio: float | None = None,
         sym: bool | None = None,
+        trust_remote_code: bool | None = None,
     ) -> asyncio.Task | None:
         if model_id not in self.catalog:
             logger.warning("Refusing to convert unknown model '%s'", model_id)
@@ -663,6 +672,7 @@ class ModelManager:
                 group_size=group_size,
                 ratio=ratio,
                 sym=sym,
+                trust_remote_code=trust_remote_code,
             )
         )
         self.convert_tasks[model_id] = task
@@ -743,6 +753,7 @@ class ModelManager:
             recommended_device=req.recommended_device,
             max_context_len=req.max_context_len,
             max_output_tokens=req.max_output_tokens,
+            trust_remote_code=getattr(req, "trust_remote_code", False),
         )
 
         self.catalog[req.model_id] = cfg
@@ -809,7 +820,9 @@ class ModelManager:
             loop = asyncio.get_running_loop()
             lock = self.get_lock(engine.model_id)
             async with lock:
-                handle: StreamHandle = engine.stream(prompt, params)
+                handle: StreamHandle = await loop.run_in_executor(
+                    None, engine.stream, prompt, params
+                )
                 try:
                     while True:
                         chunk = await loop.run_in_executor(None, handle.next_chunk)

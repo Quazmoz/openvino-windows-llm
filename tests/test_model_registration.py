@@ -49,6 +49,7 @@ def test_register_model_success(temp_models_file):
         max_context_len=2048,
         max_output_tokens=512,
         description="A nice custom model",
+        trust_remote_code=True,
     )
 
     cfg = manager.register_model(req)
@@ -60,11 +61,13 @@ def test_register_model_success(temp_models_file):
     assert cfg.max_context_len == 2048
     assert cfg.max_output_tokens == 512
     assert cfg.description == "A nice custom model"
+    assert cfg.trust_remote_code is True
 
     # Verify persistence
     reloaded = load_catalog(temp_models_file)
     assert "custom-m1" in reloaded
     assert reloaded["custom-m1"].name == "Custom Model One"
+    assert reloaded["custom-m1"].trust_remote_code is True
 
 
 def test_register_model_duplicate_raises(temp_models_file):
@@ -96,6 +99,7 @@ def test_register_endpoint_success(client, temp_models_file):
         "max_context_len": 4096,
         "max_output_tokens": 1024,
         "description": "Registered via endpoint test",
+        "trust_remote_code": True,
     }
 
     resp = client.post("/v1/models/register", json=payload)
@@ -109,6 +113,7 @@ def test_register_endpoint_success(client, temp_models_file):
     assert data["model"]["recommended_device"] == "GPU"
     assert data["model"]["max_context_len"] == 4096
     assert data["model"]["max_output_tokens"] == 1024
+    assert data["model"]["trust_remote_code"] is True
 
     # Verify listing includes the new model
     list_resp = client.get("/v1/models")

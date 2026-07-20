@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app import multimodal
 from runtime import device_check
@@ -24,23 +24,18 @@ class ChatMessage(BaseModel):
     tool_calls: list[dict[str, Any]] | None = None
     tool_call_id: str | None = None
 
-    @field_validator("content")
-    @classmethod
-    def validate_multimodal_content(cls, value: Any) -> Any:
-        return multimodal.validate_content(value)
-
 
 # --- Tool / function calling ----------------------------------------------
 
 
 class FunctionDefinition(BaseModel):
-    name: str
-    description: str | None = None
+    name: str = Field(min_length=1, max_length=128)
+    description: str | None = Field(default=None, max_length=16_384)
     parameters: dict[str, Any] | None = None
 
 
 class ToolDefinition(BaseModel):
-    type: str = "function"
+    type: str = Field(default="function", pattern=r"^function$")
     function: FunctionDefinition
 
 
@@ -64,19 +59,38 @@ class StreamOptions(BaseModel):
 
 class ChatCompletionRequest(BaseModel):
     model: str
-    messages: list[ChatMessage] = Field(min_length=1)
+    messages: list[ChatMessage] = Field(min_length=1, max_length=4096)
     max_tokens: int | None = Field(default=512, ge=1)
     temperature: float | None = Field(default=0.7, ge=0.0, le=2.0)
     top_p: float | None = Field(default=1.0, ge=0.0, le=1.0)
     stream: bool | None = False
     stream_options: StreamOptions | None = None
-    tools: list[ToolDefinition] | None = None
+    tools: list[ToolDefinition] | None = Field(default=None, max_length=128)
     tool_choice: Any | None = None  # "auto" | "none" | "required" | {type, function}
     stop: str | list[str] | None = None  # stop sequence(s) that end generation
     seed: int | None = None  # seed the sampler for reproducible output (best effort)
     response_format: dict[str, Any] | None = None  # JSON object or JSON Schema constraint
     lora_path: str | None = None  # path to safetensors LoRA weights
     lora_alpha: float | None = Field(default=1.0, gt=0.0)
+
+    @model_validator(mode="before")
+    @classmethod
+    def preflight_request_images(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        messages = value.get("messages") or []
+        contents = [
+            message.content if isinstance(message, ChatMessage) else message.get("content")
+            for message in messages
+            if isinstance(message, (ChatMessage, dict))
+        ]
+        roles = [
+            message.role if isinstance(message, ChatMessage) else str(message.get("role", "user"))
+            for message in messages
+            if isinstance(message, (ChatMessage, dict))
+        ]
+        multimodal.preflight_request_contents(contents, roles=roles)
+        return value
 
 
 class ChatCompletionMessage(BaseModel):
@@ -112,7 +126,7 @@ class ChatCompletionResponse(BaseModel):
 class ResponseRequest(BaseModel):
     model: str
     input: Any  # string or list of {role, content} messages
-    instructions: str | None = None
+    instructions: str | None = Field(default=None, max_length=multimodal.MAX_REQUEST_TEXT_CHARS)
     max_output_tokens: int | None = Field(default=512, ge=1)
     temperature: float | None = Field(default=0.7, ge=0.0, le=2.0)
     stream: bool | None = False
@@ -122,10 +136,19 @@ class ResponseRequest(BaseModel):
     @field_validator("input")
     @classmethod
     def validate_multimodal_input(cls, value: Any) -> Any:
-        if isinstance(value, list):
-            for message in value:
-                if isinstance(message, dict):
-                    multimodal.validate_content(message.get("content"))
+        if isinstance(value, str):
+            multimodal.preflight_request_contents([value])
+            return value
+        if not isinstance(value, list):
+            raise ValueError("Responses 'input' must be a string or a list of messages.")
+        if len(value) > 4096:
+            raise ValueError("Responses input may contain at most 4,096 messages.")
+        if not all(isinstance(message, dict) for message in value):
+            raise ValueError("Each Responses input message must be an object.")
+        multimodal.preflight_request_contents(
+            [message.get("content") for message in value],
+            roles=[str(message.get("role", "user")) for message in value],
+        )
         return value
 
 
@@ -165,6 +188,7 @@ class ModelConvertRequest(BaseModel):
     group_size: int | None = Field(default=None, ge=-1)
     ratio: float | None = Field(default=None, ge=0.0, le=1.0)
     sym: bool | None = None
+    trust_remote_code: bool | None = None
 
 
 class ModelUnloadRequest(BaseModel):
@@ -191,8 +215,9 @@ class ModelRegisterRequest(BaseModel):
     weight_format: str = Field(default="int4", pattern=r"^(int4|int8|fp16)$")
     recommended_device: str = Field(default="NPU", min_length=1, max_length=64)
     max_context_len: int = Field(default=2048, ge=128, le=262144)
-    max_output_tokens: int = Field(default=512, ge=1, le=65536)
+    max_output_tokens: int = Field(default=512, ge=0, le=65536)
     description: str | None = None
+    trust_remote_code: bool = False
 
     @field_validator("recommended_device")
     @classmethod
@@ -201,6 +226,17 @@ class ModelRegisterRequest(BaseModel):
             return device_check.validate_device_expression(value)
         except device_check.DeviceValidationError as exc:
             raise ValueError(str(exc)) from exc
+
+    @model_validator(mode="after")
+    def validate_token_budget(self):
+        if self.backend == "openvino-embeddings":
+            if self.max_output_tokens != 0:
+                raise ValueError("Embedding models must use max_output_tokens=0.")
+        elif self.max_output_tokens < 1 or self.max_output_tokens >= self.max_context_len:
+            raise ValueError(
+                "Generation models require max_output_tokens between 1 and max_context_len - 1."
+            )
+        return self
 
 
 # --- Benchmark requests ---------------------------------------------------
@@ -219,9 +255,31 @@ class BenchmarkRunRequest(BaseModel):
 
 
 class ChatExportRequest(BaseModel):
-    messages: list[ChatMessage]
+    messages: list[ChatMessage] = Field(max_length=4096)
     model: str | None = None
     device: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def preflight_export_images(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        messages = value.get("messages") or []
+        multimodal.preflight_request_contents(
+            [
+                message.content if isinstance(message, ChatMessage) else message.get("content")
+                for message in messages
+                if isinstance(message, (ChatMessage, dict))
+            ],
+            roles=[
+                message.role
+                if isinstance(message, ChatMessage)
+                else str(message.get("role", "user"))
+                for message in messages
+                if isinstance(message, (ChatMessage, dict))
+            ],
+        )
+        return value
 
 
 # --- Embeddings -----------------------------------------------------------
@@ -232,6 +290,25 @@ class EmbeddingRequest(BaseModel):
     input: str | list[str]
     user: str | None = None
     encoding_format: str | None = Field(default="float", pattern=r"^(float|base64)$")
+
+    @field_validator("input")
+    @classmethod
+    def validate_embedding_input(cls, value: str | list[str]) -> str | list[str]:
+        texts = [value] if isinstance(value, str) else value
+        if not texts:
+            raise ValueError("Embedding input cannot be empty.")
+        if len(texts) > 256:
+            raise ValueError("Embedding input may contain at most 256 texts.")
+        if not all(isinstance(text, str) for text in texts):
+            raise ValueError("Every embedding input must be a string.")
+        if any(not text for text in texts):
+            raise ValueError("Embedding input strings cannot be empty.")
+        total_chars = sum(len(text) for text in texts)
+        if total_chars > multimodal.MAX_REQUEST_TEXT_CHARS:
+            raise ValueError(
+                f"Embedding input may contain at most {multimodal.MAX_REQUEST_TEXT_CHARS:,} characters."
+            )
+        return value
 
 
 class EmbeddingResponseData(BaseModel):
@@ -274,6 +351,7 @@ class DownloadCustomRequest(BaseModel):
     max_output_tokens: int = Field(default=512, ge=0, le=65536)
     description: str | None = None
     load_after: bool = True
+    trust_remote_code: bool = False
 
     @field_validator("recommended_device")
     @classmethod
@@ -282,3 +360,14 @@ class DownloadCustomRequest(BaseModel):
             return device_check.validate_device_expression(value)
         except device_check.DeviceValidationError as exc:
             raise ValueError(str(exc)) from exc
+
+    @model_validator(mode="after")
+    def validate_token_budget(self):
+        if self.backend == "openvino-embeddings":
+            if self.max_output_tokens != 0:
+                raise ValueError("Embedding models must use max_output_tokens=0.")
+        elif self.max_output_tokens < 1 or self.max_output_tokens >= self.max_context_len:
+            raise ValueError(
+                "Generation models require max_output_tokens between 1 and max_context_len - 1."
+            )
+        return self

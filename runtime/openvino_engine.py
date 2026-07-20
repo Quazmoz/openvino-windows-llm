@@ -28,6 +28,15 @@ logger = logging.getLogger("ov-llm.engine")
 _SENTINEL = object()
 
 
+def _streamer_status(ov_module: Any, *, stop: bool):
+    """Return the current OpenVINO streaming status with legacy-bool fallback."""
+
+    status_type = getattr(ov_module, "StreamingStatus", None)
+    if status_type is None:
+        return stop
+    return status_type.STOP if stop else status_type.RUNNING
+
+
 @dataclass
 class GenParams:
     max_new_tokens: int = 256
@@ -189,6 +198,9 @@ class MockVisionEngine(MockEngine):
         prepared, context_key = multimodal.prepare_vision_messages(messages)
         prompt = chat_format.render_chatml(prepared, add_generation_prompt)
         return multimodal.append_prompt_context(prompt, context_key)
+
+    def count_tokens(self, text: str) -> int:
+        return super().count_tokens(text) + multimodal.prompt_image_token_reserve(text)
 
     def _reply(self, prompt: str) -> str:
         clean_prompt, images = multimodal.consume_prompt_context(prompt)
@@ -395,8 +407,8 @@ class OpenVINOEngine(BaseEngine):
         config = self._build_config(params)
         pipe = self._pipe
 
-        def streamer(subword: str) -> bool:
-            return not handle.push(subword)
+        def streamer(subword: str):
+            return _streamer_status(self._ov, stop=not handle.push(subword))
 
         def worker() -> None:
             try:
@@ -476,6 +488,12 @@ class OpenVINOVisionEngine(OpenVINOEngine):
         prompt = self._render_messages(prepared, add_generation_prompt)
         return multimodal.append_prompt_context(prompt, context_key)
 
+    def count_tokens(self, text: str) -> int:
+        # The text tokenizer cannot account for visual embeddings. Reserve a
+        # conservative per-image allowance so output-token capping never assumes
+        # the full text-only context budget remains available.
+        return super().count_tokens(text) + multimodal.prompt_image_token_reserve(text)
+
     def _generation_inputs(self, prompt: str) -> tuple[str, list[Any]]:
         clean_prompt, payloads = multimodal.consume_prompt_context(prompt)
         return clean_prompt, multimodal.to_openvino_tensors(payloads)
@@ -487,6 +505,7 @@ class OpenVINOVisionEngine(OpenVINOEngine):
 
     def generate(self, prompt: str, params: GenParams) -> GenResult:
         self._check_closed()
+        self._build_adapters_config(params)
         clean_prompt, images = self._generation_inputs(prompt)
         kwargs: dict[str, Any] = {"generation_config": self._build_config(params)}
         if images:
@@ -497,13 +516,14 @@ class OpenVINOVisionEngine(OpenVINOEngine):
 
     def stream(self, prompt: str, params: GenParams) -> StreamHandle:
         self._check_closed()
+        self._build_adapters_config(params)
         clean_prompt, images = self._generation_inputs(prompt)
         handle = StreamHandle()
         config = self._build_config(params)
         pipe = self._pipe
 
-        def streamer(subword: str) -> bool:
-            return not handle.push(subword)
+        def streamer(subword: str):
+            return _streamer_status(self._ov, stop=not handle.push(subword))
 
         def worker() -> None:
             try:

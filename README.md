@@ -31,7 +31,7 @@ status reflects the active OpenVINO target.
 
 ![OpenVINO Windows LLM Chat Interface](screenshots/chat_preview.png)
 
-Streaming Markdown chat with conversation history, per-message statistics, copy and
+Streaming safe local Markdown chat with conversation history, per-message statistics, copy and
 regenerate actions, model status, and system telemetry.
 
 ### Settings and system information
@@ -61,6 +61,7 @@ narrow layout.
 - [Windows setup](docs/WINDOWS.md)
 - [Windows hardware certification](docs/WINDOWS_CERTIFICATION.md)
 - [API contract](docs/API_CONTRACT.md)
+- [Local vision chat](docs/VISION.md)
 - [Open WebUI and n8n integrations](docs/INTEGRATIONS.md)
 - [Device support](docs/DEVICE_SUPPORT.md)
 - [Experimental Linux overview](docs/LINUX.md)
@@ -98,6 +99,10 @@ OpenAI-compatible endpoints, built-in UI, and deterministic mock portability.
 - `POST /v1/chat/completions` with streaming and non-streaming output
 - `POST /v1/responses` with streaming and non-streaming output
 - `POST /v1/embeddings` for catalog models using the embeddings backend
+- OpenAI-compatible image content parts for models registered with the `openvino-vlm`
+  backend, including browser file, paste, and drag-and-drop input
+- safe-by-default custom model conversion with Hugging Face remote code execution disabled
+  unless the operator explicitly opts in for a reviewed repository
 - stop sequences, seed, temperature, top-p, and token limits
 - tool/function request compatibility through a prompt and parsing shim
 - structured-output request forwarding when supported by the installed OpenVINO GenAI
@@ -119,7 +124,7 @@ OpenAI-compatible endpoints, built-in UI, and deterministic mock portability.
 
 - built-in responsive browser chat interface at `http://127.0.0.1:8000`
 - multiple browser-local conversations
-- streamed Markdown, syntax highlighting, code-copy actions, and chat export
+- streamed dependency-free Markdown, code-block copy actions, and chat export
 - model and device controls
 - light and dark themes
 - system telemetry, request metrics, lifecycle progress, and recent safe activity
@@ -325,8 +330,8 @@ See [external client integrations](docs/INTEGRATIONS.md) before binding beyond l
 
 ### Chat
 
-- streaming Markdown responses
-- syntax-highlighted code blocks and copy actions
+- streaming dependency-free Markdown responses
+- code blocks and copy actions without external CDN dependencies
 - multiple browser-local conversations
 - per-message model, token, and throughput information
 - regenerate and Markdown export actions
@@ -367,7 +372,7 @@ $env:OV_LLM_CACHE_DIR = "models\cache"
 $env:OV_LLM_BENCHMARK_RESULTS = "benchmark\results\benchmarks.json"
 $env:OV_LLM_AUTO_CONVERT = "1"
 $env:OV_LLM_API_KEY = ""
-$env:OV_LLM_CORS_ORIGINS = "*"
+$env:OV_LLM_CORS_ORIGINS = ""
 $env:OV_LLM_RATE_LIMIT = "0"
 $env:OV_LLM_MOCK = ""
 $env:HF_TOKEN = ""
@@ -385,7 +390,8 @@ $env:HF_TOKEN = ""
 | `OV_LLM_BENCHMARK_RESULTS` | Local benchmark JSON store. |
 | `OV_LLM_AUTO_CONVERT` | Convert a missing catalog model during load. |
 | `OV_LLM_API_KEY` | One key or comma-separated keys for `/v1/*`. |
-| `OV_LLM_CORS_ORIGINS` | Comma-separated browser origins. |
+| `OV_LLM_CORS_ORIGINS` | Explicit comma-separated browser origins; blank disables cross-origin access. |
+| `OV_LLM_MAX_REQUEST_BODY_MB` | Maximum HTTP request body size in MiB. Defaults to 40. |
 | `OV_LLM_RATE_LIMIT` | Per-IP requests per minute, `0` disables it. |
 | `OV_LLM_MOCK` | Force mock mode. |
 | `HF_TOKEN` | Hugging Face token for gated conversion. |
@@ -435,13 +441,17 @@ If OpenVINO does not list a direct device, this server cannot use it.
     "weight_format": "fp16",
     "recommended_device": "NPU",
     "max_context_len": 2048,
-    "max_output_tokens": 512
+    "max_output_tokens": 512,
+    "trust_remote_code": false
   }
 }
 ```
 
 A recommendation is a starting point, not certification. Model size, format, driver,
 memory, and OpenVINO release all affect compatibility.
+
+`trust_remote_code` defaults to `false`. Enable it only for a reviewed Hugging Face
+repository whose custom Python code you explicitly trust to execute during conversion.
 
 ---
 

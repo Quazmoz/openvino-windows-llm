@@ -48,6 +48,25 @@ def _load_and_wait(client, model_id=MODEL_ID, timeout=10.0):
     raise AssertionError("model did not load in time")
 
 
+def test_cors_is_opt_in_by_default(client, tmp_path):
+    no_cors = client.get("/health", headers={"Origin": "https://evil.example"})
+    assert "access-control-allow-origin" not in no_cors.headers
+
+    models_file = tmp_path / "models.json"
+    models_file.write_text((BASE_DIR / "models.json").read_text(encoding="utf-8"), encoding="utf-8")
+    settings = Settings(
+        models_file=models_file,
+        models_dir=tmp_path / "models",
+        force_mock=True,
+        cors_origins="https://trusted.example",
+    )
+    with TestClient(create_app(settings)) as cors_client:
+        allowed = cors_client.get("/health", headers={"Origin": "https://trusted.example"})
+        denied = cors_client.get("/health", headers={"Origin": "https://evil.example"})
+    assert allowed.headers["access-control-allow-origin"] == "https://trusted.example"
+    assert "access-control-allow-origin" not in denied.headers
+
+
 def test_health_reports_mock(client):
     body = client.get("/health").json()
     assert body["status"] == "ok"
@@ -115,12 +134,31 @@ def test_index_has_multichat_theme_and_regenerate(client):
     assert "function formatMsgStat" in body
 
 
+def test_index_is_fully_local_and_has_restrictive_security_headers(client):
+    response = client.get("/")
+    assert response.status_code == 200
+    assert "https://" not in response.text
+    policy = response.headers["content-security-policy"]
+    assert "default-src 'self'" in policy
+    assert "connect-src 'self'" in policy
+    assert "img-src 'self' data:" in policy
+    assert "object-src 'none'" in policy
+    assert "frame-ancestors 'none'" in policy
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "no-referrer"
+
+
 def test_index_escapes_dynamic_model_card_content(client):
     body = client.get("/").text
     assert "const safeName = escapeHtml(model.name)" in body
     assert "data-model-action" in body
     assert 'onclick="triggerModelPrimaryAction' not in body
-    assert "return window.DOMPurify ? DOMPurify.sanitize(raw) : escapeHtml(text || '')" in body
+    assert "function renderInlineMarkdown" in body
+    assert "function renderMarkdown" in body
+    assert "window.DOMPurify" not in body
+    assert "window.marked" not in body
+    assert "cdn.jsdelivr.net" not in body
+    assert "fonts.googleapis.com" not in body
     assert "submitModalBtn.disabled = true" in body
 
 
@@ -233,7 +271,7 @@ def test_convert_model_endpoint_schedules_background_task(client):
     calls = []
 
     def fake_schedule_convert(model_id, device=None, *, load_after=True, **kwargs):
-        calls.append((model_id, device, load_after))
+        calls.append((model_id, device, load_after, kwargs.get("trust_remote_code")))
         manager._set_status(model_id, "queued_convert")
         manager._set_progress(model_id, "queued", "Queued conversion...")
         return object()
@@ -241,7 +279,12 @@ def test_convert_model_endpoint_schedules_background_task(client):
     manager.schedule_convert = fake_schedule_convert
     resp = client.post(
         "/v1/models/convert",
-        json={"model": "qwen2.5-1.5b-fp16", "device": "NPU", "load_after": True},
+        json={
+            "model": "qwen2.5-1.5b-fp16",
+            "device": "NPU",
+            "load_after": True,
+            "trust_remote_code": True,
+        },
     )
 
     assert resp.status_code == 200, resp.text
@@ -249,7 +292,7 @@ def test_convert_model_endpoint_schedules_background_task(client):
     assert body["status"] == "converting"
     assert body["model"]["is_loading"] is True
     assert body["model"]["progress"]["phase"] == "queued"
-    assert calls == [("qwen2.5-1.5b-fp16", "NPU", True)]
+    assert calls == [("qwen2.5-1.5b-fp16", "NPU", True, True)]
 
 
 def test_convert_model_accepts_normalized_composite_device(client):
@@ -614,6 +657,59 @@ def test_embeddings_endpoint_success(client):
     assert len(floats) == 384
 
 
+def test_embedding_input_limits_and_failures_are_sanitized(client, monkeypatch):
+    _load_and_wait(client, model_id="bge-small-en-v1.5")
+
+    too_many = client.post(
+        "/v1/embeddings",
+        json={"model": "bge-small-en-v1.5", "input": ["x"] * 257},
+    )
+    assert too_many.status_code == 422
+    assert "at most 256" in too_many.text
+
+    manager = client.app.state.manager
+    engine = manager.engines["bge-small-en-v1.5"]
+
+    def fail_embed(_texts):
+        raise RuntimeError("secret C:/private/model.xml")
+
+    monkeypatch.setattr(engine, "embed", fail_embed)
+    failed = client.post(
+        "/v1/embeddings",
+        json={"model": "bge-small-en-v1.5", "input": "hello"},
+    )
+    assert failed.status_code == 500
+    assert "secret" not in failed.text
+    assert "private" not in failed.text
+    assert "see server logs" in failed.json()["detail"]
+
+
+def test_embedding_token_counting_runs_off_event_loop(client, monkeypatch):
+    import asyncio
+
+    _load_and_wait(client, model_id="bge-small-en-v1.5")
+    engine = client.app.state.manager.engines["bge-small-en-v1.5"]
+    original = engine.count_tokens
+    observed = {}
+
+    def wrapped(text):
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            observed["on_event_loop"] = False
+        else:
+            observed["on_event_loop"] = True
+        return original(text)
+
+    monkeypatch.setattr(engine, "count_tokens", wrapped)
+    response = client.post(
+        "/v1/embeddings",
+        json={"model": "bge-small-en-v1.5", "input": "hello"},
+    )
+    assert response.status_code == 200, response.text
+    assert observed == {"on_event_loop": False}
+
+
 def test_embedding_model_guards(client):
     # Load bge (embedding) and tinyllama (text generation)
     _load_and_wait(client, model_id="bge-small-en-v1.5")
@@ -680,6 +776,23 @@ def test_chat_completions_with_structured_output_format(client):
     assert resp.status_code == 200, resp.text
     content = resp.json()["choices"][0]["message"]["content"]
     assert "Mock engine" in content
+
+
+def test_delete_failure_does_not_expose_filesystem_details(client, monkeypatch):
+    manager = client.app.state.manager
+
+    def fail_delete(_model_id):
+        raise OSError("secret C:/private/models/model.xml")
+
+    monkeypatch.setattr(manager, "delete", fail_delete)
+    response = client.post(
+        "/v1/models/delete",
+        json={"model": "qwen2.5-1.5b-fp16"},
+    )
+    assert response.status_code == 500
+    assert "secret" not in response.text
+    assert "private" not in response.text
+    assert "see server logs" in response.json()["detail"]
 
 
 def test_search_hf_endpoint(client):
@@ -844,3 +957,482 @@ def test_multiple_api_keys_and_tracking():
         names = [s["key_name"] for s in stats]
         assert len(set(names)) == 2
         assert all(name.startswith("ke...") for name in names)
+
+
+def _png_data_url() -> str:
+    import base64
+    import io
+
+    from PIL import Image
+
+    buffer = io.BytesIO()
+    Image.new("RGB", (4, 3), (10, 20, 30)).save(buffer, format="PNG")
+    return f"data:image/png;base64,{base64.b64encode(buffer.getvalue()).decode('ascii')}"
+
+
+def test_index_injects_vision_ui_without_weakening_response_headers(client):
+    response = client.get("/")
+    assert response.status_code == 200
+    assert 'id="ovllm-vision-extension"' in response.text
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["referrer-policy"] == "no-referrer"
+
+
+def test_text_model_rejects_image_input_explicitly(client):
+    _load_and_wait(client)
+    response = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": MODEL_ID,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "Describe this"},
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": _png_data_url()},
+                        },
+                    ],
+                }
+            ],
+        },
+    )
+    assert response.status_code == 400
+    assert "not vision-capable" in response.json()["detail"]
+
+
+def test_mock_vision_model_supports_chat_and_responses_endpoints(client):
+    from app.model_registry import ModelConfig
+
+    model_id = "test-mock-vision"
+    manager = client.app.state.manager
+    manager.catalog[model_id] = ModelConfig(
+        id=model_id,
+        name="Test Mock Vision",
+        description="Test-only VLM",
+        backend="openvino-vlm",
+        model_path=f"models/openvino/{model_id}",
+        source_model="test/vision",
+        weight_format="int4",
+        recommended_device="CPU",
+        max_context_len=4096,
+        max_output_tokens=512,
+    )
+    _load_and_wait(client, model_id=model_id)
+    content = [
+        {"type": "text", "text": "Describe this"},
+        {"type": "image_url", "image_url": {"url": _png_data_url()}},
+    ]
+
+    chat = client.post(
+        "/v1/chat/completions",
+        json={"model": model_id, "messages": [{"role": "user", "content": content}]},
+    )
+    assert chat.status_code == 200, chat.text
+    assert "1 image(s)" in chat.json()["choices"][0]["message"]["content"]
+
+    responses = client.post(
+        "/v1/responses",
+        json={
+            "model": model_id,
+            "input": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "input_text", "text": "Describe this"},
+                        {"type": "input_image", "image_url": _png_data_url()},
+                    ],
+                }
+            ],
+        },
+    )
+    assert responses.status_code == 200, responses.text
+    assert "1 image(s)" in responses.json()["output"][0]["content"][0]["text"]
+
+
+def test_hf_vision_search_returns_vlm_backend(client):
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = [
+        {
+            "id": "org/vision-model",
+            "downloads": 12,
+            "likes": 3,
+            "pipeline_tag": "image-text-to-text",
+            "tags": [],
+        },
+        {"downloads": 99},  # malformed entries are ignored rather than crashing
+    ]
+    with patch("httpx.AsyncClient.get", new_callable=AsyncMock) as mock_get:
+        mock_get.return_value = mock_resp
+        response = client.get("/v1/models/search-hf?query=vision&task=image-text-to-text")
+    assert response.status_code == 200, response.text
+    assert response.json()[0]["backend"] == "openvino-vlm"
+
+
+def test_hf_search_sanitizes_browser_rendered_metadata(client):
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = [
+        {
+            "id": "org/safe-model",
+            "pipeline_tag": "<img src=x onerror=alert(1)>",
+            "downloads": "12",
+            "likes": -5,
+        },
+        {"id": "x" * 241, "pipeline_tag": "text-generation"},
+    ]
+    with patch("httpx.AsyncClient.get", new_callable=AsyncMock) as mock_get:
+        mock_get.return_value = mock_resp
+        response = client.get("/v1/models/search-hf?query=safe")
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert len(data) == 1
+    assert "<" not in data[0]["pipeline_tag"]
+    assert ">" not in data[0]["pipeline_tag"]
+    assert data[0]["downloads"] == 12
+    assert data[0]["likes"] == 0
+
+
+def test_responses_image_normalization_runs_off_event_loop(client, monkeypatch):
+    import asyncio
+
+    from app import chat_format
+    from app.model_registry import ModelConfig
+
+    model_id = "response-thread-vision"
+    manager = client.app.state.manager
+    manager.catalog[model_id] = ModelConfig(
+        id=model_id,
+        name="Response Thread Vision",
+        description="Test-only VLM",
+        backend="openvino-vlm",
+        model_path=f"models/openvino/{model_id}",
+        source_model="test/vision",
+        weight_format="int4",
+        recommended_device="CPU",
+        max_context_len=4096,
+        max_output_tokens=512,
+    )
+    _load_and_wait(client, model_id=model_id)
+    original = chat_format.responses_input_to_messages
+    observed = {}
+
+    def wrapped(*args, **kwargs):
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            observed["on_event_loop"] = False
+        else:
+            observed["on_event_loop"] = True
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(chat_format, "responses_input_to_messages", wrapped)
+    response = client.post(
+        "/v1/responses",
+        json={
+            "model": model_id,
+            "input": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "input_text", "text": "Describe this"},
+                        {"type": "input_image", "image_url": _png_data_url()},
+                    ],
+                }
+            ],
+        },
+    )
+    assert response.status_code == 200, response.text
+    assert observed == {"on_event_loop": False}
+
+
+def test_custom_download_uses_recommended_device_and_rejects_conflicts(client):
+    from app.model_registry import ModelConfig
+
+    manager = client.app.state.manager
+    model_id = "device-aware-custom-model"
+    manager.catalog[model_id] = ModelConfig(
+        id=model_id,
+        name="Device Aware",
+        description="Existing exact config",
+        backend="openvino-vlm",
+        model_path=f"models/openvino/{model_id}",
+        source_model="org/device-aware",
+        weight_format="int4",
+        recommended_device="GPU",
+        max_context_len=4096,
+        max_output_tokens=512,
+        trust_remote_code=True,
+    )
+    captured = {}
+
+    def fake_schedule_convert(requested_id, device=None, **kwargs):
+        captured["model_id"] = requested_id
+        captured["device"] = device
+        captured["trust_remote_code"] = kwargs.get("trust_remote_code")
+        manager._set_status(requested_id, "queued_convert")
+        return object()
+
+    manager.schedule_convert = fake_schedule_convert
+    payload = {
+        "model_id": model_id,
+        "name": "Device Aware",
+        "source_model": "org/device-aware",
+        "backend": "openvino-vlm",
+        "weight_format": "int4",
+        "recommended_device": "GPU",
+        "max_context_len": 4096,
+        "max_output_tokens": 512,
+        "load_after": False,
+        "trust_remote_code": True,
+    }
+    response = client.post("/v1/models/download-custom", json=payload)
+    assert response.status_code == 200, response.text
+    assert captured == {
+        "model_id": model_id,
+        "device": "GPU",
+        "trust_remote_code": True,
+    }
+
+    conflict = client.post(
+        "/v1/models/download-custom",
+        json={**payload, "source_model": "other/model"},
+    )
+    assert conflict.status_code == 409
+    assert "source_model" in conflict.json()["detail"]
+
+    trust_conflict = client.post(
+        "/v1/models/download-custom",
+        json={**payload, "trust_remote_code": False},
+    )
+    assert trust_conflict.status_code == 409
+    assert "trust_remote_code" in trust_conflict.json()["detail"]
+
+
+def test_chat_stream_failure_is_sanitized_and_not_recorded_as_success(client):
+    _load_and_wait(client)
+    manager = client.app.state.manager
+    before = manager.metrics_summary()["totals"]["requests"]
+
+    async def failing_stream(_engine, _prompt, _params):
+        yield "partial output "
+        raise RuntimeError("secret-driver-path C:/private/model.xml")
+
+    manager.stream = failing_stream
+    with client.stream(
+        "POST",
+        "/v1/chat/completions",
+        json={
+            "model": MODEL_ID,
+            "messages": [{"role": "user", "content": "hello"}],
+            "stream": True,
+            "stream_options": {"include_usage": True},
+        },
+    ) as response:
+        body = "".join(response.iter_text())
+
+    assert response.status_code == 200
+    assert "generation failed; see server logs for the request ID" in body
+    assert "secret-driver-path" not in body
+    assert '"usage"' not in body
+    assert manager.metrics_summary()["totals"]["requests"] == before
+
+
+def test_responses_stream_failure_is_sanitized_and_not_recorded_as_success(client):
+    _load_and_wait(client)
+    manager = client.app.state.manager
+    before = manager.metrics_summary()["totals"]["requests"]
+
+    async def failing_stream(_engine, _prompt, _params):
+        yield "partial output "
+        raise RuntimeError("secret-runtime-detail")
+
+    manager.stream = failing_stream
+    with client.stream(
+        "POST",
+        "/v1/responses",
+        json={
+            "model": MODEL_ID,
+            "input": "hello",
+            "stream": True,
+        },
+    ) as response:
+        body = "".join(response.iter_text())
+
+    assert response.status_code == 200
+    assert "Generation failed; see server logs for the request ID." in body
+    assert "secret-runtime-detail" not in body
+    assert "response.completed" not in body
+    assert manager.metrics_summary()["totals"]["requests"] == before
+
+
+def test_hf_search_rejects_invalid_top_level_payload(client):
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {"unexpected": "object"}
+    with patch("httpx.AsyncClient.get", new_callable=AsyncMock) as mock_get:
+        mock_get.return_value = mock_resp
+        response = client.get("/v1/models/search-hf?query=vision")
+
+    assert response.status_code == 502
+    assert response.json()["detail"] == "Hugging Face API returned an invalid response."
+
+
+def test_hf_search_normalizes_untrusted_metadata(client):
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = [
+        {
+            "id": "org/model",
+            "downloads": "12",
+            "likes": -3,
+            "pipeline_tag": None,
+            "tags": ["vision", 7, None, {"bad": "value"}],
+        },
+        "not-an-object",
+    ]
+    with patch("httpx.AsyncClient.get", new_callable=AsyncMock) as mock_get:
+        mock_get.return_value = mock_resp
+        response = client.get("/v1/models/search-hf?query=model")
+
+    assert response.status_code == 200, response.text
+    assert response.json() == [
+        {
+            "id": "org/model",
+            "suggested_local_id": "org-model",
+            "downloads": 12,
+            "likes": 0,
+            "pipeline_tag": "",
+            "backend": "openvino-genai",
+            "tags": ["vision", "7"],
+        }
+    ]
+
+
+def test_vision_tool_retries_reuse_decoded_image_payload(client, monkeypatch):
+    from app import multimodal, tools
+    from app.model_registry import ModelConfig
+
+    model_id = "test-retry-vision"
+    manager = client.app.state.manager
+    manager.catalog[model_id] = ModelConfig(
+        id=model_id,
+        name="Retry Vision",
+        description="Test-only retry VLM",
+        backend="openvino-vlm",
+        model_path=f"models/openvino/{model_id}",
+        source_model="test/retry-vision",
+        weight_format="int4",
+        recommended_device="CPU",
+        max_context_len=4096,
+        max_output_tokens=512,
+    )
+    _load_and_wait(client, model_id=model_id)
+
+    original_decode = multimodal.decode_data_url
+    decode_calls = 0
+
+    def counting_decode(url):
+        nonlocal decode_calls
+        decode_calls += 1
+        return original_decode(url)
+
+    retry_checks = 0
+
+    def force_two_retries(_text):
+        nonlocal retry_checks
+        retry_checks += 1
+        return retry_checks <= 2
+
+    monkeypatch.setattr(multimodal, "decode_data_url", counting_decode)
+    monkeypatch.setattr(tools, "detect_incomplete_tool_call", force_two_retries)
+
+    response = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": model_id,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "Inspect this image"},
+                        {"type": "image_url", "image_url": {"url": _png_data_url()}},
+                    ],
+                }
+            ],
+            "tools": [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "record_result",
+                        "description": "Record a result",
+                        "parameters": {"type": "object", "properties": {}},
+                    },
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    assert retry_checks == 3
+    assert decode_calls == 1
+
+
+def test_validation_error_does_not_echo_base64_input(client):
+    marker = "SUPER_SECRET_IMAGE_MARKER"
+    malformed = {"type": "unsupported-secret-part", "text": marker}
+    response = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": MODEL_ID,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        malformed,
+                    ],
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 422
+    assert marker not in response.text
+    detail = response.json()["detail"]
+    assert detail and set(detail[0]) == {"type", "loc", "msg"}
+
+
+def test_hf_search_rejects_blank_query_and_sanitizes_suggested_id(client):
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    blank = client.get("/v1/models/search-hf?query=%20%20")
+    assert blank.status_code == 400
+
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = [
+        {
+            "id": "___Org/" + "A" * 200,
+            "downloads": 2**100,
+            "likes": "bad",
+            "tags": ["x" * 300] * 60,
+        }
+    ]
+    with patch("httpx.AsyncClient.get", new_callable=AsyncMock) as mock_get:
+        mock_get.return_value = mock_resp
+        response = client.get("/v1/models/search-hf?query=model")
+
+    assert response.status_code == 200, response.text
+    item = response.json()[0]
+    assert item["suggested_local_id"][0].isalnum()
+    assert len(item["suggested_local_id"]) <= 128
+    assert item["downloads"] == 2**63 - 1
+    assert item["likes"] == 0
+    assert len(item["tags"]) == 50
+    assert all(len(tag) <= 200 for tag in item["tags"])

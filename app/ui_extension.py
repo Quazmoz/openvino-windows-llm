@@ -1,19 +1,12 @@
-"""Inject the multimodal UI extension into the existing single-file browser client.
+"""Multimodal controls injected into the bundled single-file browser client.
 
-Keeping the extension here avoids a risky rewrite of the large, intentionally standalone
-``web/index.html`` file.  The patch is limited to that one response and leaves every
-other ``FileResponse`` untouched.
+The server explicitly injects this extension when serving ``web/index.html``.
+No framework classes or global response behavior are monkey-patched.
 """
 
 from __future__ import annotations
 
-from pathlib import Path
-
-from fastapi.responses import FileResponse, HTMLResponse
-
 _EXTENSION_ID = "ovllm-vision-extension"
-_ORIGINAL_FILE_RESPONSE_CALL = FileResponse.__call__
-_INSTALLED = False
 
 VISION_EXTENSION_JS = r"""
 (() => {
@@ -23,10 +16,16 @@ VISION_EXTENSION_JS = r"""
 
     const MAX_IMAGES = 4;
     const MAX_BYTES = 10 * 1024 * 1024;
+    const MAX_TOTAL_BYTES = 24 * 1024 * 1024;
     const MAX_PIXELS = 25000000;
+    const MAX_TOTAL_PIXELS = 40000000;
+    const MAX_DIMENSION = 16384;
     const SUPPORTED = new Set(['image/jpeg', 'image/png', 'image/webp']);
     const modelCapabilities = new Map();
     let pendingImages = [];
+    let fileQueue = Promise.resolve();
+    let fileTasksPending = 0;
+    let attachmentEpoch = 0;
 
     const form = document.getElementById('chat-form');
     const inputArea = document.getElementById('input-area');
@@ -50,7 +49,7 @@ VISION_EXTENSION_JS = r"""
         .vision-preview { position: relative; flex: 0 0 auto; width: 58px; height: 58px; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: var(--surface-2); }
         .vision-preview img { width: 100%; height: 100%; object-fit: cover; display: block; }
         .vision-preview button { position: absolute; top: 3px; right: 3px; width: 20px; height: 20px; border: 0; border-radius: 50%; background: rgba(5,8,15,.82); color: white; cursor: pointer; font-size: 14px; line-height: 20px; }
-        .vision-preview-count { flex: 0 0 auto; font-size: 11px; color: var(--text-3); line-height: 1.35; max-width: 190px; }
+        .vision-preview-count { flex: 0 0 auto; font-size: 11px; color: var(--text-3); line-height: 1.35; max-width: 220px; }
         #input-area.vision-drag-active { outline: 2px dashed var(--primary); outline-offset: -7px; border-radius: 16px; }
         @media (max-width: 640px) { #vision-attach-btn { width: 40px; height: 40px; flex-basis: 40px; } }
     `;
@@ -78,12 +77,60 @@ VISION_EXTENSION_JS = r"""
     inputArea.insertBefore(previewTray, form);
 
     const customBackend = document.getElementById('custom-backend');
+    const customRecommendedDevice = document.getElementById('custom-recommended-device');
+    const customMaxContextLen = document.getElementById('custom-max-context-len');
+    const customMaxOutputTokens = document.getElementById('custom-max-output-tokens');
+    const customModelForm = document.getElementById('custom-model-form');
+    let customTrustRemoteCode = document.getElementById('custom-trust-remote-code');
+    if (!(customTrustRemoteCode instanceof HTMLInputElement)) {
+        customTrustRemoteCode = document.createElement('input');
+        customTrustRemoteCode.type = 'checkbox';
+        customTrustRemoteCode.id = 'custom-trust-remote-code';
+        customTrustRemoteCode.checked = false;
+        customTrustRemoteCode.style.cssText = 'cursor:pointer;width:auto;flex:0 0 auto;margin-top:2px;';
+    }
+    if (customModelForm && !customTrustRemoteCode.isConnected) {
+        const trustRow = document.createElement('div');
+        trustRow.className = 'form-group';
+        const trustLabel = document.createElement('label');
+        trustLabel.htmlFor = customTrustRemoteCode.id;
+        trustLabel.style.textTransform = 'none';
+        trustLabel.style.display = 'flex';
+        trustLabel.style.alignItems = 'flex-start';
+        trustLabel.style.gap = '8px';
+        trustLabel.appendChild(customTrustRemoteCode);
+        const trustText = document.createElement('span');
+        trustText.textContent = 'Allow trusted repository code during conversion';
+        trustLabel.appendChild(trustText);
+        const trustWarning = document.createElement('p');
+        trustWarning.style.cssText = 'font-size:11px;color:var(--amber);line-height:1.45;margin-top:4px;';
+        trustWarning.textContent = 'Off by default. Enabling this may execute Python code from the Hugging Face repository. Use only for a model source you have reviewed and trust.';
+        trustRow.append(trustLabel, trustWarning);
+        const footer = customModelForm.querySelector('.modal-footer');
+        if (footer) customModelForm.insertBefore(trustRow, footer);
+        else customModelForm.appendChild(trustRow);
+    }
+    document.getElementById('add-model-btn')?.addEventListener('click', () => {
+        customTrustRemoteCode.checked = false;
+    });
     if (customBackend && !customBackend.querySelector('option[value="openvino-vlm"]')) {
         const option = document.createElement('option');
         option.value = 'openvino-vlm';
         option.textContent = 'Vision + Text (openvino-vlm)';
         customBackend.appendChild(option);
     }
+    customBackend?.addEventListener('change', () => {
+        if (customBackend.value === 'openvino-vlm' && customRecommendedDevice?.value === 'NPU') {
+            customRecommendedDevice.value = 'GPU';
+        }
+        if (customBackend.value === 'openvino-embeddings') {
+            if (customMaxContextLen) customMaxContextLen.value = '512';
+            if (customMaxOutputTokens) customMaxOutputTokens.value = '0';
+        } else if (customMaxOutputTokens?.value === '0') {
+            customMaxOutputTokens.value = '512';
+        }
+    });
+
     const hfTask = document.getElementById('hf-search-task');
     if (hfTask && !hfTask.querySelector('option[value="image-text-to-text"]')) {
         const option = document.createElement('option');
@@ -91,17 +138,27 @@ VISION_EXTENSION_JS = r"""
         option.textContent = 'Vision Language Models (VLMs)';
         hfTask.appendChild(option);
     }
+    document.getElementById('hf-search-results')?.addEventListener('click', event => {
+        if (!event.target.closest('.search-result-select-btn')) return;
+        queueMicrotask(() => customBackend?.dispatchEvent(new Event('change')));
+    });
 
     function toast(message) {
         const element = document.getElementById('toast');
         if (!element) return;
         element.textContent = message;
         element.classList.add('show');
-        window.setTimeout(() => element.classList.remove('show'), 2600);
+        window.setTimeout(() => element.classList.remove('show'), 3000);
     }
 
     function selectedSupportsVision() {
         return modelCapabilities.get(modelSelect.value)?.supports_vision === true;
+    }
+
+    function clearPendingImages() {
+        attachmentEpoch += 1;
+        pendingImages = [];
+        renderPreviews();
     }
 
     function updateAttachState() {
@@ -115,8 +172,7 @@ VISION_EXTENSION_JS = r"""
                 ? 'Attach up to four JPEG, PNG, or WebP images'
                 : 'Select a vision-capable model to attach images';
         if (known && !capable && pendingImages.length) {
-            pendingImages = [];
-            renderPreviews();
+            clearPendingImages();
             toast('Image attachments cleared because the selected model is text-only.');
         }
     }
@@ -124,7 +180,7 @@ VISION_EXTENSION_JS = r"""
     function renderPreviews() {
         previewTray.replaceChildren();
         previewTray.classList.toggle('visible', pendingImages.length > 0);
-        pendingImages.forEach((item, index) => {
+        pendingImages.forEach(item => {
             const wrapper = document.createElement('div');
             wrapper.className = 'vision-preview';
             wrapper.title = `${item.name} · ${item.width}×${item.height}`;
@@ -136,7 +192,7 @@ VISION_EXTENSION_JS = r"""
             remove.setAttribute('aria-label', `Remove ${item.name}`);
             remove.textContent = '×';
             remove.addEventListener('click', () => {
-                pendingImages.splice(index, 1);
+                pendingImages = pendingImages.filter(candidate => candidate.id !== item.id);
                 renderPreviews();
             });
             wrapper.append(image, remove);
@@ -145,7 +201,8 @@ VISION_EXTENSION_JS = r"""
         if (pendingImages.length) {
             const note = document.createElement('div');
             note.className = 'vision-preview-count';
-            note.textContent = `${pendingImages.length}/${MAX_IMAGES} attached · sent with the next request only`;
+            const totalMiB = pendingImages.reduce((sum, item) => sum + item.size, 0) / (1024 * 1024);
+            note.textContent = `${pendingImages.length}/${MAX_IMAGES} attached · ${totalMiB.toFixed(1)} MiB · sent with the next request only`;
             previewTray.appendChild(note);
         }
         attachButton.classList.toggle('has-images', pendingImages.length > 0);
@@ -169,9 +226,20 @@ VISION_EXTENSION_JS = r"""
         });
     }
 
-    async function addFiles(fileList) {
+    function inferredMimeType(file) {
+        if (SUPPORTED.has(file.type)) return file.type;
+        const extension = String(file.name || '').split('.').pop()?.toLowerCase();
+        return {
+            jpg: 'image/jpeg',
+            jpeg: 'image/jpeg',
+            png: 'image/png',
+            webp: 'image/webp',
+        }[extension] || '';
+    }
+
+    async function addFilesNow(fileList, targetModel, targetEpoch) {
         if (!selectedSupportsVision()) {
-            toast('Select a loaded vision-capable model before attaching an image.');
+            toast('Select a vision-capable model before attaching an image.');
             return;
         }
         for (const file of Array.from(fileList || [])) {
@@ -179,7 +247,8 @@ VISION_EXTENSION_JS = r"""
                 toast(`A maximum of ${MAX_IMAGES} images can be attached.`);
                 break;
             }
-            if (!SUPPORTED.has(file.type)) {
+            const mimeType = inferredMimeType(file);
+            if (!mimeType) {
                 toast(`${file.name}: use JPEG, PNG, or WebP.`);
                 continue;
             }
@@ -187,33 +256,85 @@ VISION_EXTENSION_JS = r"""
                 toast(`${file.name}: images must be 10 MiB or smaller.`);
                 continue;
             }
+            const currentBytes = pendingImages.reduce((sum, item) => sum + item.size, 0);
+            if (currentBytes + file.size > MAX_TOTAL_BYTES) {
+                toast('Combined image data must be 24 MiB or smaller.');
+                break;
+            }
             try {
-                const dataUrl = await readAsDataUrl(file);
+                let dataUrl = await readAsDataUrl(file);
+                if (!dataUrl.startsWith(`data:${mimeType};`)) {
+                    dataUrl = dataUrl.replace(/^data:[^;]*;/, `data:${mimeType};`);
+                }
                 const dimensions = await imageDimensions(dataUrl);
-                if (!dimensions.width || !dimensions.height || dimensions.width * dimensions.height > MAX_PIXELS) {
+                const pixels = dimensions.width * dimensions.height;
+                if (!dimensions.width || !dimensions.height || pixels > MAX_PIXELS) {
                     throw new Error('image exceeds the 25,000,000-pixel safety limit');
                 }
+                if (dimensions.width > MAX_DIMENSION || dimensions.height > MAX_DIMENSION) {
+                    throw new Error('image dimensions may not exceed 16,384 pixels per side');
+                }
+                const currentPixels = pendingImages.reduce((sum, item) => sum + item.pixels, 0);
+                if (currentPixels + pixels > MAX_TOTAL_PIXELS) {
+                    throw new Error('combined images exceed the 40,000,000-pixel request limit');
+                }
+                if (
+                    attachmentEpoch !== targetEpoch ||
+                    modelSelect.value !== targetModel ||
+                    !selectedSupportsVision()
+                ) {
+                    throw new Error('chat or selected model changed while the image was being prepared');
+                }
                 pendingImages.push({
+                    id: window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`,
                     name: file.name || `image-${pendingImages.length + 1}`,
-                    type: file.type,
+                    type: mimeType,
                     size: file.size,
                     dataUrl,
                     width: dimensions.width,
                     height: dimensions.height,
+                    pixels,
                 });
             } catch (error) {
-                toast(`${file.name}: ${error.message}`);
+                toast(`${file.name}: ${error instanceof Error ? error.message : String(error)}`);
             }
         }
         fileInput.value = '';
         renderPreviews();
     }
 
+    function enqueueFiles(fileList) {
+        const files = Array.from(fileList || []);
+        const targetModel = modelSelect.value;
+        const targetEpoch = attachmentEpoch;
+        fileTasksPending += 1;
+        fileQueue = fileQueue
+            .then(() => addFilesNow(files, targetModel, targetEpoch))
+            .catch(error => {
+                toast(error instanceof Error ? error.message : String(error));
+            })
+            .finally(() => {
+                fileTasksPending = Math.max(0, fileTasksPending - 1);
+            });
+        return fileQueue;
+    }
+
+    function blockSendWhilePreparing(event) {
+        if (fileTasksPending < 1) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        toast('Finish preparing the image before sending.');
+    }
+    form.addEventListener('submit', blockSendWhilePreparing, true);
+    userInput.addEventListener('keydown', event => {
+        if (event.key === 'Enter' && !event.shiftKey) blockSendWhilePreparing(event);
+    }, true);
+
     attachButton.addEventListener('click', () => {
         if (selectedSupportsVision()) fileInput.click();
         else toast('Select a vision-capable model first.');
     });
-    fileInput.addEventListener('change', () => addFiles(fileInput.files));
+    fileInput.addEventListener('change', () => enqueueFiles(fileInput.files));
 
     inputArea.addEventListener('dragover', event => {
         if (!event.dataTransfer?.types?.includes('Files')) return;
@@ -225,19 +346,18 @@ VISION_EXTENSION_JS = r"""
         if (!event.dataTransfer?.files?.length) return;
         event.preventDefault();
         inputArea.classList.remove('vision-drag-active');
-        addFiles(event.dataTransfer.files);
+        enqueueFiles(event.dataTransfer.files);
     });
     userInput.addEventListener('paste', event => {
         const files = Array.from(event.clipboardData?.files || []).filter(file => file.type.startsWith('image/'));
-        if (files.length) addFiles(files);
+        if (!files.length) return;
+        event.preventDefault();
+        enqueueFiles(files);
     });
 
     modelSelect.addEventListener('change', updateAttachState);
     ['new-chat-btn', 'new-chat-side-btn'].forEach(id => {
-        document.getElementById(id)?.addEventListener('click', () => {
-            pendingImages = [];
-            renderPreviews();
-        });
+        document.getElementById(id)?.addEventListener('click', clearPendingImages);
     });
 
     function recordCapabilities(data) {
@@ -260,12 +380,61 @@ VISION_EXTENSION_JS = r"""
         });
     }
 
+    function requestPath(input) {
+        const value = typeof input === 'string' ? input : input?.url || '';
+        try { return new URL(value, window.location.href).pathname; }
+        catch { return value; }
+    }
+
+    function removeSentImages(sentIds) {
+        const sent = new Set(sentIds);
+        pendingImages = pendingImages.filter(item => !sent.has(item.id));
+        renderPreviews();
+    }
+
+    async function monitorEventStream(stream, sentIds) {
+        if (!stream) return;
+        const reader = stream.getReader();
+        const decoder = new TextDecoder();
+        let tail = '';
+        let completed = false;
+        let failed = false;
+        const inspect = text => {
+            tail = (tail + text).slice(-4096);
+            completed ||= tail.includes('data: [DONE]');
+            failed ||= tail.includes('event: response.error') || tail.includes('[error: generation failed');
+        };
+        try {
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                inspect(decoder.decode(value, { stream: true }));
+            }
+            inspect(decoder.decode());
+            if (completed && !failed) removeSentImages(sentIds);
+            else toast('Generation did not complete; image attachments were kept.');
+        } catch {
+            toast('Generation stream ended early; image attachments were kept.');
+        } finally {
+            reader.releaseLock();
+        }
+    }
+
     const originalFetch = window.fetch.bind(window);
     window.fetch = async function visionAwareFetch(input, init = {}) {
-        const url = typeof input === 'string' ? input : input?.url || '';
+        const path = requestPath(input);
         const method = String(init?.method || (typeof input !== 'string' && input?.method) || 'GET').toUpperCase();
+        let sentIds = [];
 
-        if (url.includes('/v1/chat/completions') && method === 'POST' && pendingImages.length) {
+        if (path === '/v1/models/download-custom' && method === 'POST' && customModelForm) {
+            try {
+                const body = JSON.parse(String(init.body || ''));
+                body.trust_remote_code = customTrustRemoteCode.checked;
+                init = { ...init, body: JSON.stringify(body) };
+            } catch { /* let the existing request surface malformed JSON */ }
+        }
+
+        if (path === '/v1/chat/completions' && method === 'POST' && pendingImages.length) {
             let body;
             try { body = JSON.parse(String(init.body || '')); }
             catch { return originalFetch(input, init); }
@@ -273,7 +442,10 @@ VISION_EXTENSION_JS = r"""
             const capabilities = modelCapabilities.get(body.model);
             if (!capabilities?.supports_vision) {
                 toast('The selected model cannot process images. Choose a vision-capable model.');
-                return responseWithJson({ detail: 'Selected model is not vision-capable.' }, new Response('', { status: 400 }));
+                return responseWithJson(
+                    { detail: 'Selected model is not vision-capable.' },
+                    new Response('', { status: 400 }),
+                );
             }
 
             const messages = Array.isArray(body.messages) ? body.messages : [];
@@ -282,33 +454,40 @@ VISION_EXTENSION_JS = r"""
                 if (messages[index]?.role === 'user') { userMessage = messages[index]; break; }
             }
             if (userMessage) {
+                const imagesToSend = [...pendingImages];
                 const content = Array.isArray(userMessage.content)
                     ? [...userMessage.content]
                     : [{ type: 'text', text: String(userMessage.content || '') }];
-                pendingImages.forEach(item => content.push({
+                imagesToSend.forEach(item => content.push({
                     type: 'image_url',
                     image_url: { url: item.dataUrl, detail: 'auto' },
                 }));
                 userMessage.content = content;
                 body.messages = messages;
                 init = { ...init, body: JSON.stringify(body) };
-                pendingImages = [];
-                renderPreviews();
+                sentIds = imagesToSend.map(item => item.id);
             }
         }
 
-        const response = await originalFetch(input, init);
-
-        if (url.includes('/v1/system/status') && response.ok) {
-            response.clone().json().then(recordCapabilities).catch(() => {});
+        let response;
+        try {
+            response = await originalFetch(input, init);
+        } catch (error) {
+            if (sentIds.length) toast('Request failed before the server accepted it; attachments were kept.');
+            throw error;
         }
 
-        if (url.includes('/v1/models/search-hf') && url.includes('task=image-text-to-text') && response.ok) {
-            try {
-                const data = await response.clone().json();
-                if (Array.isArray(data)) data.forEach(item => { item.backend = 'openvino-vlm'; });
-                return responseWithJson(data, response);
-            } catch { /* preserve the original response */ }
+        if (sentIds.length && response.ok) {
+            const contentType = response.headers.get('content-type') || '';
+            if (contentType.includes('text/event-stream') && response.body) {
+                const monitorResponse = response.clone();
+                void monitorEventStream(monitorResponse.body, sentIds);
+            } else {
+                removeSentImages(sentIds);
+            }
+        }
+        if (path === '/v1/system/status' && response.ok) {
+            response.clone().json().then(recordCapabilities).catch(() => {});
         }
         return response;
     };
@@ -319,7 +498,7 @@ VISION_EXTENSION_JS = r"""
         try {
             const response = await originalFetch('/v1/system/status', { headers });
             if (response.ok) recordCapabilities(await response.json());
-        } catch { /* the existing application will continue polling */ }
+        } catch { /* the existing application continues polling */ }
     }
 
     updateAttachState();
@@ -337,33 +516,3 @@ def inject_multimodal_ui(html: str) -> str:
     if "</body>" in html:
         return html.replace("</body>", f"{script}</body>", 1)
     return html + script
-
-
-def install_ui_extension() -> None:
-    """Patch ``FileResponse`` narrowly for the bundled ``web/index.html`` page."""
-
-    global _INSTALLED
-    if _INSTALLED:
-        return
-    _INSTALLED = True
-
-    async def patched_call(self: FileResponse, scope, receive, send) -> None:
-        path = Path(self.path)
-        if path.name == "index.html" and path.parent.name == "web" and path.is_file():
-            html = inject_multimodal_ui(path.read_text(encoding="utf-8"))
-            headers = {
-                key: value
-                for key, value in self.headers.items()
-                if key.lower() not in {"content-length", "content-type", "etag", "last-modified"}
-            }
-            response = HTMLResponse(
-                html,
-                status_code=self.status_code,
-                headers=headers,
-                background=self.background,
-            )
-            await response(scope, receive, send)
-            return
-        await _ORIGINAL_FILE_RESPONSE_CALL(self, scope, receive, send)
-
-    FileResponse.__call__ = patched_call
