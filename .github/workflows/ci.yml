@@ -35,8 +35,27 @@ jobs:
 
       - name: Run Ruff lint and format checks
         run: |
-          ruff check .
-          ruff format --check .
+          set +e
+          ruff check . > ruff-check.txt 2>&1
+          check_status=$?
+          ruff format --check --diff . > ruff-format.diff 2>&1
+          format_status=$?
+          cat ruff-check.txt
+          cat ruff-format.diff
+          if [ "$check_status" -ne 0 ] || [ "$format_status" -ne 0 ]; then
+            exit 1
+          fi
+
+      - name: Upload lint diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lint-diagnostics-${{ matrix.python-version }}
+          path: |
+            ruff-check.txt
+            ruff-format.diff
+          if-no-files-found: ignore
+          retention-days: 1
 
       - name: Run pytest in mock mode
         env:
