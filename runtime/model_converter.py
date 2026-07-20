@@ -1,14 +1,8 @@
-"""Helper for exporting Hugging Face models to OpenVINO IR via Optimum Intel.
+"""Export Hugging Face models to OpenVINO IR via Optimum Intel.
 
 Conversion is a separate, heavier step than serving and requires the extra
-``requirements-convert.txt`` dependencies. This module builds and runs the
-``optimum-cli export openvino`` command and can resolve a model by its
-``models.json`` id so paths/weights stay consistent with the server.
-
-Usage:
-    python -m runtime.model_converter --id tinyllama-1.1b-chat-fp16
-    python -m runtime.model_converter --model Qwen/Qwen2.5-1.5B-Instruct \
-        --output models/openvino/qwen2.5-1.5b-instruct-fp16 --weight-format fp16
+``requirements-convert.txt`` dependencies. Catalog backends select the matching
+Optimum task for text generation, embeddings, or vision-language models.
 """
 
 from __future__ import annotations
@@ -21,8 +15,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-# Ensure the virtual environment's Scripts/bin directory is on PATH so that
-# optimum-cli can be found when running within the venv.
 _venv_bin = str(Path(sys.executable).parent)
 if _venv_bin not in os.environ.get("PATH", ""):
     os.environ["PATH"] = _venv_bin + os.pathsep + os.environ.get("PATH", "")
@@ -41,8 +33,9 @@ def build_export_command(
     ratio: float | None = None,
     sym: bool | None = None,
 ) -> list[str]:
-    """Construct the ``optimum-cli export openvino`` argument list."""
-    cmd = [
+    """Construct the ``optimum-cli export openvino`` command."""
+
+    command = [
         "optimum-cli",
         "export",
         "openvino",
@@ -52,18 +45,18 @@ def build_export_command(
         weight_format,
     ]
     if task:
-        cmd += ["--task", task]
+        command += ["--task", task]
     if trust_remote_code:
-        cmd.append("--trust-remote-code")
+        command.append("--trust-remote-code")
     if weight_format == "int4":
         if group_size is not None:
-            cmd += ["--group-size", str(group_size)]
+            command += ["--group-size", str(group_size)]
         if ratio is not None:
-            cmd += ["--ratio", str(ratio)]
+            command += ["--ratio", str(ratio)]
         if sym:
-            cmd.append("--sym")
-    cmd.append(str(output_dir))
-    return cmd
+            command.append("--sym")
+    command.append(str(output_dir))
+    return command
 
 
 def export_model(
@@ -77,11 +70,8 @@ def export_model(
     ratio: float | None = None,
     sym: bool | None = None,
 ) -> Path:
-    """Run the export and return the output directory.
+    """Run an export and return its output directory."""
 
-    Raises ``RuntimeError`` if ``optimum-cli`` is not installed and
-    ``subprocess.CalledProcessError`` if the export itself fails.
-    """
     if shutil.which("optimum-cli") is None:
         raise RuntimeError(
             "optimum-cli not found. Install conversion deps: "
@@ -96,7 +86,7 @@ def export_model(
             "the Hugging Face repo during conversion. Only use this with models you trust.",
             source_model,
         )
-    cmd = build_export_command(
+    command = build_export_command(
         source_model,
         output_dir,
         weight_format,
@@ -106,8 +96,8 @@ def export_model(
         ratio=ratio,
         sym=sym,
     )
-    logger.info("Running: %s", " ".join(cmd))
-    subprocess.run(cmd, check=True)
+    logger.info("Running: %s", " ".join(command))
+    subprocess.run(command, check=True)
     logger.info("Exported %s -> %s", source_model, output_dir)
     return output_dir
 
@@ -116,6 +106,7 @@ def _resolve_from_catalog(
     model_id: str, *, include_task: bool = False
 ) -> tuple[str, Path, str] | tuple[str, Path, str, str | None]:
     """Look up catalog conversion settings, optionally including the Optimum task."""
+
     from app.config import Settings
     from app.model_registry import load_catalog
 
@@ -128,12 +119,20 @@ def _resolve_from_catalog(
         )
     if not cfg.source_model:
         raise SystemExit(f"Model '{model_id}' has no 'source_model' in models.json")
+
     from app.config import BASE_DIR
 
     result = (cfg.source_model, cfg.abs_path(BASE_DIR), cfg.weight_format)
     if not include_task:
         return result
-    task = "feature-extraction" if "embedding" in cfg.backend.lower() else None
+
+    backend = cfg.backend.lower()
+    if "embedding" in backend:
+        task = "feature-extraction"
+    elif "vlm" in backend or "vision" in backend:
+        task = "image-text-to-text"
+    else:
+        task = None
     return (*result, task)
 
 
