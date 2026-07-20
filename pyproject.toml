@@ -1,7 +1,7 @@
 [project]
 name = "openvino-windows-llm"
-version = "0.1.0"
-description = "Windows-first local LLM server built on OpenVINO GenAI for Intel CPU/GPU/NPU."
+version = "0.2.0"
+description = "Windows-first local LLM and VLM server built on OpenVINO GenAI for Intel CPU/GPU/NPU."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
@@ -12,6 +12,7 @@ dependencies = [
     "pydantic>=2.6.0",
     "python-dotenv>=1.0.0",
     "psutil>=5.9.0",
+    "pillow>=10.0.0",
 ]
 
 [project.optional-dependencies]
