@@ -86,7 +86,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git diff --name-only -- .github/workflows/ci.yml | grep -q '^$' || {
+          test -z "$(git diff --name-only -- .github/workflows/ci.yml)" || {
             echo "Normal CI workflow was not restored" >&2
             exit 1
           }
