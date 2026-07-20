@@ -1,4 +1,4 @@
-# Runtime dependencies for the OpenVINO Windows LLM server.
+# Runtime dependencies for the OpenVINO Windows LLM and VLM server.
 #   pip install -r requirements.txt
 #
 # Unlike the legacy IPEX repo, normal runtime inference does NOT require pinning
@@ -16,6 +16,8 @@ pydantic>=2.6.0
 # --- Utilities ---
 python-dotenv>=1.0.0
 psutil>=5.9.0
+# Validates and decodes local JPEG, PNG, and WebP image inputs for VLM requests.
+pillow>=10.0.0
 
 # --- Windows enterprise TLS trust (no-op / not installed elsewhere) ---
 # Merges the Windows OS trust store into certifi so Hugging Face conversions

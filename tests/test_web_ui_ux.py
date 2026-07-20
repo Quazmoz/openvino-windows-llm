@@ -2,9 +2,7 @@
 
 from pathlib import Path
 
-HTML = (Path(__file__).resolve().parents[1] / "web" / "index.html").read_text(
-    encoding="utf-8"
-)
+HTML = (Path(__file__).resolve().parents[1] / "web" / "index.html").read_text(encoding="utf-8")
 
 
 def test_mobile_and_touch_ergonomics_are_preserved() -> None:
