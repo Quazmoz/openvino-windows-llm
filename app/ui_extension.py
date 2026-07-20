@@ -380,10 +380,21 @@ VISION_EXTENSION_JS = r"""
         });
     }
 
-    function requestPath(input) {
-        const value = typeof input === 'string' ? input : input?.url || '';
-        try { return new URL(value, window.location.href).pathname; }
-        catch { return value; }
+    function requestEndpoint(input) {
+        const value = typeof input === 'string'
+            ? input
+            : input instanceof URL
+                ? input.href
+                : input?.url || '';
+        try {
+            const url = new URL(value, window.location.href);
+            return {
+                path: url.pathname,
+                sameOrigin: url.origin === window.location.origin,
+            };
+        } catch {
+            return { path: '', sameOrigin: false };
+        }
     }
 
     function removeSentImages(sentIds) {
@@ -422,11 +433,13 @@ VISION_EXTENSION_JS = r"""
 
     const originalFetch = window.fetch.bind(window);
     window.fetch = async function visionAwareFetch(input, init = {}) {
-        const path = requestPath(input);
+        const endpoint = requestEndpoint(input);
+        const path = endpoint.path;
+        const isSameOrigin = endpoint.sameOrigin;
         const method = String(init?.method || (typeof input !== 'string' && input?.method) || 'GET').toUpperCase();
         let sentIds = [];
 
-        if (path === '/v1/models/download-custom' && method === 'POST' && customModelForm) {
+        if (isSameOrigin && path === '/v1/models/download-custom' && method === 'POST' && customModelForm) {
             try {
                 const body = JSON.parse(String(init.body || ''));
                 body.trust_remote_code = customTrustRemoteCode.checked;
@@ -434,10 +447,16 @@ VISION_EXTENSION_JS = r"""
             } catch { /* let the existing request surface malformed JSON */ }
         }
 
-        if (path === '/v1/chat/completions' && method === 'POST' && pendingImages.length) {
+        if (isSameOrigin && path === '/v1/chat/completions' && method === 'POST' && pendingImages.length) {
             let body;
             try { body = JSON.parse(String(init.body || '')); }
-            catch { return originalFetch(input, init); }
+            catch {
+                toast('Could not attach images to this request; attachments were kept.');
+                return responseWithJson(
+                    { detail: 'Could not attach images to the request body.' },
+                    new Response('', { status: 400 }),
+                );
+            }
 
             const capabilities = modelCapabilities.get(body.model);
             if (!capabilities?.supports_vision) {
@@ -452,6 +471,13 @@ VISION_EXTENSION_JS = r"""
             let userMessage = null;
             for (let index = messages.length - 1; index >= 0; index -= 1) {
                 if (messages[index]?.role === 'user') { userMessage = messages[index]; break; }
+            }
+            if (!userMessage) {
+                toast('Images require a user message; attachments were kept.');
+                return responseWithJson(
+                    { detail: 'Images require a user message.' },
+                    new Response('', { status: 400 }),
+                );
             }
             if (userMessage) {
                 const imagesToSend = [...pendingImages];
@@ -486,7 +512,7 @@ VISION_EXTENSION_JS = r"""
                 removeSentImages(sentIds);
             }
         }
-        if (path === '/v1/system/status' && response.ok) {
+        if (isSameOrigin && path === '/v1/system/status' && response.ok) {
             response.clone().json().then(recordCapabilities).catch(() => {});
         }
         return response;

@@ -42,6 +42,11 @@ def test_browser_extension_supports_safe_attachment_lifecycle():
     assert "if (sentIds.length && response.ok)" in VISION_EXTENSION_JS
     assert "response.clone()" in VISION_EXTENSION_JS
     assert ".slice(-4096)" in VISION_EXTENSION_JS
+    assert "url.origin === window.location.origin" in VISION_EXTENSION_JS
+    assert "input instanceof URL" in VISION_EXTENSION_JS
+    assert "Could not attach images to this request" in VISION_EXTENSION_JS
+    assert "Images require a user message" in VISION_EXTENSION_JS
+    assert "catch { return originalFetch(input, init); }" not in VISION_EXTENSION_JS
     assert "transcript +=" not in VISION_EXTENSION_JS
     assert "attachmentEpoch" in VISION_EXTENSION_JS
     assert "MAX_DIMENSION" in VISION_EXTENSION_JS
