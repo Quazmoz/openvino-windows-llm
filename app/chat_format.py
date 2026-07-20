@@ -2,9 +2,9 @@
 
 Two responsibilities, both pure from the caller's perspective:
 
-1. Normalize OpenAI-style messages into ``{role, content}`` dicts that an engine
-   can render. Text parts are flattened while validated image parts are retained
-   as private transport markers for a vision engine.
+1. Normalize OpenAI-style messages into ``{role, content}`` dictionaries. Text
+   parts are flattened while validated image parts are retained as private
+   transport markers for a vision engine.
 2. Fit the conversation within a token budget using a whole-turn sliding window
    so the most recent context is preserved and older turns are dropped first.
 """
@@ -34,12 +34,7 @@ def normalize_messages(
     messages: list[ChatMessage],
     system_override: str = "",
 ) -> list[dict]:
-    """Convert request messages into ``{role, content}`` dicts.
-
-    If ``system_override`` is provided, it is appended to any leading system
-    message instead of replacing it. This preserves caller-provided instructions
-    while still injecting server-side tool-calling instructions.
-    """
+    """Convert request messages into ``{role, content}`` dictionaries."""
 
     out: list[dict] = []
     msgs = list(messages)
@@ -60,7 +55,6 @@ def normalize_messages(
 
     for message in msgs:
         content = _content_to_text(message.content)
-
         if message.role == "tool":
             label = f" (call {message.tool_call_id})" if message.tool_call_id else ""
             out.append({"role": "user", "content": f"[tool result{label}]\n{content}"})
@@ -76,17 +70,29 @@ def normalize_messages(
             out.append({"role": "assistant", "content": merged})
         else:
             out.append({"role": message.role, "content": content})
-
     return out
 
 
 def render_chatml(dict_messages: list[dict], add_generation_prompt: bool = True) -> str:
     """Fallback ChatML renderer for engines whose model has no chat template."""
 
-    parts = [f"<|im_start|>{message['role']}\n{message['content']}<|im_end|>\n" for message in dict_messages]
+    parts = [
+        f"<|im_start|>{message['role']}\n{message['content']}<|im_end|>\n"
+        for message in dict_messages
+    ]
     if add_generation_prompt:
         parts.append("<|im_start|>assistant\n")
     return "".join(parts)
+
+
+def _count_or_release(prompt: str, count_tokens: CountTokens) -> int:
+    """Count a candidate prompt and release its context when counting fails."""
+
+    try:
+        return count_tokens(prompt)
+    except BaseException:
+        multimodal.discard_prompt_context(prompt)
+        raise
 
 
 def build_prompt_within_budget(
@@ -95,37 +101,38 @@ def build_prompt_within_budget(
     count_tokens: CountTokens,
     max_prompt_len: int,
 ) -> tuple[str, int]:
-    """Render a prompt that fits ``max_prompt_len`` tokens via a sliding window.
+    """Render a prompt that fits ``max_prompt_len`` via a sliding window.
 
-    The system message (if any) and the most recent turns are always kept; older
-    whole turns are dropped from the front until the prompt fits. The single most
-    recent message is never dropped.
+    Candidate VLM prompts may own temporary in-memory image contexts. Every candidate
+    discarded during budgeting is explicitly released; only the returned prompt keeps
+    its context for the subsequent generation call.
     """
 
     if not dict_messages:
         prompt = apply_template([])
-        return prompt, count_tokens(prompt)
+        return prompt, _count_or_release(prompt, count_tokens)
 
     full = apply_template(dict_messages)
-    full_tokens = count_tokens(full)
+    full_tokens = _count_or_release(full, count_tokens)
     if full_tokens <= max_prompt_len:
         return full, full_tokens
+    multimodal.discard_prompt_context(full)
 
     system = [message for message in dict_messages if message["role"] == "system"][:1]
     rest = [message for message in dict_messages if message["role"] != "system"]
-
     if not rest:
         prompt = apply_template(system)
-        return prompt, count_tokens(prompt)
+        return prompt, _count_or_release(prompt, count_tokens)
 
     low = 1
     high = len(rest)
     best_k = 1
-
     while low <= high:
         mid = (low + high) // 2
-        trial = system + rest[-mid:]
-        if count_tokens(apply_template(trial)) <= max_prompt_len:
+        candidate = apply_template(system + rest[-mid:])
+        candidate_tokens = _count_or_release(candidate, count_tokens)
+        multimodal.discard_prompt_context(candidate)
+        if candidate_tokens <= max_prompt_len:
             best_k = mid
             low = mid + 1
         else:
@@ -137,16 +144,15 @@ def build_prompt_within_budget(
             "Sliding window dropped %d older turn(s) to fit %d tokens", dropped, max_prompt_len
         )
 
-    final = system + rest[-best_k:]
-    prompt = apply_template(final)
-    return prompt, count_tokens(prompt)
+    final = apply_template(system + rest[-best_k:])
+    return final, _count_or_release(final, count_tokens)
 
 
 # --- Stop sequences --------------------------------------------------------
 
 
 def normalize_stop(stop: str | list[str] | None) -> list[str]:
-    """Coerce the OpenAI ``stop`` field (string, list, or None) to a clean list."""
+    """Coerce the OpenAI ``stop`` field to a clean list."""
 
     if stop is None:
         return []
