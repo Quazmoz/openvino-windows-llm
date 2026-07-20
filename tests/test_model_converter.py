@@ -11,16 +11,16 @@ def test_build_export_command_basic():
     assert cmd[1:3] == ["export", "openvino"]
     assert "--model" in cmd and cmd[cmd.index("--model") + 1] == "org/model"
     assert "--weight-format" in cmd and cmd[cmd.index("--weight-format") + 1] == "int4"
-    assert "--trust-remote-code" in cmd
+    assert "--trust-remote-code" not in cmd
     assert cmd[-1] == "out/dir"  # output dir is last
 
 
-def test_build_export_command_with_task_and_no_trust():
+def test_build_export_command_with_task_and_explicit_trust():
     cmd = mc.build_export_command(
-        "org/model", "out", "int8", trust_remote_code=False, task="text-generation"
+        "org/model", "out", "int8", trust_remote_code=True, task="text-generation"
     )
     assert "--task" in cmd and cmd[cmd.index("--task") + 1] == "text-generation"
-    assert "--trust-remote-code" not in cmd
+    assert "--trust-remote-code" in cmd
     assert "int8" in cmd
 
 
@@ -57,6 +57,7 @@ def test_resolve_from_catalog_reads_models_json(monkeypatch, tmp_path):
             "model_path": "models/openvino/m1",
             "source_model": "org/m1",
             "weight_format": "int8",
+            "trust_remote_code": True,
         }
     }
     catalog_file = tmp_path / "models.json"
@@ -67,6 +68,29 @@ def test_resolve_from_catalog_reads_models_json(monkeypatch, tmp_path):
     assert source == "org/m1"
     assert weight_format == "int8"
     assert output_dir.name == "m1"
+
+
+def test_resolve_from_catalog_includes_safe_execution_policy(monkeypatch, tmp_path):
+    catalog = {
+        "vision": {
+            "model_path": "models/openvino/vision",
+            "source_model": "org/vision",
+            "backend": "openvino-vlm",
+            "trust_remote_code": True,
+        }
+    }
+    catalog_file = tmp_path / "models.json"
+    catalog_file.write_text(json.dumps(catalog), encoding="utf-8")
+    monkeypatch.setenv("OV_LLM_MODELS_FILE", str(catalog_file))
+
+    source, output_dir, weight_format, task, trusted = mc._resolve_from_catalog(
+        "vision", include_task=True
+    )
+    assert source == "org/vision"
+    assert output_dir.name == "vision"
+    assert weight_format == "int4"
+    assert task == "image-text-to-text"
+    assert trusted is True
 
 
 def test_main_by_id_uses_catalog_weight_format(monkeypatch, tmp_path, capsys):
@@ -88,6 +112,7 @@ def test_main_by_id_uses_catalog_weight_format(monkeypatch, tmp_path, capsys):
         captured["source_model"] = source_model
         captured["output_dir"] = output_dir
         captured["weight_format"] = weight_format
+        captured["trust_remote_code"] = kwargs["trust_remote_code"]
         return output_dir
 
     monkeypatch.setattr(mc, "export_model", fake_export)
@@ -96,6 +121,7 @@ def test_main_by_id_uses_catalog_weight_format(monkeypatch, tmp_path, capsys):
     assert captured["source_model"] == "org/m1"
     assert captured["weight_format"] == "fp16"
     assert captured["output_dir"].name == "m1-fp16"
+    assert captured["trust_remote_code"] is False
     assert "Done." in capsys.readouterr().out
 
 
@@ -122,6 +148,31 @@ def test_main_by_id_allows_weight_format_override(monkeypatch, tmp_path):
 
     assert mc.main(["--id", "m1-fp16", "--weight-format", "int8"]) == 0
     assert captured["weight_format"] == "int8"
+
+
+def test_main_catalog_trust_policy_can_be_explicitly_overridden(monkeypatch, tmp_path):
+    catalog = {
+        "trusted": {
+            "model_path": "models/openvino/trusted",
+            "source_model": "org/trusted",
+            "trust_remote_code": True,
+        }
+    }
+    catalog_file = tmp_path / "models.json"
+    catalog_file.write_text(json.dumps(catalog), encoding="utf-8")
+    monkeypatch.setenv("OV_LLM_MODELS_FILE", str(catalog_file))
+    captured = {}
+
+    def fake_export(source_model, output_dir, weight_format, **kwargs):
+        captured["trust_remote_code"] = kwargs["trust_remote_code"]
+        return output_dir
+
+    monkeypatch.setattr(mc, "export_model", fake_export)
+    assert mc.main(["--id", "trusted", "--no-trust-remote-code"]) == 0
+    assert captured["trust_remote_code"] is False
+
+    assert mc.main(["--id", "trusted", "--trust-remote-code"]) == 0
+    assert captured["trust_remote_code"] is True
 
 
 def test_resolve_from_catalog_unknown_id_exits(monkeypatch, tmp_path):

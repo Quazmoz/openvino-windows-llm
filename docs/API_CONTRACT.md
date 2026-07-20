@@ -87,6 +87,8 @@ Supported fields:
 
 - `model`
 - `input` as one string or a list of strings
+- at most 256 input strings and 2,000,000 combined characters
+- empty strings are rejected
 - `encoding_format` as `float` or `base64`
 - `user` accepted for client compatibility
 
@@ -117,6 +119,11 @@ Model conversion and loading are asynchronous. Clients should poll
 `/v1/system/status` and inspect the matching catalog entry until `is_loaded` is true or
 an error state is returned.
 
+Custom registration and download requests accept `trust_remote_code`. It defaults to
+`false`; set it to `true` only for a reviewed Hugging Face repository whose custom
+Python code is explicitly trusted. `/v1/models/convert` accepts `null` to use the
+catalog policy or a boolean to override it for that conversion.
+
 ## Health routes
 
 - `GET /health` returns process, runtime, device, and model-count state.
@@ -138,9 +145,11 @@ Authorization: Bearer <key>
 Repeated failed authentication attempts are throttled. Keys are compared using a
 constant-time comparison and are not returned by usage endpoints.
 
-`OV_LLM_CORS_ORIGINS` defaults to `*`. Set explicit comma-separated origins for a
-browser client on another origin. Credentialed CORS is enabled only with explicit
-origins.
+`OV_LLM_CORS_ORIGINS` is blank by default, so cross-origin browser access is disabled.
+The bundled UI is served from the API origin and does not need CORS. Configure explicit
+comma-separated origins for Open WebUI or another browser client. Wildcard CORS is
+supported for compatibility but should be paired with an API key and avoided when
+possible.
 
 `OV_LLM_RATE_LIMIT` applies a per-IP requests-per-minute limit when greater than zero.
 It is a local safety control, not a replacement for a hardened reverse proxy.
@@ -153,6 +162,7 @@ The server uses conventional status codes:
 - `401` missing or invalid API key
 - `404` unknown model
 - `409` model is unloaded, busy, loading, or in a conflicting lifecycle state
+- `413` request body exceeds the configured maximum
 - `429` configured rate limit or repeated authentication failures
 - `500` inference, conversion, deletion, or internal runtime failure
 - `503` no model is available or readiness is temporarily blocked

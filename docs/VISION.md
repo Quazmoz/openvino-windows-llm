@@ -11,7 +11,11 @@ memory only for the active request.
 - up to 10 MiB per image
 - up to 24 MiB combined image data
 - up to 25,000,000 decoded pixels per image
+- up to 40,000,000 decoded pixels across the request
+- maximum dimension of 16,384 pixels per side
+- static images only; animated images are rejected
 - base64 `data:` URLs only
+- up to 1,024 content parts and 2,000,000 text characters per request
 
 Remote `http://` and `https://` image URLs are intentionally rejected. The server does
 not fetch user-controlled URLs, which avoids turning a LAN-bound installation into an
@@ -27,8 +31,10 @@ image button and supports:
 - pasting a screenshot from the clipboard
 - attachment previews and removal
 
-Attachments are sent with the next request only. The browser conversation store keeps
-the text message but does not retain base64 image data.
+Attachments are sent with the next request only. Successful non-streaming requests clear
+the sent attachments immediately. Streaming requests clear them only after a complete,
+error-free SSE stream; failed or interrupted requests retain them for retry. The browser
+conversation store keeps the text message but does not retain base64 image data.
 
 ## Register and convert a VLM
 
@@ -46,6 +52,7 @@ $body = @{
   max_context_len = 4096
   max_output_tokens = 512
   load_after = $true
+  trust_remote_code = $false
 } | ConvertTo-Json
 
 Invoke-RestMethod `
@@ -56,9 +63,14 @@ Invoke-RestMethod `
 ```
 
 The converter selects Optimum's `image-text-to-text` task for `openvino-vlm`
-registrations. Model architecture, OpenVINO GenAI version, driver, precision, and target
-device must still be compatible. Start with CPU or GPU unless the chosen VLM explicitly
-supports your NPU path.
+registrations. Hugging Face remote code execution is disabled by default. Set
+`trust_remote_code` to `true`, or enable the warning checkbox in the browser, only after
+reviewing and trusting the repository because conversion may then execute its Python
+code. The setting is persisted in `models.json` for explicit subsequent conversions.
+
+Model architecture, OpenVINO GenAI version, driver, precision, and target device must
+still be compatible. Start with CPU or GPU unless the chosen VLM explicitly supports
+your NPU path.
 
 ## Chat Completions API
 
@@ -119,14 +131,24 @@ Streaming uses the same request shape with `"stream": true`.
 
 ## Runtime behavior
 
-The request parser validates encoded size, decoded format, and image dimensions before
-inference. A VLM engine replaces private transport markers with OpenVINO GenAI image
-tags and supplies decoded `ov.Tensor` images to `VLMPipeline`. Temporary image contexts
-are consumed once and released when prompt-budget candidates are discarded.
+The HTTP layer rejects oversized bodies before JSON parsing. The default limit is 40 MiB
+and can be changed with `OV_LLM_MAX_REQUEST_BODY_MB` or
+`--max-request-body-mb`. Keep it above the 24 MiB decoded-image limit because base64 adds
+encoding overhead.
+
+The request parser performs a lightweight request-wide preflight before decoding. During
+prompt construction, each image is base64-decoded and fully verified once, then its
+validated bytes are carried as an immutable request-local payload. Tool-call retries reuse
+those payloads rather than decoding the source data again. A VLM engine replaces typed
+image parts with OpenVINO
+GenAI image tags and supplies oriented, contiguous `ov.Tensor` images to `VLMPipeline`.
+Bounded temporary image contexts are consumed once and released when prompt-budget
+candidates are discarded, a request fails, or a stream closes.
 
 Text-only models never receive base64 image bytes. The browser disables attachments for
-those models, and API-side prompt normalization replaces unexpected image parts with an
-explicit text-only warning.
+those models, and the API rejects image input for a text-only model with HTTP 400 rather
+than silently discarding it. Vision requests reserve prompt capacity for image embeddings;
+requests that leave no generation room are rejected explicitly.
 
 ## Validation status
 

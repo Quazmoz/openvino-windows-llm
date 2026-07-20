@@ -16,17 +16,6 @@
             } catch (e) { }
         })();
     </script>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link
-        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
-        rel="stylesheet">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11/styles/github-dark.min.css">
-    <script src="https://cdn.jsdelivr.net/npm/marked@9/marked.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11/highlight.min.js"></script>
-    <script>
-        if (window.marked) marked.setOptions({ breaks: true, gfm: true, mangle: false, headerIds: false });
-    </script>
     <style>
         *,
         *::before,
@@ -94,7 +83,7 @@
         html,
         body {
             height: 100%;
-            font-family: 'Inter', system-ui, sans-serif;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
             background: var(--bg);
             color: var(--text-1);
             overflow: hidden;
@@ -1114,7 +1103,7 @@
         }
 
         .bubble code {
-            font-family: 'JetBrains Mono', monospace;
+            font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
             font-size: 12.5px;
             background: var(--code-inline-bg);
             padding: 2px 5px;
@@ -1135,7 +1124,7 @@
             margin: 8px 0;
             overflow-x: auto;
             font-size: 12.5px;
-            font-family: 'JetBrains Mono', monospace;
+            font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
         }
 
         .bubble pre code {
@@ -1143,10 +1132,6 @@
             padding: 0;
         }
 
-        .bubble pre code.hljs {
-            background: transparent;
-            padding: 0;
-        }
 
         .bubble ul,
         .bubble ol {
@@ -1291,7 +1276,7 @@
         .tool-call-args {
             margin: 0;
             padding: 10px 12px;
-            font-family: 'JetBrains Mono', monospace;
+            font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
             font-size: 12px;
             color: var(--text-2);
             overflow-x: auto;
@@ -1525,7 +1510,7 @@
             right: 6px;
             padding: 3px 8px;
             font-size: 11px;
-            font-family: 'Inter', sans-serif;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
             background: var(--surface-3);
             border: 1px solid var(--border);
             color: var(--text-2);
@@ -3196,24 +3181,126 @@
             if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
             return headers;
         }
-        // Render model output as markdown, then sanitize the HTML before insertion.
-        // (Degrades gracefully if the marked / DOMPurify CDNs are unavailable.)
-        function renderMarkdown(text) {
-            if (!window.marked) return escapeHtml(text || '');
-            const raw = marked.parse(text || '');
-            return window.DOMPurify ? DOMPurify.sanitize(raw) : escapeHtml(text || '');
-        }
         function escapeHtml(text) { return String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
         function escapeAttr(text) { return escapeHtml(text).replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
+
+        // Deliberately small, dependency-free Markdown subset. Input is escaped before
+        // controlled tags are introduced, so model output can never inject HTML or script.
+        function renderInlineMarkdown(text) {
+            let safe = escapeHtml(text);
+            safe = safe.replace(/`([^`\n]+)`/g, '<code>$1</code>');
+            safe = safe.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
+            safe = safe.replace(/__([^_\n]+)__/g, '<strong>$1</strong>');
+            safe = safe.replace(/(^|[\s(])\*([^*\n]+)\*(?=$|[\s).,!?:;])/g, '$1<em>$2</em>');
+            safe = safe.replace(/(^|[\s(])_([^_\n]+)_(?=$|[\s).,!?:;])/g, '$1<em>$2</em>');
+            return safe;
+        }
+
+        function renderMarkdown(text) {
+            const lines = String(text || '').replace(/\r\n?/g, '\n').split('\n');
+            const output = [];
+            let paragraph = [];
+            let listType = null;
+            let listItems = [];
+            let quoteLines = [];
+            let inCode = false;
+            let codeLanguage = '';
+            let codeLines = [];
+
+            const flushParagraph = () => {
+                if (!paragraph.length) return;
+                output.push(`<p>${paragraph.map(renderInlineMarkdown).join('<br>')}</p>`);
+                paragraph = [];
+            };
+            const flushList = () => {
+                if (!listType) return;
+                output.push(`<${listType}>${listItems.map(item => `<li>${renderInlineMarkdown(item)}</li>`).join('')}</${listType}>`);
+                listType = null;
+                listItems = [];
+            };
+            const flushQuote = () => {
+                if (!quoteLines.length) return;
+                output.push(`<blockquote>${quoteLines.map(renderInlineMarkdown).join('<br>')}</blockquote>`);
+                quoteLines = [];
+            };
+            const flushBlocks = () => { flushParagraph(); flushList(); flushQuote(); };
+            const flushCode = () => {
+                const languageClass = codeLanguage ? ` class="language-${escapeAttr(codeLanguage)}"` : '';
+                output.push(`<pre><code${languageClass}>${escapeHtml(codeLines.join('\n'))}</code></pre>`);
+                codeLines = [];
+                codeLanguage = '';
+            };
+
+            for (const line of lines) {
+                const fence = line.match(/^```([A-Za-z0-9_+.#-]{0,32})\s*$/);
+                if (fence) {
+                    if (inCode) {
+                        flushCode();
+                        inCode = false;
+                    } else {
+                        flushBlocks();
+                        inCode = true;
+                        codeLanguage = fence[1] || '';
+                    }
+                    continue;
+                }
+                if (inCode) {
+                    codeLines.push(line);
+                    continue;
+                }
+                if (!line.trim()) {
+                    flushBlocks();
+                    continue;
+                }
+
+                const heading = line.match(/^(#{1,3})\s+(.+)$/);
+                if (heading) {
+                    flushBlocks();
+                    const level = heading[1].length;
+                    output.push(`<h${level}>${renderInlineMarkdown(heading[2])}</h${level}>`);
+                    continue;
+                }
+                if (/^ {0,3}([-*_])(?:\s*\1){2,}\s*$/.test(line)) {
+                    flushBlocks();
+                    output.push('<hr>');
+                    continue;
+                }
+                const unordered = line.match(/^\s*[-+*]\s+(.+)$/);
+                const ordered = line.match(/^\s*\d+[.)]\s+(.+)$/);
+                if (unordered || ordered) {
+                    flushParagraph();
+                    flushQuote();
+                    const nextType = ordered ? 'ol' : 'ul';
+                    if (listType && listType !== nextType) flushList();
+                    listType = nextType;
+                    listItems.push((ordered || unordered)[1]);
+                    continue;
+                }
+                const quote = line.match(/^\s*>\s?(.*)$/);
+                if (quote) {
+                    flushParagraph();
+                    flushList();
+                    quoteLines.push(quote[1]);
+                    continue;
+                }
+                flushList();
+                flushQuote();
+                paragraph.push(line);
+            }
+
+            if (inCode) flushCode();
+            flushBlocks();
+            return output.join('');
+        }
+
         // Messages may carry a local `meta` field (stats); the API only gets role+content.
         function apiMessages(msgs) { return msgs.map(({ role, content }) => ({ role, content })); }
-        // Syntax-highlight code blocks and add a per-block copy button (once each).
+        // Add a per-block copy button (once each).
         function enhanceCodeBlocks(container) {
             container.querySelectorAll('pre:not(.tool-call-args)').forEach(pre => {
                 if (pre.dataset.enhanced) return;
                 pre.dataset.enhanced = '1';
                 const code = pre.querySelector('code');
-                if (code && window.hljs) { try { hljs.highlightElement(code); } catch { } }
                 const btn = document.createElement('button');
                 btn.className = 'code-copy';
                 btn.type = 'button';

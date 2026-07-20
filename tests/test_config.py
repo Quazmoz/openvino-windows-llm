@@ -17,6 +17,8 @@ _ENV_VARS = [
     "OV_LLM_MOCK",
     "OV_LLM_AUTO_CONVERT",
     "OV_LLM_CORS_ORIGINS",
+    "OV_LLM_RATE_LIMIT",
+    "OV_LLM_MAX_REQUEST_BODY_MB",
 ]
 
 
@@ -39,7 +41,8 @@ def test_from_env_defaults(clean_env):
     assert s.api_key is None
     assert s.force_mock is False
     assert s.auto_convert is False
-    assert s.cors_origins == "*"
+    assert s.cors_origins == ""
+    assert s.max_request_body_mb == 40
 
 
 def test_from_env_parses_overrides(clean_env):
@@ -52,6 +55,7 @@ def test_from_env_parses_overrides(clean_env):
     clean_env.setenv("OV_LLM_MOCK", "yes")
     clean_env.setenv("OV_LLM_AUTO_CONVERT", "true")
     clean_env.setenv("OV_LLM_CORS_ORIGINS", "http://localhost:3000,http://localhost:8080")
+    clean_env.setenv("OV_LLM_MAX_REQUEST_BODY_MB", "48")
 
     s = Settings.from_env()
     assert s.host == "0.0.0.0"
@@ -63,6 +67,7 @@ def test_from_env_parses_overrides(clean_env):
     assert s.force_mock is True
     assert s.auto_convert is True
     assert s.cors_origins == "http://localhost:3000,http://localhost:8080"
+    assert s.max_request_body_mb == 48
 
 
 def test_from_env_normalizes_composite_device(clean_env):
@@ -77,6 +82,14 @@ def test_from_env_blank_optional_values_become_none(clean_env):
     s = Settings.from_env()
     assert s.default_model is None
     assert s.api_key is None
+
+
+def test_validate_warns_for_unauthenticated_wildcard_cors(tmp_path):
+    models_file = tmp_path / "models.json"
+    models_file.write_text("{}", encoding="utf-8")
+    settings = Settings(models_file=models_file, cors_origins="*", api_key=None)
+    warnings = settings.validate({})
+    assert any("Wildcard CORS" in warning for warning in warnings)
 
 
 def test_resolve_relative_against_base_dir():
