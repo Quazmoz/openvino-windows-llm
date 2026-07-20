@@ -1,6 +1,10 @@
+from pathlib import Path
+
 from fastapi.responses import FileResponse
 
 from app.ui_extension import VISION_EXTENSION_JS, inject_multimodal_ui
+
+WEB_HTML = (Path(__file__).resolve().parents[1] / "web" / "index.html").read_text(encoding="utf-8")
 
 
 def test_vision_extension_is_injected_once_before_body_close():
@@ -13,6 +17,13 @@ def test_vision_extension_is_injected_once_before_body_close():
 
 def test_importing_app_does_not_monkey_patch_file_response():
     assert FileResponse.__call__.__module__.startswith("starlette.")
+
+
+def test_bundled_ui_has_no_remote_runtime_dependencies():
+    assert "fonts.googleapis.com" not in WEB_HTML
+    assert "fonts.gstatic.com" not in WEB_HTML
+    assert "cdn.jsdelivr.net" not in WEB_HTML
+    assert "unpkg.com" not in WEB_HTML
 
 
 def test_browser_extension_supports_safe_attachment_lifecycle():
