@@ -1,10 +1,8 @@
-"""Model catalog: loading and validating ``models.json`` plus building the
-UI-facing status entries.
+"""Model catalog loading, validation, and UI-facing status entries.
 
-This module is intentionally free of any OpenVINO dependency. It only describes
-which models exist, where their OpenVINO IR directories live on disk, and how to
-present their current state to the web UI / API. Live runtime state (which
-engine is loaded on which device) is owned by :mod:`app.model_manager`.
+This module is intentionally free of OpenVINO runtime imports. It describes which
+models exist, where their OpenVINO IR directories live, and which API capabilities
+their configured backend provides.
 """
 
 from __future__ import annotations
@@ -14,11 +12,12 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path
 
+from app import multimodal
+
 logger = logging.getLogger("ov-llm.registry")
 
-# Files that indicate a directory holds a converted OpenVINO IR model.
-# A generic config.json alone is not enough; Hugging Face source/cache
-# directories also contain config.json and would otherwise be misclassified.
+# Files that indicate a directory holds a converted OpenVINO IR model. A generic
+# config.json alone is not enough because Hugging Face caches contain one too.
 _IR_MARKERS = ("openvino_model.xml", "openvino_language_model.xml")
 
 _STATUS_LABELS = {
@@ -69,12 +68,22 @@ class ModelConfig:
     @property
     def max_prompt_len(self) -> int:
         """Token budget for the prompt, reserving room for the response."""
+
         return max(self.max_context_len - self.max_output_tokens, 64)
 
+    @property
+    def capabilities(self) -> tuple[str, ...]:
+        return multimodal.capabilities_for_backend(self.backend)
+
+    @property
+    def supports_vision(self) -> bool:
+        return multimodal.backend_supports_vision(self.backend)
+
     def abs_path(self, base_dir: Path) -> Path:
-        """Absolute path to the model's OpenVINO IR directory."""
-        p = Path(self.model_path)
-        return p if p.is_absolute() else (base_dir / p)
+        """Absolute path to this model's OpenVINO IR directory."""
+
+        path = Path(self.model_path)
+        return path if path.is_absolute() else (base_dir / path)
 
 
 def _coerce_entry(model_id: str, raw: dict) -> ModelConfig:
@@ -93,16 +102,16 @@ def _coerce_entry(model_id: str, raw: dict) -> ModelConfig:
 
 
 def load_catalog(models_file: Path) -> dict[str, ModelConfig]:
-    """Load and validate the model catalog. Returns ``{}`` on a missing/invalid file."""
+    """Load and validate the catalog. Return an empty mapping on invalid input."""
+
     path = Path(models_file)
     if not path.exists():
         logger.warning("Model catalog not found: %s", path)
         return {}
 
     try:
-        # utf-8-sig tolerates a UTF-8 BOM (a common Windows editor artifact).
-        with open(path, encoding="utf-8-sig") as f:
-            data = json.load(f)
+        with open(path, encoding="utf-8-sig") as file:
+            data = json.load(file)
     except (OSError, json.JSONDecodeError) as exc:
         logger.error("Failed to read model catalog %s: %s", path, exc)
         return {}
@@ -125,12 +134,12 @@ def load_catalog(models_file: Path) -> dict[str, ModelConfig]:
 
 def is_openvino_model_dir(model_dir: Path) -> bool:
     """Return whether *model_dir* contains a converted OpenVINO IR model."""
+
     model_dir = Path(model_dir)
     return model_dir.is_dir() and any((model_dir / marker).exists() for marker in _IR_MARKERS)
 
 
 def is_downloaded(cfg: ModelConfig, base_dir: Path) -> bool:
-    """True if a converted OpenVINO IR directory exists for this model."""
     return is_openvino_model_dir(cfg.abs_path(base_dir))
 
 
@@ -195,7 +204,8 @@ def make_catalog_entry(
     error: str | None = None,
     progress: dict | None = None,
 ) -> dict:
-    """Build a single UI/API-facing status entry for a model."""
+    """Build one UI/API-facing status entry."""
+
     if loaded:
         status = "loaded"
     elif error:
@@ -221,11 +231,9 @@ def make_catalog_entry(
         label = progress_payload["message"]
         if progress_payload.get("percent") is not None and is_busy_state:
             label = f"{label} ({progress_payload['percent']:.0f}%)"
-        # The existing frontend renders model.name prominently in both the main
-        # model card and the dropdown. Appending a short badge makes preparation
-        # progress visible without replacing the stable single-file UI.
         display_name = f"{cfg.name} — {badge}"
 
+    capabilities = list(cfg.capabilities)
     return {
         "id": cfg.id,
         "name": display_name,
@@ -242,6 +250,9 @@ def make_catalog_entry(
         "max_context_len": cfg.max_context_len,
         "max_output_tokens": cfg.max_output_tokens,
         "backend": cfg.backend,
+        "capabilities": capabilities,
+        "supports_vision": cfg.supports_vision,
+        "input_modalities": ["text", "image"] if cfg.supports_vision else ["text"],
         "can_load": (not loaded) and downloaded and not is_busy_state,
         "can_convert": (not loaded)
         and (not downloaded)
@@ -255,7 +266,8 @@ def make_catalog_entry(
 
 
 def save_catalog(models_file: Path, catalog: dict[str, ModelConfig]) -> None:
-    """Save the catalog dictionary to models.json (atomic write via tmp+rename)."""
+    """Save the catalog atomically."""
+
     data = {}
     for model_id, cfg in catalog.items():
         data[model_id] = {
@@ -271,6 +283,6 @@ def save_catalog(models_file: Path, catalog: dict[str, ModelConfig]) -> None:
         }
     models_file = Path(models_file)
     models_file.parent.mkdir(parents=True, exist_ok=True)
-    tmp = models_file.with_suffix(models_file.suffix + ".tmp")
-    tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
-    tmp.replace(models_file)
+    temp = models_file.with_suffix(models_file.suffix + ".tmp")
+    temp.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    temp.replace(models_file)
