@@ -86,14 +86,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test -z "$(git diff --name-only -- .github/workflows/ci.yml)" || {
+          cmp -s .github/workflows/ci.yml <(git show origin/main:.github/workflows/ci.yml) || {
             echo "Normal CI workflow was not restored" >&2
             exit 1
           }
-          if git status --short | grep -E 'hardening-patch-|export-hardening-source'; then
-            echo "Temporary hardening files remain" >&2
-            exit 1
-          fi
+          test ! -e .github/workflows/export-hardening-source.yml
+          test -z "$(find .github -maxdepth 1 -name 'hardening-patch-*' -print -quit)"
           git status --short
 
       - name: Commit hardened implementation
