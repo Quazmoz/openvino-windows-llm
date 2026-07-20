@@ -1,14 +1,10 @@
-"""Inference engine wrappers.
+"""Inference engine wrappers for text, embeddings, and vision-language models.
 
-``OpenVINOEngine`` wraps ``openvino_genai.LLMPipeline`` (imported lazily).
-``MockEngine`` produces canned, streamed responses so the full server and web UI
-can be exercised on machines without OpenVINO (e.g. macOS during frontend work).
-
-Both expose the same small interface:
-    apply_chat_template(messages, add_generation_prompt) -> str
-    count_tokens(text) -> int
-    generate(prompt, params) -> GenResult
-    stream(prompt, params) -> StreamHandle
+``OpenVINOEngine`` wraps ``openvino_genai.LLMPipeline``.
+``OpenVINOVisionEngine`` wraps ``openvino_genai.VLMPipeline`` and consumes the
+validated image contexts produced by :mod:`app.multimodal`.
+Mock engines preserve the same contracts so API and browser work can be tested on
+machines without OpenVINO hardware.
 """
 
 from __future__ import annotations
@@ -24,7 +20,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from app import chat_format
+from app import chat_format, multimodal
 from runtime.device_check import is_openvino_available, normalize_device
 
 logger = logging.getLogger("ov-llm.engine")
@@ -52,12 +48,7 @@ class GenResult:
 
 
 class StreamHandle:
-    """Thread-safe bridge from a synchronous generation worker to the caller.
-
-    The worker thread calls :meth:`push` / :meth:`finish`; the consumer calls
-    :meth:`next_chunk` (designed to be run via ``run_in_executor`` so the asyncio
-    event loop is never blocked). ``next_chunk`` returns ``None`` at end of stream.
-    """
+    """Thread-safe bridge from a synchronous generation worker to an async caller."""
 
     def __init__(self) -> None:
         self._q: queue.Queue = queue.Queue(maxsize=1024)
@@ -67,12 +58,8 @@ class StreamHandle:
         self._done = threading.Event()
 
     def push(self, piece: str) -> bool:
-        """Queue a generated chunk unless cancellation was requested.
+        """Queue a generated chunk unless cancellation was requested."""
 
-        A bounded queue prevents unbounded memory growth, but a plain blocking
-        ``put`` can deadlock a generation worker after a client disconnects.
-        Polling with a short timeout lets cancellation release the worker.
-        """
         while not self.should_stop():
             try:
                 self._q.put(piece, timeout=0.1)
@@ -92,8 +79,6 @@ class StreamHandle:
                 except queue.Full:
                     if not self.should_stop():
                         continue
-                    # The consumer has gone away. Discard one queued chunk so
-                    # blocked ``next_chunk`` workers can still receive EOF.
                     with contextlib.suppress(queue.Empty):
                         self._q.get_nowait()
         finally:
@@ -104,19 +89,18 @@ class StreamHandle:
         return None if item is _SENTINEL else item
 
     def request_stop(self) -> None:
-        """Ask the worker to stop generating early (e.g. the client disconnected)."""
         self._stop.set()
 
     def should_stop(self) -> bool:
         return self._stop.is_set()
 
     def wait_closed(self, timeout: float | None = 30.0) -> bool:
-        """Block until the worker thread has finished, so the engine is free again."""
         return self._done.wait(timeout)
 
 
 class BaseEngine:
     backend = "base"
+    supports_vision = False
     model_id: str = ""
     model_path: str = ""
     device: str = "CPU"
@@ -143,11 +127,11 @@ class BaseEngine:
         return None
 
 
-# --- Mock engine -----------------------------------------------------------
+# --- Mock engines ----------------------------------------------------------
 
 
 class MockEngine(BaseEngine):
-    """A dependency-free engine that streams a canned reply. For UI/API testing."""
+    """Dependency-free canned text engine for API and UI testing."""
 
     backend = "mock"
 
@@ -157,10 +141,11 @@ class MockEngine(BaseEngine):
         self.device = device
 
     def apply_chat_template(self, messages: list[dict], add_generation_prompt: bool = True) -> str:
+        messages = multimodal.prepare_text_messages(messages)
         return chat_format.render_chatml(messages, add_generation_prompt)
 
     def count_tokens(self, text: str) -> int:
-        return max(1, len(text) // 4)
+        return max(1, len(multimodal.strip_prompt_context(text)) // 4)
 
     def _reply(self, prompt: str) -> str:
         matches = re.findall(r"<\|im_start\|>user\n(.*?)<\|im_end\|>", prompt, re.DOTALL)
@@ -185,7 +170,7 @@ class MockEngine(BaseEngine):
             for token in re.findall(r"\S+\s*", text):
                 if handle.should_stop():
                     break
-                time.sleep(0.015)  # simulate generation latency for the UI
+                time.sleep(0.015)
                 if not handle.push(token):
                     break
             handle.finish()
@@ -194,8 +179,34 @@ class MockEngine(BaseEngine):
         return handle
 
 
+class MockVisionEngine(MockEngine):
+    """Mock VLM that verifies the complete image transport without inference."""
+
+    backend = "mock-vlm"
+    supports_vision = True
+
+    def apply_chat_template(self, messages: list[dict], add_generation_prompt: bool = True) -> str:
+        prepared, context_key = multimodal.prepare_vision_messages(messages)
+        prompt = chat_format.render_chatml(prepared, add_generation_prompt)
+        return multimodal.append_prompt_context(prompt, context_key)
+
+    def _reply(self, prompt: str) -> str:
+        clean_prompt, images = multimodal.consume_prompt_context(prompt)
+        matches = re.findall(r"<\|im_start\|>user\n(.*?)<\|im_end\|>", clean_prompt, re.DOTALL)
+        last_user = matches[-1].strip() if matches else "(no user message found)"
+        last_user = re.sub(r"<ov_genai_image_\d+>", "[image]", last_user)
+        dimensions = ", ".join(f"{item.width}×{item.height}" for item in images) or "none"
+        return (
+            "**Mock vision engine** — OpenVINO VLM inference is not active.\n\n"
+            f"Received **{len(images)} image(s)** ({dimensions}).\n\n"
+            f"Prompt: _{last_user[:400]}_\n\n"
+            "The image validation, OpenAI content-part parsing, model routing, and streaming "
+            "path completed successfully. Load a converted `openvino-vlm` model for real analysis."
+        )
+
+
 class MockEmbeddingEngine(BaseEngine):
-    """A mock engine that yields dummy embeddings (length 384) for testing."""
+    """Mock embedding engine returning deterministic 384-dimensional vectors."""
 
     backend = "mock-embeddings"
 
@@ -215,7 +226,6 @@ class MockEmbeddingEngine(BaseEngine):
 
         results = []
         for text in texts:
-            # Use a stable digest rather than Python's process-randomized hash().
             seed = int.from_bytes(hashlib.sha256(text.encode("utf-8")).digest()[:8], "big")
             rng = random.Random(seed)
             results.append([rng.uniform(-1.0, 1.0) for _ in range(384)])
@@ -225,11 +235,11 @@ class MockEmbeddingEngine(BaseEngine):
         self._closed = True
 
 
-# --- OpenVINO GenAI engine -------------------------------------------------
+# --- OpenVINO text and vision engines -------------------------------------
 
 
 class OpenVINOEngine(BaseEngine):
-    """Wraps ``openvino_genai.LLMPipeline``. Constructed only when OpenVINO exists."""
+    """Wrap ``openvino_genai.LLMPipeline``."""
 
     backend = "openvino-genai"
 
@@ -241,7 +251,7 @@ class OpenVINOEngine(BaseEngine):
         plugin_config: dict | None = None,
         draft_model_path: str | None = None,
     ) -> None:
-        import openvino_genai as ov_genai  # lazy: only imported on a real load
+        import openvino_genai as ov_genai
 
         self._ov = ov_genai
         self.model_id = model_id
@@ -250,7 +260,6 @@ class OpenVINOEngine(BaseEngine):
         self._closed = False
 
         config = dict(plugin_config or {})
-
         draft_obj = None
         if draft_model_path:
             logger.info("Initializing speculative decoding with draft model: %s", draft_model_path)
@@ -282,8 +291,7 @@ class OpenVINOEngine(BaseEngine):
         if self._closed:
             raise RuntimeError(f"Engine for '{self.model_id}' is closed")
 
-    def apply_chat_template(self, messages: list[dict], add_generation_prompt: bool = True) -> str:
-        self._check_closed()
+    def _render_messages(self, messages: list[dict], add_generation_prompt: bool) -> str:
         try:
             try:
                 return self._tokenizer.apply_chat_template(
@@ -292,12 +300,19 @@ class OpenVINOEngine(BaseEngine):
                 )
             except TypeError:
                 return self._tokenizer.apply_chat_template(messages, add_generation_prompt)
-        except Exception as exc:  # model has no chat template, or signature differs
+        except Exception as exc:
             logger.debug("apply_chat_template failed (%s); falling back to ChatML", exc)
             return chat_format.render_chatml(messages, add_generation_prompt)
 
+    def apply_chat_template(self, messages: list[dict], add_generation_prompt: bool = True) -> str:
+        self._check_closed()
+        return self._render_messages(
+            multimodal.prepare_text_messages(messages), add_generation_prompt
+        )
+
     def count_tokens(self, text: str) -> int:
         self._check_closed()
+        text = multimodal.strip_prompt_context(text)
         try:
             ids = self._tokenizer.encode(text).input_ids
             try:
@@ -315,53 +330,50 @@ class OpenVINOEngine(BaseEngine):
             cfg.temperature = float(params.temperature)
             cfg.top_p = float(params.top_p)
             if params.seed is not None:
-                # Attribute name varies across OpenVINO GenAI versions; best effort.
                 with contextlib.suppress(Exception):
                     cfg.rng_seed = int(params.seed)
         else:
             cfg.do_sample = False
         if params.stop:
-            # Let the runtime stop early when supported; the server also truncates
-            # defensively so correctness never depends on this attribute existing.
             with contextlib.suppress(Exception):
                 cfg.stop_strings = set(params.stop)
                 cfg.include_stop_str_in_output = False
         if params.response_format:
-            StructuredOutputConfig = getattr(self._ov, "StructuredOutputConfig", None)
-            if StructuredOutputConfig is not None:
+            structured_output = getattr(self._ov, "StructuredOutputConfig", None)
+            if structured_output is not None:
                 import json
 
-                fmt_type = params.response_format.get("type")
-                if fmt_type == "json_schema":
+                format_type = params.response_format.get("type")
+                if format_type == "json_schema":
                     schema_data = params.response_format.get("json_schema", {}).get("schema")
                     if schema_data:
-                        so_cfg = StructuredOutputConfig(json_schema=json.dumps(schema_data))
+                        output_config = structured_output(json_schema=json.dumps(schema_data))
                         with contextlib.suppress(Exception):
-                            so_cfg.backend = "xgrammar"
-                        cfg.structured_output_config = so_cfg
-                elif fmt_type == "json_object":
-                    so_cfg = StructuredOutputConfig(json_schema=json.dumps({"type": "object"}))
+                            output_config.backend = "xgrammar"
+                        cfg.structured_output_config = output_config
+                elif format_type == "json_object":
+                    output_config = structured_output(json_schema=json.dumps({"type": "object"}))
                     with contextlib.suppress(Exception):
-                        so_cfg.backend = "xgrammar"
-                    cfg.structured_output_config = so_cfg
+                        output_config.backend = "xgrammar"
+                    cfg.structured_output_config = output_config
         return cfg
 
     def _build_adapters_config(self, params: GenParams):
         if not params.lora_path:
             return None
-        Adapter = getattr(self._ov, "Adapter", None)
-        AdapterConfig = getattr(self._ov, "AdapterConfig", None)
-        if Adapter is None or AdapterConfig is None:
+        adapter = getattr(self._ov, "Adapter", None)
+        adapter_config_type = getattr(self._ov, "AdapterConfig", None)
+        if adapter is None or adapter_config_type is None:
             raise RuntimeError(
                 "This OpenVINO GenAI version does not support dynamic LoRA adapters."
             )
         try:
-            adapters_config = AdapterConfig()
-            adapters_config.add(
-                Adapter(str(params.lora_path)),
+            adapter_config = adapter_config_type()
+            adapter_config.add(
+                adapter(str(params.lora_path)),
                 alpha=float(params.lora_alpha or 1.0),
             )
-            return adapters_config
+            return adapter_config
         except Exception as exc:
             raise RuntimeError(
                 f"Failed to construct LoRA adapter config for '{params.lora_path}': {exc}"
@@ -380,11 +392,11 @@ class OpenVINOEngine(BaseEngine):
     def stream(self, prompt: str, params: GenParams) -> StreamHandle:
         self._check_closed()
         handle = StreamHandle()
-        cfg = self._build_config(params)
+        config = self._build_config(params)
         pipe = self._pipe
 
         def streamer(subword: str) -> bool:
-            return not handle.push(subword)  # True => stop generation, False => keep going
+            return not handle.push(subword)
 
         def worker() -> None:
             try:
@@ -392,7 +404,7 @@ class OpenVINOEngine(BaseEngine):
                 adapters_config = self._build_adapters_config(params)
                 if adapters_config is not None:
                     kwargs["adapters"] = adapters_config
-                pipe.generate(prompt, cfg, streamer, **kwargs)
+                pipe.generate(prompt, config, streamer, **kwargs)
             except BaseException as exc:  # noqa: BLE001 - surface to the consumer
                 handle.finish(error=exc)
                 return
@@ -410,8 +422,111 @@ class OpenVINOEngine(BaseEngine):
         self._tokenizer = None
 
 
+class OpenVINOVisionEngine(OpenVINOEngine):
+    """Wrap ``openvino_genai.VLMPipeline`` for OpenAI-compatible image inputs."""
+
+    backend = "openvino-vlm"
+    supports_vision = True
+
+    def __init__(
+        self,
+        model_id: str,
+        model_path: str,
+        device: str,
+        plugin_config: dict | None = None,
+        draft_model_path: str | None = None,
+    ) -> None:
+        if draft_model_path:
+            raise RuntimeError("Speculative draft models are not supported by the VLM backend.")
+
+        import openvino_genai as ov_genai
+
+        if not hasattr(ov_genai, "VLMPipeline"):
+            raise RuntimeError(
+                "This OpenVINO GenAI version does not provide VLMPipeline. Upgrade openvino-genai."
+            )
+
+        self._ov = ov_genai
+        self.model_id = model_id
+        self.model_path = str(model_path)
+        self.device = normalize_device(device)
+        self._closed = False
+        config = dict(plugin_config or {})
+
+        logger.info("Loading vision model '%s' on %s from %s", model_id, self.device, self.model_path)
+        if self.device == "NPU" and config:
+            # VLM NPU plugin options are nested under DEVICE_PROPERTIES.
+            self._pipe = ov_genai.VLMPipeline(
+                self.model_path,
+                self.device,
+                config={"DEVICE_PROPERTIES": {"NPU": config}},
+            )
+        elif config:
+            self._pipe = ov_genai.VLMPipeline(self.model_path, self.device, **config)
+        else:
+            self._pipe = ov_genai.VLMPipeline(self.model_path, self.device)
+        self._tokenizer = self._pipe.get_tokenizer()
+        logger.info("Vision model '%s' ready on %s", model_id, self.device)
+
+    def apply_chat_template(self, messages: list[dict], add_generation_prompt: bool = True) -> str:
+        self._check_closed()
+        prepared, context_key = multimodal.prepare_vision_messages(messages)
+        prompt = self._render_messages(prepared, add_generation_prompt)
+        return multimodal.append_prompt_context(prompt, context_key)
+
+    def _generation_inputs(self, prompt: str) -> tuple[str, list[Any]]:
+        clean_prompt, payloads = multimodal.consume_prompt_context(prompt)
+        return clean_prompt, multimodal.to_openvino_tensors(payloads)
+
+    def _build_adapters_config(self, params: GenParams):
+        if params.lora_path:
+            raise RuntimeError("Dynamic LoRA adapters are not supported by the VLM backend.")
+        return None
+
+    def generate(self, prompt: str, params: GenParams) -> GenResult:
+        self._check_closed()
+        clean_prompt, images = self._generation_inputs(prompt)
+        kwargs: dict[str, Any] = {"generation_config": self._build_config(params)}
+        if images:
+            kwargs["images"] = images
+        result = self._pipe.generate(clean_prompt, **kwargs)
+        text = _result_text(result)
+        return GenResult(text=text, completion_tokens=self.count_tokens(text))
+
+    def stream(self, prompt: str, params: GenParams) -> StreamHandle:
+        self._check_closed()
+        clean_prompt, images = self._generation_inputs(prompt)
+        handle = StreamHandle()
+        config = self._build_config(params)
+        pipe = self._pipe
+
+        def streamer(subword: str) -> bool:
+            return not handle.push(subword)
+
+        def worker() -> None:
+            try:
+                kwargs: dict[str, Any] = {
+                    "generation_config": config,
+                    "streamer": streamer,
+                }
+                if images:
+                    kwargs["images"] = images
+                pipe.generate(clean_prompt, **kwargs)
+            except BaseException as exc:  # noqa: BLE001 - surface to the consumer
+                handle.finish(error=exc)
+                return
+            handle.finish()
+
+        threading.Thread(target=worker, daemon=True).start()
+        return handle
+
+
+# --- Embedding engine ------------------------------------------------------
+
+
 def _result_text(result) -> str:
-    """Extract generated text from an ov_genai result, defensively."""
+    """Extract generated text from an OpenVINO decoded result defensively."""
+
     try:
         if hasattr(result, "texts") and result.texts:
             return str(result.texts[0])
@@ -421,7 +536,7 @@ def _result_text(result) -> str:
 
 
 class OpenVINOEmbeddingEngine(BaseEngine):
-    """Wraps ``openvino_genai.TextEmbeddingPipeline``. Constructed only when OpenVINO exists."""
+    """Wrap ``openvino_genai.TextEmbeddingPipeline``."""
 
     backend = "openvino-embeddings"
 
@@ -461,40 +576,37 @@ class OpenVINOEmbeddingEngine(BaseEngine):
     def embed(self, texts: list[str]) -> list[list[float]]:
         self._check_closed()
         if hasattr(self._pipe, "embed_documents"):
-            res = self._pipe.embed_documents(texts)
+            result = self._pipe.embed_documents(texts)
         elif hasattr(self._pipe, "embed"):
-            res = self._pipe.embed(texts)
+            result = self._pipe.embed(texts)
         else:
             raise AttributeError(
                 "OpenVINO TextEmbeddingPipeline does not have 'embed_documents' or 'embed' methods."
             )
 
-        # Defensively convert the returned object (numpy array, ov.Tensor or list of lists)
-        # to a standard Python list of lists of floats.
-        if hasattr(res, "tolist"):
-            return res.tolist()
-        if hasattr(res, "embeddings"):
-            embeddings = res.embeddings
+        if hasattr(result, "tolist"):
+            return result.tolist()
+        if hasattr(result, "embeddings"):
+            embeddings = result.embeddings
             if hasattr(embeddings, "tolist"):
                 return embeddings.tolist()
         try:
             import numpy as np
 
-            return np.array(res).tolist()
+            return np.array(result).tolist()
         except Exception:
             pass
 
-        # Manual conversion fallback
-        result = []
-        for row in res:
+        output = []
+        for row in result:
             if hasattr(row, "tolist"):
-                result.append(row.tolist())
+                output.append(row.tolist())
             else:
                 try:
-                    result.append([float(x) for x in row])
+                    output.append([float(value) for value in row])
                 except Exception:
-                    result.append(float(row))
-        return result
+                    output.append(float(row))
+        return output
 
     def close(self) -> None:
         if self._closed:
@@ -512,13 +624,8 @@ def build_plugin_config(
     max_prompt_len: int | None,
     cache_dir: str | Path | None = None,
 ) -> dict:
-    """Device-specific OpenVINO plugin config.
+    """Build device-specific OpenVINO plugin configuration."""
 
-    The NPU plugin compiles to static shapes and benefits from an explicit prompt
-    length bound. Composite targets such as ``AUTO:NPU,GPU,CPU`` intentionally
-    use OpenVINO GenAI defaults because plugin-option behavior can differ across
-    routed devices.
-    """
     device = normalize_device(device)
     config: dict = {}
     if device == "NPU" and max_prompt_len:
@@ -546,26 +653,39 @@ def create_engine(
     backend: str = "openvino-genai",
     draft_model_path: str | None = None,
 ) -> BaseEngine:
-    """Create the appropriate engine for the current environment.
+    """Create the configured text, embedding, or vision engine."""
 
-    Falls back to :class:`MockEngine` when OpenVINO is unavailable or mock mode is
-    forced, so the server stays usable for frontend/API work everywhere.
-    """
     device = normalize_device(device)
-    is_embedding = "embedding" in backend.lower()
+    backend_lower = backend.lower()
+    is_embedding = "embedding" in backend_lower
+    is_vision = multimodal.backend_supports_vision(backend_lower)
 
     if force_mock or not is_openvino_available():
         reason = "forced" if force_mock else "OpenVINO not installed"
         if is_embedding:
             logger.info("Using MOCK embedding engine for '%s' (%s)", model_id, reason)
             return MockEmbeddingEngine(model_id, model_path, device if force_mock else "MOCK")
-        else:
-            logger.info("Using MOCK engine for '%s' (%s)", model_id, reason)
-            return MockEngine(model_id, model_path, device if force_mock else "MOCK")
+        if is_vision:
+            logger.info("Using MOCK vision engine for '%s' (%s)", model_id, reason)
+            return MockVisionEngine(model_id, model_path, device if force_mock else "MOCK")
+        logger.info("Using MOCK engine for '%s' (%s)", model_id, reason)
+        return MockEngine(model_id, model_path, device if force_mock else "MOCK")
 
     plugin_config = build_plugin_config(device, max_prompt_len, cache_dir)
     if is_embedding:
         return OpenVINOEmbeddingEngine(model_id, model_path, device, plugin_config)
+    if is_vision:
+        return OpenVINOVisionEngine(
+            model_id,
+            model_path,
+            device,
+            plugin_config,
+            draft_model_path=draft_model_path,
+        )
     return OpenVINOEngine(
-        model_id, model_path, device, plugin_config, draft_model_path=draft_model_path
+        model_id,
+        model_path,
+        device,
+        plugin_config,
+        draft_model_path=draft_model_path,
     )
