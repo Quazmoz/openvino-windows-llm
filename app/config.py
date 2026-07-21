@@ -15,20 +15,23 @@ from pathlib import Path
 from app.chat_context_ui import install_chat_context_extension
 from app.chat_guard_ui import install_chat_guard_extension
 from app.chat_queue_ui import install_chat_queue_extension
+from app.first_run_npu_ui import install_first_run_npu_extension
 from app.progress_reliability import install_progress_ui_extension
 from app.ui_polish import install_ui_polish_extension
 from runtime.device_check import normalize_device
 from runtime.npu_compat import install_openvino_genai_compat
 
 # Install compatibility and UI composition before app.model_manager/app.server
-# bind their imported engine and browser-injection functions. Progress is installed
-# last so it sees the final polished DOM and is the only progress fetch observer.
+# bind their imported engine and browser-injection functions. Progress remains the
+# sole progress observer, while the first-run NPU bootstrap is installed last so it
+# can reconcile the fully composed browser and fetch pipeline.
 install_openvino_genai_compat()
 install_chat_context_extension()
 install_chat_queue_extension()
 install_chat_guard_extension()
 install_ui_polish_extension()
 install_progress_ui_extension()
+install_first_run_npu_extension()
 
 logger = logging.getLogger("ov-llm.config")
 
