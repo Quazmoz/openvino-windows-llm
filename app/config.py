@@ -13,6 +13,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from runtime.device_check import normalize_device
+from runtime.npu_compat import install_openvino_genai_compat
+
+# Install the NPU constructor compatibility layer before app.model_manager binds
+# runtime.openvino_engine.create_engine into its module namespace.
+install_openvino_genai_compat()
 
 logger = logging.getLogger("ov-llm.config")
 
