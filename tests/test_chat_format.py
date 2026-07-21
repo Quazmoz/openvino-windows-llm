@@ -82,14 +82,64 @@ def test_build_prompt_slides_window_dropping_oldest():
     # The system prompt and the newest user turn are always retained.
     assert "sys" in prompt
     assert "NEWEST question" in prompt
-    # An old turn should have been dropped to fit the budget.
+    # The complete old turn should be dropped to fit the budget.
     assert "old old old" not in prompt
+    assert "reply reply reply" not in prompt
+
+
+def test_build_prompt_never_keeps_orphan_assistant_after_dropping_user():
+    msgs = [
+        {"role": "system", "content": "SYSTEM_MARKER"},
+        {"role": "user", "content": "OLD_USER " * 80},
+        {"role": "assistant", "content": "ORPHAN_ASSISTANT"},
+        {"role": "user", "content": "LATEST_USER"},
+    ]
+
+    prompt, tokens = build_prompt_within_budget(
+        msgs, render_chatml, _count_words, max_prompt_len=12
+    )
+
+    assert tokens <= 12
+    assert "SYSTEM_MARKER" in prompt
+    assert "LATEST_USER" in prompt
+    assert "OLD_USER" not in prompt
+    assert "ORPHAN_ASSISTANT" not in prompt
+
+
+def test_build_prompt_preserves_all_leading_system_instructions_when_trimmed():
+    msgs = [
+        {"role": "system", "content": "PRIMARY_SYSTEM"},
+        {"role": "system", "content": "SECONDARY_SYSTEM"},
+        {"role": "user", "content": "OLD " * 60},
+        {"role": "assistant", "content": "OLD_REPLY " * 60},
+        {"role": "user", "content": "LATEST"},
+    ]
+
+    prompt, tokens = build_prompt_within_budget(
+        msgs, render_chatml, _count_words, max_prompt_len=16
+    )
+
+    assert tokens <= 16
+    assert "PRIMARY_SYSTEM" in prompt
+    assert "SECONDARY_SYSTEM" in prompt
+    assert "LATEST" in prompt
+    assert "OLD_REPLY" not in prompt
 
 
 def test_build_prompt_keeps_last_even_if_oversized():
     msgs = [{"role": "user", "content": "word " * 200}]
     prompt, _ = build_prompt_within_budget(msgs, render_chatml, _count_words, max_prompt_len=10)
     assert "word" in prompt  # newest turn is never dropped entirely
+
+
+def test_build_prompt_assistant_only_prefill_keeps_latest_message():
+    msgs = [
+        {"role": "assistant", "content": "older prefill"},
+        {"role": "assistant", "content": "LATEST_PREFILL"},
+    ]
+    prompt, _ = build_prompt_within_budget(msgs, render_chatml, _count_words, max_prompt_len=2)
+    assert "LATEST_PREFILL" in prompt
+    assert "older prefill" not in prompt
 
 
 def test_responses_input_string():
