@@ -45,8 +45,27 @@ def test_progress_controller_renders_optimistically_before_first_poll():
     assert "function renderOptimistic" in rendered
     assert "'/v1/models/load'" in rendered
     assert "'/v1/models/convert'" in rendered
+    assert "'/v1/models/download-custom'" in rendered
     assert "Queued ${baseName(base)}" in rendered
     assert "optimistic.set(modelId" in rendered
+
+
+def test_progress_controller_handles_request_objects_and_failed_requests():
+    rendered = inject_multimodal_ui("<html><body></body></html>")
+
+    assert "input?.method" in rendered
+    assert "input instanceof Request" in rendered
+    assert "input.clone().json()" in rendered
+    assert "clearOptimistic(optimisticModelId)" in rendered
+    assert "if (!response.ok)" in rendered
+
+
+def test_progress_controller_resets_retry_state():
+    rendered = inject_multimodal_ui("<html><body></body></html>")
+
+    assert "modelState.delete(modelId)" in rendered
+    assert "reportedStart !== previous.startedAt" in rendered
+    assert "previous.terminal" in rendered
 
 
 def test_progress_controller_uses_text_content_for_server_values():
