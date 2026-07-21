@@ -25,7 +25,7 @@ CountTokens = Callable[[str], int]
 
 
 def _content_to_text(content: object) -> str | multimodal.MultimodalContent:
-    """Convert OpenAI content to text plus private multimodal transport markers."""
+    """Convert OpenAI content into text plus private multimodal markers."""
 
     return multimodal.content_to_transport_text(content)
 
@@ -95,13 +95,56 @@ def _count_or_release(prompt: str, count_tokens: CountTokens) -> int:
         raise
 
 
+def _split_leading_system_and_turns(dict_messages: list[dict]) -> tuple[list[dict], list[list[dict]]]:
+    """Split normalized messages into stable instructions and user-led turns.
+
+    Context trimming must never retain an assistant answer after dropping the user
+    message that prompted it. A turn therefore starts at a user message and owns all
+    following non-user messages until the next user message. Any malformed orphaned
+    assistant messages before the first user are intentionally omitted only when a
+    prompt actually needs trimming; an in-budget request is preserved verbatim.
+    """
+
+    prefix: list[dict] = []
+    cursor = 0
+    while cursor < len(dict_messages) and dict_messages[cursor].get("role") == "system":
+        prefix.append(dict_messages[cursor])
+        cursor += 1
+
+    turns: list[list[dict]] = []
+    current: list[dict] = []
+    for message in dict_messages[cursor:]:
+        if message.get("role") == "user":
+            if current and current[0].get("role") == "user":
+                turns.append(current)
+            current = [message]
+        elif current:
+            current.append(message)
+
+    if current and current[0].get("role") == "user":
+        turns.append(current)
+
+    if not turns:
+        remainder = dict_messages[cursor:]
+        if remainder:
+            # Preserve a useful final message for nonstandard API clients that send
+            # assistant-only prefills instead of a normal user-led conversation.
+            turns = [[remainder[-1]]]
+
+    return prefix, turns
+
+
+def _flatten_turns(turns: list[list[dict]]) -> list[dict]:
+    return [message for turn in turns for message in turn]
+
+
 def build_prompt_within_budget(
     dict_messages: list[dict],
     apply_template: ApplyTemplate,
     count_tokens: CountTokens,
     max_prompt_len: int,
 ) -> tuple[str, int]:
-    """Render a prompt that fits ``max_prompt_len`` via a sliding window.
+    """Render a prompt that fits ``max_prompt_len`` via a whole-turn window.
 
     Candidate VLM prompts may own temporary in-memory image contexts. Every candidate
     discarded during budgeting is explicitly released; only the returned prompt keeps
@@ -118,18 +161,18 @@ def build_prompt_within_budget(
         return full, full_tokens
     multimodal.discard_prompt_context(full)
 
-    system = [message for message in dict_messages if message["role"] == "system"][:1]
-    rest = [message for message in dict_messages if message["role"] != "system"]
-    if not rest:
+    system, turns = _split_leading_system_and_turns(dict_messages)
+    if not turns:
         prompt = apply_template(system)
         return prompt, _count_or_release(prompt, count_tokens)
 
     low = 1
-    high = len(rest)
+    high = len(turns)
     best_k = 1
     while low <= high:
         mid = (low + high) // 2
-        candidate = apply_template(system + rest[-mid:])
+        candidate_messages = system + _flatten_turns(turns[-mid:])
+        candidate = apply_template(candidate_messages)
         candidate_tokens = _count_or_release(candidate, count_tokens)
         multimodal.discard_prompt_context(candidate)
         if candidate_tokens <= max_prompt_len:
@@ -138,13 +181,18 @@ def build_prompt_within_budget(
         else:
             high = mid - 1
 
-    dropped = len(rest) - best_k
-    if dropped > 0:
+    dropped_turns = len(turns) - best_k
+    retained_messages = system + _flatten_turns(turns[-best_k:])
+    dropped_messages = max(0, len(dict_messages) - len(retained_messages))
+    if dropped_messages > 0:
         logger.info(
-            "Sliding window dropped %d older turn(s) to fit %d tokens", dropped, max_prompt_len
+            "Sliding window dropped %d older message(s) across %d turn(s) to fit %d tokens",
+            dropped_messages,
+            dropped_turns,
+            max_prompt_len,
         )
 
-    final = apply_template(system + rest[-best_k:])
+    final = apply_template(retained_messages)
     return final, _count_or_release(final, count_tokens)
 
 
