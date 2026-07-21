@@ -468,7 +468,6 @@ if (typeof showToast === 'function') {
 showToast(`Switching ${model.name} to ${nextDevice}. The current model stays available while OpenVINO compiles the replacement…`, 'warning');
 }
 try {
-waitingForModelId = model.id;
 const loadResponse = await fetch('/v1/models/load', {
 method: 'POST',
 headers: authHeaders({ 'Content-Type': 'application/json' }),
@@ -484,7 +483,6 @@ if (typeof setStatusPolling === 'function') setStatusPolling(1000);
 if (typeof showToast === 'function') showToast(loadData.message || `Preparing ${model.name} on ${nextDevice}…`, 'warning');
 await updateStatus();
 } catch (error) {
-waitingForModelId = null;
 selectedDevice = previousDevice;
 deviceSelectElement.value = previousDevice;
 try { localStorage.setItem('ovllm.device.v1', previousDevice); } catch { }
