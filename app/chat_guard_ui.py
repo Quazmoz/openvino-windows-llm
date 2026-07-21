@@ -48,7 +48,7 @@ CHAT_GUARD_JS = r"""
         prepareTimer = window.setTimeout(() => {
             preparing = false;
             if (!hasPreviews()) ownerChatId = null;
-        }, 30000);
+        }, 120000);
     }
 
     function clearAttachmentDom() {
@@ -58,7 +58,7 @@ CHAT_GUARD_JS = r"""
 
     function clearForNavigation(message = 'Image attachments were cleared when changing chats.') {
         const hadAttachments = preparing || hasPreviews();
-        if (ownerChatId) cancelledUntil = Date.now() + 30000;
+        if (ownerChatId) cancelledUntil = Date.now() + 120000;
         clearTimeout(prepareTimer);
         preparing = false;
         ownerChatId = null;
@@ -75,10 +75,14 @@ CHAT_GUARD_JS = r"""
         return preparing || hasPreviews();
     }
 
+    function isSupportedImageFile(file) {
+        const type = String(file?.type || '').toLowerCase();
+        const name = String(file?.name || '').toLowerCase();
+        return type.startsWith('image/') || /\.(?:jpe?g|png|webp)$/.test(name);
+    }
+
     function noteFiles(fileList) {
-        if (Array.from(fileList || []).some(file => String(file?.type || '').startsWith('image/'))) {
-            markOwner();
-        }
+        if (Array.from(fileList || []).some(isSupportedImageFile)) markOwner();
     }
 
     fileInput?.addEventListener('change', event => noteFiles(event.target?.files), true);
