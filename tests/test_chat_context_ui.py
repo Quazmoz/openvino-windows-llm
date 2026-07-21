@@ -23,6 +23,25 @@ def test_chat_context_extension_persists_each_chat_configuration():
     assert "captureVisibleContext(activeChat())" in rendered
 
 
+def test_chat_context_extension_repairs_corrupt_or_duplicate_browser_records():
+    rendered = inject_multimodal_ui('<html><body></body></html>')
+
+    assert "sanitizeStoredChats()" in rendered
+    assert "CHAT_ID_PATTERN" in rendered
+    assert "const seen = new Set()" in rendered
+    assert "freshChatId(seen)" in rendered
+    assert "chat.messages.filter" in rendered
+
+
+def test_chat_context_extension_replaces_deleted_or_unknown_models():
+    rendered = inject_multimodal_ui('<html><body></body></html>')
+
+    assert "function fallbackModelId()" in rendered
+    assert "function resolveChatModel(chat)" in rendered
+    assert "availableModels.has(chat.modelId)" in rendered
+    assert "chat.modelId = fallbackModelId()" in rendered
+
+
 def test_chat_context_extension_pins_and_serializes_generation():
     rendered = inject_multimodal_ui('<html><body></body></html>')
 
@@ -31,6 +50,8 @@ def test_chat_context_extension_pins_and_serializes_generation():
     assert "targetChat.modelId = context.modelId" in rendered
     assert "targetChat.systemPrompt = context.systemPrompt" in rendered
     assert "patchAssistantMetadata(targetChat, context.modelId)" in rendered
+    assert "window.__ovllmRequestChatId = targetChat.id" in rendered
+    assert "delete window.__ovllmRequestChatId" in rendered
 
 
 def test_chat_context_extension_handles_queued_and_deleted_chats():
