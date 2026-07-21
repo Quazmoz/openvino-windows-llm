@@ -1,0 +1,6 @@
+## ruff check .
+All checks passed!
+
+## ruff format --check .
+Would reformat: app/ui_quality.py
+1 file would be reformatted, 67 files already formatted
