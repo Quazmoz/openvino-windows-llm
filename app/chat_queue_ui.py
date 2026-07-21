@@ -33,7 +33,8 @@ CHAT_QUEUE_JS = r"""
         return availableModels.get(job.modelId) || {
             id: job.modelId,
             name: job.modelId,
-            status: job.running ? 'generating' : 'loading',
+            status: job.running ? 'generating' : job.ready ? 'ready' : 'loading',
+            is_loaded: job.ready,
             can_convert: false,
         };
     }
@@ -42,10 +43,12 @@ CHAT_QUEUE_JS = r"""
         const bubble = appendMessage('ai', '', true);
         const action = running
             ? 'Generating response'
-            : model.status === 'converting' || model.can_convert
-                ? 'Downloading and converting'
-                : 'Loading';
-        const suffix = running ? '' : ` on <strong>${escapeHtml(loadDevice)}</strong>`;
+            : model.is_loaded
+                ? 'Ready to generate'
+                : model.status === 'converting' || model.can_convert
+                    ? 'Downloading and converting'
+                    : 'Loading';
+        const suffix = running || model.is_loaded ? '' : ` on <strong>${escapeHtml(loadDevice)}</strong>`;
         bubble.firstElementChild.innerHTML = `
             <div class="model-loader-status" style="display:flex;align-items:center;gap:10px;padding:4px 0;color:var(--amber);">
                 <div class="spinner"></div>
@@ -63,6 +66,7 @@ CHAT_QUEUE_JS = r"""
             modelId,
             bubble: bubble || detachedBubble(),
             running: false,
+            ready: chat.pendingReady === true,
             resumeStarted: false,
             resumeAttemptedAt: 0,
         };
@@ -76,6 +80,7 @@ CHAT_QUEUE_JS = r"""
         if (chatStillExists(job.chat)) {
             delete job.chat.pendingModelId;
             delete job.chat.pendingSince;
+            delete job.chat.pendingReady;
             saveChats();
         }
     }
@@ -98,12 +103,27 @@ CHAT_QUEUE_JS = r"""
         clearPending(job);
     }
 
+    function markReady(job) {
+        if (job.ready) return;
+        job.ready = true;
+        job.chat.pendingReady = true;
+        saveChats();
+        renderChatList();
+    }
+
     function runPending(job) {
         if (job.running || !chatStillExists(job.chat)) {
             if (!chatStillExists(job.chat)) clearPending(job);
             return;
         }
+        if (activeChatId !== job.chat.id) {
+            markReady(job);
+            return;
+        }
+
         job.running = true;
+        job.ready = false;
+        delete job.chat.pendingReady;
         const initialMessageCount = job.chat.messages.length;
         ensureVisibleBubble(job);
         void executeGeneration(job.bubble, job.chat)
@@ -127,6 +147,8 @@ CHAT_QUEUE_JS = r"""
     function startPreparation(model, job = null) {
         if (!model || model.is_loaded || model.is_loading) return;
         if (job) {
+            job.ready = false;
+            delete job.chat.pendingReady;
             job.resumeStarted = true;
             job.resumeAttemptedAt = Date.now();
         }
@@ -158,9 +180,12 @@ CHAT_QUEUE_JS = r"""
                 return;
             }
             if (model.is_loaded) {
-                runPending(job);
+                markReady(job);
+                if (activeChatId === job.chat.id) runPending(job);
                 return;
             }
+            job.ready = false;
+            delete job.chat.pendingReady;
             if (model.status === 'error') {
                 showPreparationError(job, model.error || model.status_label);
                 return;
@@ -185,9 +210,10 @@ CHAT_QUEUE_JS = r"""
             Array.isArray(chat.messages) && chat.messages.at(-1)?.role === 'user'
         ) {
             rememberPending(chat, chat.pendingModelId);
-        } else if (chat && (chat.pendingModelId || chat.pendingSince)) {
+        } else if (chat && (chat.pendingModelId || chat.pendingSince || chat.pendingReady)) {
             delete chat.pendingModelId;
             delete chat.pendingSince;
+            delete chat.pendingReady;
         }
     });
     saveChats();
@@ -196,7 +222,11 @@ CHAT_QUEUE_JS = r"""
     renderChat = function pendingAwareRenderChat() {
         const result = previousRenderChat();
         const job = pendingChats.get(activeChatId);
-        if (job) ensureVisibleBubble(job);
+        if (job) {
+            ensureVisibleBubble(job);
+            const model = modelFor(job);
+            if (job.ready || model.is_loaded) window.setTimeout(() => runPending(job), 0);
+        }
         return result;
     };
 
