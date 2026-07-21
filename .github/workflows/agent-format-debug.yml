@@ -1,0 +1,22 @@
+name: Agent format debug
+
+on:
+  push:
+    branches: ["agent/fix-first-npu-load-target"]
+
+permissions:
+  contents: read
+
+jobs:
+  format-debug:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install ruff
+      - name: Show lint and format differences
+        run: |
+          ruff check app/config.py app/model_load_target.py tests/test_model_load_target.py
+          ruff format --check --diff app/config.py app/model_load_target.py tests/test_model_load_target.py
