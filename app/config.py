@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from app.chat_context_ui import install_chat_context_extension
+from app.chat_queue_ui import install_chat_queue_extension
 from app.progress_dock import install_progress_dock_extension
 from app.progress_semantics import install_progress_semantics_extension
 from app.progress_ui import install_progress_ui_extension
@@ -26,6 +27,7 @@ install_progress_ui_extension()
 install_progress_dock_extension()
 install_progress_semantics_extension()
 install_chat_context_extension()
+install_chat_queue_extension()
 
 logger = logging.getLogger("ov-llm.config")
 
