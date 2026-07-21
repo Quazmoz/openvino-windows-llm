@@ -2,49 +2,56 @@ from app.config import Settings  # noqa: F401 - installs composed UI extensions
 from app.ui_extension import inject_multimodal_ui
 
 
-def test_progress_extension_is_injected_after_base_ui_once():
-    html = '<html><head></head><body><select id="model-select"></select></body></html>'
+def test_progress_extension_is_injected_after_polish_once():
+    html = '<html><head></head><body><div class="chat-column"><div id="chat-area"></div></div></body></html>'
 
     rendered = inject_multimodal_ui(html)
     rendered_twice = inject_multimodal_ui(rendered)
 
-    extension_ids = (
-        "ovllm-vision-extension",
-        "ovllm-model-progress-extension",
-        "ovllm-model-progress-dock-extension",
-    )
-    for extension_id in extension_ids:
-        assert rendered.count(f'id="{extension_id}"') == 1
-        assert rendered_twice.count(f'id="{extension_id}"') == 1
+    marker = 'id="ovllm-model-progress-extension"'
+    assert rendered.count(marker) == 1
+    assert rendered_twice.count(marker) == 1
+    assert "ovllm-model-progress-dock-extension" not in rendered
+    assert "ovllm-model-progress-semantics-extension" not in rendered
+    assert rendered.index("ovllm-ui-polish-extension") < rendered.index(marker)
 
 
-def test_progress_extension_exposes_determinate_and_indeterminate_states():
+def test_progress_controller_has_persistent_and_inline_surfaces():
     rendered = inject_multimodal_ui("<html><body></body></html>")
 
-    assert "ov-progress-panel" in rendered
-    assert "ov-progress-track" in rendered
-    assert "indeterminate" in rendered
-    assert "aria-valuenow" in rendered
+    assert "ov-reliable-progress" in rendered
+    assert "chatColumn.insertBefore(dock, chatArea)" in rendered
+    assert "ovrp-inline" in rendered
+    assert "renderDock(active)" in rendered
+    assert "renderInline(active, info)" in rendered
+    assert "renderFooter(active, info)" in rendered
+
+
+def test_progress_controller_exposes_stage_elapsed_and_activity_details():
+    rendered = inject_multimodal_ui("<html><body></body></html>")
+
+    assert "Stage ${info.meta.stage + 1} of 3" in rendered
+    assert "Elapsed ${duration(info.elapsed)}" in rendered
+    assert "No new console output for" in rendered
+    assert "Recent preparation activity" in rendered
     assert "1. Download" in rendered
     assert "2. Convert" in rendered
     assert "3. Load" in rendered
-    assert "Elapsed" in rendered
-    assert "Recent preparation activity" in rendered
-    assert "/v1/system/status" in rendered
 
 
-def test_progress_dock_stays_available_outside_empty_state():
+def test_progress_controller_renders_optimistically_before_first_poll():
     rendered = inject_multimodal_ui("<html><body></body></html>")
 
-    assert "ov-progress-dock" in rendered
-    assert "chatColumn.insertBefore(dock, chatArea)" in rendered
-    assert "dock.classList.add('visible')" in rendered
-    assert "dock.classList.remove('visible')" in rendered
+    assert "function renderOptimistic" in rendered
+    assert "'/v1/models/load'" in rendered
+    assert "'/v1/models/convert'" in rendered
+    assert "Queued ${baseName(base)}" in rendered
+    assert "optimistic.set(modelId" in rendered
 
 
-def test_progress_extension_uses_text_content_for_dynamic_server_values():
+def test_progress_controller_uses_text_content_for_server_values():
     rendered = inject_multimodal_ui("<html><body></body></html>")
 
-    assert "message.textContent" in rendered
+    assert ".textContent = String(" in rendered
     assert "output.textContent = logs.join" in rendered
-    assert "title.textContent" in rendered
+    assert "footer.textContent" in rendered
