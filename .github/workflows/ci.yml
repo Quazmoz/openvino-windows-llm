@@ -16,7 +16,16 @@ jobs:
         with:
           python-version: "3.11"
       - run: python -m pip install ruff
-      - name: Show focused lint and format output
+      - name: Capture focused lint and format output
         run: |
-          ruff check app/config.py app/model_load_target.py tests/test_model_load_target.py
-          ruff format --check --diff app/config.py app/model_load_target.py tests/test_model_load_target.py
+          set +e
+          ruff check app/config.py app/model_load_target.py tests/test_model_load_target.py > ruff-output.txt 2>&1
+          echo "lint_exit=$?" >> ruff-output.txt
+          ruff format --check --diff app/config.py app/model_load_target.py tests/test_model_load_target.py >> ruff-output.txt 2>&1
+          echo "format_exit=$?" >> ruff-output.txt
+          exit 0
+      - uses: actions/upload-artifact@v4
+        with:
+          name: focused-ruff-output
+          path: ruff-output.txt
+          retention-days: 1
