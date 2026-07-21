@@ -6,6 +6,9 @@ from app import ui_extension
 
 _EXTENSION_ID = "ovllm-system-doctor-extension"
 
+# The CSS and JavaScript are shipped verbatim into the single-file browser client.
+# Ruff must not reflow these generated payloads as Python source.
+# fmt: off
 DOCTOR_CSS = r"""
 #doctor-btn{position:relative}#doctor-btn:after{content:'';position:absolute;right:4px;top:4px;width:7px;height:7px;border:2px solid var(--surface-2);border-radius:50%;background:var(--amber);opacity:0}#doctor-btn.has-warning:after,#doctor-btn.has-error:after{opacity:1}#doctor-btn.has-error:after{background:var(--red)}
 #doctor-modal .modal-card{width:min(860px,calc(100vw - 28px));max-height:min(900px,calc(100dvh - 28px));overflow:hidden}.doctor-head p{margin-top:3px;color:var(--text-3);font-size:10px}.doctor-body{min-height:0;overflow:auto;padding:18px 20px 20px;overscroll-behavior:contain}.doctor-loading,.doctor-fatal{display:grid;min-height:300px;place-items:center;padding:28px;text-align:center;color:var(--text-2)}.doctor-loading>div{display:flex;flex-direction:column;align-items:center;gap:12px;max-width:380px;line-height:1.5}
@@ -65,6 +68,7 @@ function open(value){modal.classList.toggle('hidden',!value);modal.setAttribute(
 trigger.addEventListener('click',()=>open(true));closeBtn.addEventListener('click',()=>open(false));refreshBtn.addEventListener('click',run);modal.addEventListener('pointerdown',e=>{if(e.target===modal)open(false)});copyBtn.addEventListener('click',async()=>{if(!report)return;copyBtn.disabled=true;try{await copy(text(report));copyBtn.textContent='Copied';if(typeof showToast==='function')showToast('Support report copied','success')}catch(error){if(typeof showToast==='function')showToast(`Copy failed: ${error.message}`,'error')}finally{setTimeout(()=>{copyBtn.textContent='Copy support report';copyBtn.disabled=!report},1400)}});modal.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();open(false);return}if(e.key!=='Tab')return;const list=focusables();if(!list.length)return;const first=list[0],last=list[list.length-1];if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus()}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus()}});
 })();
 """
+# fmt: on
 
 
 def install_system_doctor_extension() -> None:
