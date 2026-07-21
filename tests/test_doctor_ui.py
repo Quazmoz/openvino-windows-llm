@@ -62,9 +62,7 @@ def test_system_doctor_is_keyboard_and_screen_reader_accessible() -> None:
 def test_support_report_omits_sensitive_browser_state() -> None:
     rendered = inject_multimodal_ui("<html><body></body></html>")
     extension = rendered.split('id="ovllm-system-doctor-extension"', maxsplit=1)[1]
-    privacy_notice = (
-        "API keys, prompts, chat content, model errors, and local directory paths"
-    )
+    privacy_notice = "API keys, prompts, chat content, model errors, and local directory paths"
 
     assert privacy_notice in extension
     assert "settings-api-key" not in extension
