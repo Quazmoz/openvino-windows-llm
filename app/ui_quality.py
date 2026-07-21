@@ -502,6 +502,7 @@ syncPanelBackdrop();
 })();
 """
 
+
 def install_ui_quality_extension() -> None:
     """Compose reliability and accessibility hardening into the browser UI."""
 
