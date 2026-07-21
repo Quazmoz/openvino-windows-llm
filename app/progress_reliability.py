@@ -1,8 +1,8 @@
 """Reliable, persistent model-preparation progress for the browser client.
 
-This is the single progress controller used by the UI. It renders optimistic
-feedback immediately after a load/convert request, then reconciles that state with
-the server's model progress on every status poll.
+One controller owns optimistic request feedback and server reconciliation for model
+loads, conversions, and custom-model downloads. It intentionally avoids additional
+fetch wrappers competing for the same DOM surfaces.
 """
 
 from __future__ import annotations
@@ -17,6 +17,11 @@ PROGRESS_RELIABILITY_JS = r"""
     if (window.__ovllmReliableProgressInstalled) return;
     window.__ovllmReliableProgressInstalled = true;
 
+    const PREPARATION_PATHS = new Set([
+        '/v1/models/load',
+        '/v1/models/convert',
+        '/v1/models/download-custom',
+    ]);
     const PHASES = {
         idle: ['Waiting', -1, 0, 0],
         queued: ['Queued', 0, 0, 3],
@@ -28,6 +33,7 @@ PROGRESS_RELIABILITY_JS = r"""
         ready: ['Ready', 3, 100, 100],
         error: ['Failed', -1, 0, 100],
     };
+
     const modelState = new Map();
     const optimistic = new Map();
     let latestStatus = null;
@@ -41,7 +47,7 @@ PROGRESS_RELIABILITY_JS = r"""
         .ovrp-main{width:100%;display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:7px 10px;align-items:center;padding:11px 12px;border:0;background:transparent;color:inherit;text-align:left;cursor:pointer;font:inherit}
         .ovrp-main:focus-visible{outline:2px solid var(--primary);outline-offset:-2px}.ovrp-spinner{width:16px;height:16px;border:2px solid var(--surface-3);border-top-color:var(--primary);border-radius:50%;animation:spin .8s linear infinite}
         .error .ovrp-spinner{border-color:color-mix(in srgb,var(--red) 28%,var(--surface-3));border-top-color:var(--red);animation:none}.ovrp-copy{min-width:0}
-        .ovrp-title{font-size:11.5px;font-weight:750;color:var(--text-1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ovrp-message{margin-top:2px;font-size:10.5px;color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+        .ovrp-title{display:block;font-size:11.5px;font-weight:750;color:var(--text-1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ovrp-message{display:block;margin-top:2px;font-size:10.5px;color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
         .ovrp-value{font-size:11.5px;font-weight:750;color:var(--primary);font-variant-numeric:tabular-nums;white-space:nowrap}.error .ovrp-value{color:var(--red)}
         .ovrp-track{grid-column:2/4;position:relative;height:7px;overflow:hidden;border-radius:999px;background:var(--surface-3);box-shadow:inset 0 0 0 1px var(--border)}
         .ovrp-fill{position:absolute;inset:0 auto 0 0;width:0;border-radius:inherit;background:var(--accent-grad);transition:width .35s ease}.error .ovrp-fill{background:var(--red)}
@@ -122,12 +128,19 @@ PROGRESS_RELIABILITY_JS = r"""
         const raw = phase === 'downloading'
             ? aggregateDownloadPercent(progress) ?? strictPercent(progress.percent)
             : strictPercent(progress.percent);
-        const prior = modelState.get(model.id) || {
+        const reportedStart = Number(progress.started_at) || 0;
+        const previous = modelState.get(model.id);
+        const newOperation = !previous
+            || (reportedStart > 0 && previous.startedAt > 0 && reportedStart !== previous.startedAt)
+            || (previous.terminal && !['ready', 'error'].includes(phase));
+        const prior = newOperation ? {
             overall: 0,
             rank: -1,
-            startedAt: Number(progress.started_at) || Math.floor(Date.now() / 1000),
+            startedAt: reportedStart || Math.floor(Date.now() / 1000),
             targetDevice: null,
-        };
+            terminal: false,
+        } : previous;
+
         let overall = prior.overall;
         let determinate = raw !== null;
         if (phase === 'ready') {
@@ -141,9 +154,10 @@ PROGRESS_RELIABILITY_JS = r"""
         } else {
             overall = Math.max(prior.overall, meta.start);
         }
+
         overall = Math.max(0, Math.min(100, overall));
         const now = Math.floor(Date.now() / 1000);
-        const startedAt = Number(progress.started_at) || prior.startedAt || now;
+        const startedAt = reportedStart || prior.startedAt || now;
         const updatedAt = Number(progress.updated_at) || now;
         const targetDevice = model.device
             || prior.targetDevice
@@ -154,7 +168,9 @@ PROGRESS_RELIABILITY_JS = r"""
             rank: Math.max(prior.rank, meta.stage),
             startedAt,
             targetDevice,
+            terminal: ['ready', 'error'].includes(phase),
         });
+
         return {
             model,
             progress,
@@ -261,7 +277,7 @@ PROGRESS_RELIABILITY_JS = r"""
     function renderDock(model) {
         if (!model || (!model.is_loading && model.status !== 'error')) {
             dock.classList.remove('visible', 'error');
-            return;
+            return null;
         }
         const info = progressInfo(model);
         dock.classList.add('visible');
@@ -312,21 +328,32 @@ PROGRESS_RELIABILITY_JS = r"""
         footer.title = String(info.progress.message || model.status_label || footer.textContent);
     }
 
-    function mergeOptimistic(models) {
+    function mergeOptimistic(source) {
         const now = Date.now();
-        return models.map(model => {
+        const models = source.map(model => {
             const pending = optimistic.get(model.id);
             if (!pending) return model;
             if (model.is_loading || model.is_loaded || model.status === 'error') {
                 optimistic.delete(model.id);
                 return model;
             }
-            if (now - pending.createdAt > 8000) {
+            if (now - pending.createdAt > 15000) {
                 optimistic.delete(model.id);
                 return model;
             }
             return pending.model;
         });
+
+        const known = new Set(models.map(model => model.id));
+        for (const [modelId, pending] of optimistic.entries()) {
+            if (known.has(modelId)) continue;
+            if (now - pending.createdAt > 15000) {
+                optimistic.delete(modelId);
+                continue;
+            }
+            models.push(pending.model);
+        }
+        return models;
     }
 
     function renderStatus(data) {
@@ -372,33 +399,57 @@ PROGRESS_RELIABILITY_JS = r"""
         }
     }
 
-    function parseBody(init) {
-        if (typeof init?.body !== 'string') return {};
-        try {
-            return JSON.parse(init.body);
-        } catch {
-            return {};
-        }
+    function requestMethod(input, init) {
+        return String(init?.method || input?.method || 'GET').toUpperCase();
     }
 
-    function renderOptimistic(path, init) {
-        const body = parseBody(init);
-        const modelId = String(body.model || '');
-        if (!modelId) return;
+    async function requestBody(input, init) {
+        if (typeof init?.body === 'string') {
+            try {
+                return JSON.parse(init.body);
+            } catch {
+                return {};
+            }
+        }
+        if (input instanceof Request) {
+            try {
+                return await input.clone().json();
+            } catch {
+                return {};
+            }
+        }
+        return {};
+    }
+
+    function optimisticIdentity(path, body) {
+        const modelId = String(body.model || body.model_id || '').trim();
+        if (!modelId) return null;
+        return {
+            modelId,
+            device: body.device || body.recommended_device || null,
+            converting: path !== '/v1/models/load',
+        };
+    }
+
+    function renderOptimistic(path, body) {
+        const identity = optimisticIdentity(path, body);
+        if (!identity) return null;
+        const { modelId, device, converting } = identity;
+        modelState.delete(modelId);
+
         const catalog = latestStatus?.models?.available || [];
         const base = catalog.find(model => model.id === modelId) || {
             id: modelId,
-            name: modelId,
+            name: body.name || modelId,
             status_label: 'Preparing model…',
         };
         const now = Math.floor(Date.now() / 1000);
-        const converting = path === '/v1/models/convert';
         const message = converting
             ? `Queued ${baseName(base)} for download and conversion…`
-            : `Queued ${baseName(base)} to load on ${body.device || 'selected device'}…`;
+            : `Queued ${baseName(base)} to load on ${device || 'the selected device'}…`;
         const model = {
             ...base,
-            device: body.device || base.device || null,
+            device: device || base.device || null,
             is_loaded: false,
             is_loading: true,
             status: converting ? 'converting' : 'queued',
@@ -416,42 +467,70 @@ PROGRESS_RELIABILITY_JS = r"""
         const info = renderDock(model);
         renderInline(model, info);
         renderFooter(model, info);
+        return modelId;
+    }
+
+    function clearOptimistic(modelId) {
+        if (!modelId) return;
+        optimistic.delete(modelId);
+        modelState.delete(modelId);
+        if (latestStatus) scheduleRender(latestStatus);
+        else {
+            renderDock(null);
+            renderInline(null, null);
+        }
+    }
+
+    function mergeReturnedModel(payload) {
+        if (!payload?.model) return;
+        const current = latestStatus || { models: { available: [] } };
+        const models = Array.isArray(current.models?.available)
+            ? [...current.models.available]
+            : [];
+        const index = models.findIndex(model => model.id === payload.model.id);
+        if (index >= 0) models[index] = payload.model;
+        else models.push(payload.model);
+        scheduleRender({
+            ...current,
+            models: { ...(current.models || {}), available: models },
+        });
     }
 
     const previousFetch = window.fetch.bind(window);
     window.fetch = async function reliableProgressFetch(input, init = {}) {
         const target = endpoint(input);
-        const method = String(init?.method || 'GET').toUpperCase();
-        if (
-            target.sameOrigin
+        const method = requestMethod(input, init);
+        const isPreparation = target.sameOrigin
             && method === 'POST'
-            && ['/v1/models/load', '/v1/models/convert'].includes(target.path)
-        ) {
-            renderOptimistic(target.path, init);
+            && PREPARATION_PATHS.has(target.path);
+        let optimisticModelId = null;
+
+        if (isPreparation) {
+            const body = await requestBody(input, init);
+            optimisticModelId = renderOptimistic(target.path, body);
         }
 
-        const response = await previousFetch(input, init);
+        let response;
+        try {
+            response = await previousFetch(input, init);
+        } catch (error) {
+            clearOptimistic(optimisticModelId);
+            throw error;
+        }
+
         if (target.sameOrigin && target.path === '/v1/system/status' && response.ok) {
             response.clone().json().then(scheduleRender).catch(() => {});
-        } else if (
-            target.sameOrigin
-            && ['/v1/models/load', '/v1/models/convert'].includes(target.path)
-            && response.ok
-        ) {
-            response.clone().json().then(payload => {
-                if (!payload?.model) return;
-                const current = latestStatus || { models: { available: [] } };
-                const models = Array.isArray(current.models?.available)
-                    ? [...current.models.available]
-                    : [];
-                const index = models.findIndex(model => model.id === payload.model.id);
-                if (index >= 0) models[index] = payload.model;
-                else models.push(payload.model);
-                scheduleRender({
-                    ...current,
-                    models: { ...(current.models || {}), available: models },
+        } else if (isPreparation) {
+            if (!response.ok) {
+                clearOptimistic(optimisticModelId);
+            } else {
+                response.clone().json().then(payload => {
+                    optimistic.delete(optimisticModelId);
+                    mergeReturnedModel(payload);
+                }).catch(() => {
+                    clearOptimistic(optimisticModelId);
                 });
-            }).catch(() => {});
+            }
         }
         return response;
     };

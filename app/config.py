@@ -70,11 +70,15 @@ class Settings:
     max_request_body_mb: int = 40
 
     def __post_init__(self) -> None:
-        # ModelManager imports Settings, so install this lifecycle extension only
-        # when a Settings instance is created, after the manager class is defined.
+        # ModelManager imports Settings, so install lifecycle extensions only when
+        # a Settings instance is created, after the manager class is defined.
+        # Target routing must be installed before cross-operation coordination so
+        # the latter wraps the authoritative load implementation.
+        from app.lifecycle_safety import install_model_lifecycle_safety
         from app.model_load_target import install_model_load_target_routing
 
         install_model_load_target_routing()
+        install_model_lifecycle_safety()
 
     @classmethod
     def from_env(cls) -> Settings:
