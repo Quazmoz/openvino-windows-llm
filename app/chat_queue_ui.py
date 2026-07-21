@@ -104,12 +104,23 @@ CHAT_QUEUE_JS = r"""
             return;
         }
         job.running = true;
+        const initialMessageCount = job.chat.messages.length;
         ensureVisibleBubble(job);
         void executeGeneration(job.bubble, job.chat)
             .catch(() => undefined)
             .finally(() => {
+                const completed = job.chat.messages.length > initialMessageCount &&
+                    job.chat.messages.at(-1)?.role === 'assistant';
                 clearPending(job);
-                if (activeChatId === job.chat.id) renderChat();
+                if (activeChatId !== job.chat.id) return;
+                if (completed) {
+                    renderChat();
+                } else if (!job.bubble?.isConnected) {
+                    const bubble = appendMessage('ai', '', false);
+                    bubble.firstElementChild.innerHTML =
+                        '<span style="color:var(--red)">⚠ Generation did not complete. Try sending the message again.</span>';
+                    scrollToBottom(true);
+                }
             });
     }
 
