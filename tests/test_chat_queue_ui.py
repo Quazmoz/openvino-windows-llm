@@ -20,6 +20,7 @@ def test_chat_queue_tracks_pending_work_by_chat_id():
     assert "pendingChats.has(chat.id)" in rendered
     assert "chat.pendingModelId = modelId" in rendered
     assert "chat.pendingSince" in rendered
+    assert "chat.pendingReady" in rendered
 
 
 def test_chat_queue_disables_legacy_single_slot_state():
@@ -31,15 +32,25 @@ def test_chat_queue_disables_legacy_single_slot_state():
     assert "startQueuedLoad = function perChatQueuedLoad" in rendered
 
 
-def test_chat_queue_resumes_and_serializes_when_models_are_ready():
+def test_chat_queue_resumes_when_models_are_ready():
     rendered = inject_multimodal_ui('<html><body></body></html>')
 
     assert "if (model.is_loaded)" in rendered
+    assert "markReady(job)" in rendered
     assert "runPending(job)" in rendered
     assert "executeGeneration(job.bubble, job.chat)" in rendered
     assert "requestModelLoad(model.id, true)" in rendered
     assert "requestModelConvert(model.id, true)" in rendered
     assert "PREPARATION_RETRY_MS" in rendered
+
+
+def test_chat_queue_only_generates_inside_its_active_chat():
+    rendered = inject_multimodal_ui('<html><body></body></html>')
+
+    assert "if (activeChatId !== job.chat.id)" in rendered
+    assert "markReady(job);" in rendered
+    assert "if (activeChatId === job.chat.id) runPending(job)" in rendered
+    assert "if (job.ready || model.is_loaded) window.setTimeout(() => runPending(job), 0)" in rendered
 
 
 def test_chat_queue_cleans_deleted_failed_missing_or_expired_jobs():
@@ -52,6 +63,7 @@ def test_chat_queue_cleans_deleted_failed_missing_or_expired_jobs():
     assert "MAX_PENDING_AGE_MS" in rendered
     assert "is no longer available" in rendered
     assert "pending request expired" in rendered
+    assert "delete job.chat.pendingReady" in rendered
 
 
 def test_chat_queue_renders_pending_state_after_switch_or_refresh():
@@ -61,6 +73,7 @@ def test_chat_queue_renders_pending_state_after_switch_or_refresh():
     assert "ensureVisibleBubble(job)" in rendered
     assert "renderChat();" in rendered
     assert "Generating response" in rendered
+    assert "Ready to generate" in rendered
 
 
 def test_chat_queue_never_backgrounds_in_memory_image_attachments():
