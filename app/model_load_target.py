@@ -214,9 +214,7 @@ def install_model_load_target_routing() -> None:
                                 percent=100,
                             )
                             self._clear_status(model_id)
-                            manager_module.logger.info(
-                                "Loaded '%s' on %s", model_id, engine.device
-                            )
+                            manager_module.logger.info("Loaded '%s' on %s", model_id, engine.device)
                             self.emit_event("info", f"Loaded {cfg.name} on {engine.device}")
                             return
             except Exception as exc:  # noqa: BLE001 - surfaced through model status
