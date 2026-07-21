@@ -95,14 +95,26 @@ def _count_or_release(prompt: str, count_tokens: CountTokens) -> int:
         raise
 
 
+def _is_tool_result_message(message: dict) -> bool:
+    """Return whether a normalized user-role message is a mapped tool result."""
+
+    if message.get("role") != "user":
+        return False
+    try:
+        text = multimodal.plain_text(message.get("content", ""))
+    except (TypeError, ValueError):
+        text = str(message.get("content", ""))
+    return text.lstrip().startswith("[tool result")
+
+
 def _split_leading_system_and_turns(dict_messages: list[dict]) -> tuple[list[dict], list[list[dict]]]:
     """Split normalized messages into stable instructions and user-led turns.
 
     Context trimming must never retain an assistant answer after dropping the user
-    message that prompted it. A turn therefore starts at a user message and owns all
-    following non-user messages until the next user message. Any malformed orphaned
-    assistant messages before the first user are intentionally omitted only when a
-    prompt actually needs trimming; an in-budget request is preserved verbatim.
+    message that prompted it. A turn starts at a normal user message and owns all
+    following assistant/tool-result messages until the next user message. Any malformed
+    orphaned assistant messages before the first user are omitted only when a prompt
+    actually needs trimming; an in-budget request is preserved verbatim.
     """
 
     prefix: list[dict] = []
@@ -114,12 +126,19 @@ def _split_leading_system_and_turns(dict_messages: list[dict]) -> tuple[list[dic
     turns: list[list[dict]] = []
     current: list[dict] = []
     for message in dict_messages[cursor:]:
-        if message.get("role") == "user":
+        starts_new_turn = message.get("role") == "user" and not (
+            current and _is_tool_result_message(message)
+        )
+        if starts_new_turn:
             if current and current[0].get("role") == "user":
                 turns.append(current)
             current = [message]
         elif current:
             current.append(message)
+        elif message.get("role") == "user":
+            # A tool result without its preceding exchange is still more useful than
+            # dropping the only non-system message supplied by a nonstandard client.
+            current = [message]
 
     if current and current[0].get("role") == "user":
         turns.append(current)
