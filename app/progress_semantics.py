@@ -35,6 +35,10 @@ PROGRESS_SEMANTICS_JS = r"""
         return Number.isFinite(parsed) ? Math.max(0, Math.min(100, parsed)) : null;
     }
 
+    function setText(element, value) {
+        if (element && element.textContent !== value) element.textContent = value;
+    }
+
     function aggregateDownloadPercent(progress) {
         const lines = Array.isArray(progress?.log_tail) ? progress.log_tail : [];
         for (let index = lines.length - 1; index >= 0; index -= 1) {
@@ -79,11 +83,13 @@ PROGRESS_SEMANTICS_JS = r"""
         const determinate = value !== null;
         track.classList.toggle('indeterminate', !determinate);
         if (determinate) {
-            track.setAttribute('aria-valuenow', String(Math.round(value)));
-            if (fill) fill.style.width = `${value}%`;
+            const rounded = String(Math.round(value));
+            if (track.getAttribute('aria-valuenow') !== rounded) track.setAttribute('aria-valuenow', rounded);
+            const width = `${value}%`;
+            if (fill && fill.style.width !== width) fill.style.width = width;
         } else {
-            track.removeAttribute('aria-valuenow');
-            if (fill) fill.style.width = '0%';
+            if (track.hasAttribute('aria-valuenow')) track.removeAttribute('aria-valuenow');
+            if (fill && fill.style.width !== '0%') fill.style.width = '0%';
         }
     }
 
@@ -93,9 +99,7 @@ PROGRESS_SEMANTICS_JS = r"""
         const value = overallPercent(model);
         const phase = String(model.progress?.phase || model.status || '').toLowerCase();
         const label = panel.querySelector('.ov-progress-percent');
-        if (label && phase !== 'error') {
-            label.textContent = value === null ? 'Working…' : `${Math.round(value)}%`;
-        }
+        if (phase !== 'error') setText(label, value === null ? 'Working…' : `${Math.round(value)}%`);
         updateTrack(panel.querySelector('.ov-progress-track'), value);
     }
 
@@ -103,8 +107,7 @@ PROGRESS_SEMANTICS_JS = r"""
         const wrapper = document.querySelector('.ov-inline-progress');
         if (!wrapper || !model) return;
         const value = overallPercent(model);
-        const label = wrapper.querySelector('.ov-inline-percent');
-        if (label) label.textContent = value === null ? 'Working…' : `${Math.round(value)}%`;
+        setText(wrapper.querySelector('.ov-inline-percent'), value === null ? 'Working…' : `${Math.round(value)}%`);
         updateTrack(wrapper.querySelector('.ov-progress-track'), value);
     }
 
@@ -112,8 +115,7 @@ PROGRESS_SEMANTICS_JS = r"""
         const dock = document.getElementById('ov-progress-dock');
         if (!dock || !model) return;
         const value = stagePercent(model);
-        const label = dock.querySelector('.ov-dock-percent');
-        if (label) label.textContent = value === null ? 'Working…' : `${Math.round(value)}%`;
+        setText(dock.querySelector('.ov-dock-percent'), value === null ? 'Working…' : `${Math.round(value)}%`);
         updateTrack(dock.querySelector('.ov-dock-track'), value);
     }
 
