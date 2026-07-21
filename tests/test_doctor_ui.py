@@ -38,6 +38,15 @@ def test_system_doctor_distinguishes_fact_from_driver_inference() -> None:
     assert "NPU driver is missing" not in rendered
 
 
+def test_system_doctor_handles_mock_and_missing_telemetry_honestly() -> None:
+    rendered = inject_multimodal_ui("<html><body></body></html>")
+
+    assert "Conversion state is simulated in mock mode" in rendered
+    assert "Mock mode does not verify local OpenVINO IR" in rendered
+    assert "Memory telemetry unavailable" in rendered
+    assert "Disk telemetry unavailable" in rendered
+
+
 def test_system_doctor_is_keyboard_and_screen_reader_accessible() -> None:
     rendered = inject_multimodal_ui("<html><body></body></html>")
 
@@ -54,10 +63,11 @@ def test_support_report_omits_sensitive_browser_state() -> None:
     rendered = inject_multimodal_ui("<html><body></body></html>")
     extension = rendered.split('id="ovllm-system-doctor-extension"', maxsplit=1)[1]
 
-    assert "API keys, prompts, chat content, and local directory paths" in extension
+    assert "API keys, prompts, chat content, model errors, and local directory paths" in extension
     assert "settings-api-key" not in extension
-    assert "models_dir" not in extension
+    assert "status.disk?.models_dir" not in extension
     assert "conversation" not in extension
+    assert "; error=${m.error}" not in extension
 
 
 def test_system_doctor_has_no_remote_runtime_dependencies() -> None:
