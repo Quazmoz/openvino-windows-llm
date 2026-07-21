@@ -136,9 +136,7 @@ def test_build_plugin_config(tmp_path):
     assert cfg_cache == {"CACHE_DIR": str(cache_dir)}
     assert cache_dir.exists()
 
-    cfg_npu_cache = build_plugin_config(
-        "NPU", 1536, cache_dir=cache_dir, max_response_len=512
-    )
+    cfg_npu_cache = build_plugin_config("NPU", 1536, cache_dir=cache_dir, max_response_len=512)
     assert cfg_npu_cache == {
         "MAX_PROMPT_LEN": 1536,
         "MIN_RESPONSE_LEN": 512,

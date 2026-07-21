@@ -19,7 +19,7 @@ def test_progress_extension_is_injected_after_base_ui_once():
 
 
 def test_progress_extension_exposes_determinate_and_indeterminate_states():
-    rendered = inject_multimodal_ui('<html><body></body></html>')
+    rendered = inject_multimodal_ui("<html><body></body></html>")
 
     assert "ov-progress-panel" in rendered
     assert "ov-progress-track" in rendered
@@ -34,7 +34,7 @@ def test_progress_extension_exposes_determinate_and_indeterminate_states():
 
 
 def test_progress_dock_stays_available_outside_empty_state():
-    rendered = inject_multimodal_ui('<html><body></body></html>')
+    rendered = inject_multimodal_ui("<html><body></body></html>")
 
     assert "ov-progress-dock" in rendered
     assert "chatColumn.insertBefore(dock, chatArea)" in rendered
@@ -43,7 +43,7 @@ def test_progress_dock_stays_available_outside_empty_state():
 
 
 def test_progress_extension_uses_text_content_for_dynamic_server_values():
-    rendered = inject_multimodal_ui('<html><body></body></html>')
+    rendered = inject_multimodal_ui("<html><body></body></html>")
 
     assert "message.textContent" in rendered
     assert "output.textContent = logs.join" in rendered

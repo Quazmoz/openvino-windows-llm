@@ -107,7 +107,9 @@ def _is_tool_result_message(message: dict) -> bool:
     return text.lstrip().startswith("[tool result")
 
 
-def _split_leading_system_and_turns(dict_messages: list[dict]) -> tuple[list[dict], list[list[dict]]]:
+def _split_leading_system_and_turns(
+    dict_messages: list[dict],
+) -> tuple[list[dict], list[list[dict]]]:
     """Split normalized messages into stable instructions and user-led turns.
 
     Context trimming must never retain an assistant answer after dropping the user

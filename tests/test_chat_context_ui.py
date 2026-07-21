@@ -13,7 +13,7 @@ def test_chat_context_extension_is_injected_once():
 
 
 def test_chat_context_extension_persists_each_chat_configuration():
-    rendered = inject_multimodal_ui('<html><body></body></html>')
+    rendered = inject_multimodal_ui("<html><body></body></html>")
 
     assert "chat.modelId" in rendered
     assert "chat.systemPrompt" in rendered
@@ -24,7 +24,7 @@ def test_chat_context_extension_persists_each_chat_configuration():
 
 
 def test_chat_context_extension_repairs_corrupt_or_duplicate_browser_records():
-    rendered = inject_multimodal_ui('<html><body></body></html>')
+    rendered = inject_multimodal_ui("<html><body></body></html>")
 
     assert "sanitizeStoredChats()" in rendered
     assert "CHAT_ID_PATTERN" in rendered
@@ -34,7 +34,7 @@ def test_chat_context_extension_repairs_corrupt_or_duplicate_browser_records():
 
 
 def test_chat_context_extension_replaces_deleted_or_unknown_models():
-    rendered = inject_multimodal_ui('<html><body></body></html>')
+    rendered = inject_multimodal_ui("<html><body></body></html>")
 
     assert "function fallbackModelId()" in rendered
     assert "function resolveChatModel(chat)" in rendered
@@ -43,7 +43,7 @@ def test_chat_context_extension_replaces_deleted_or_unknown_models():
 
 
 def test_chat_context_extension_pins_and_serializes_generation():
-    rendered = inject_multimodal_ui('<html><body></body></html>')
+    rendered = inject_multimodal_ui("<html><body></body></html>")
 
     assert "originalExecuteGeneration(aiBubble, targetChat)" in rendered
     assert "generationTail.then(run, run)" in rendered
@@ -55,7 +55,7 @@ def test_chat_context_extension_pins_and_serializes_generation():
 
 
 def test_chat_context_extension_handles_queued_and_deleted_chats():
-    rendered = inject_multimodal_ui('<html><body></body></html>')
+    rendered = inject_multimodal_ui("<html><body></body></html>")
 
     assert "originalStartQueuedLoad" in rendered
     assert "queuedChat?.id === id" in rendered
@@ -64,7 +64,7 @@ def test_chat_context_extension_handles_queued_and_deleted_chats():
 
 
 def test_chat_context_extension_reasserts_active_chat_after_status_poll():
-    rendered = inject_multimodal_ui('<html><body></body></html>')
+    rendered = inject_multimodal_ui("<html><body></body></html>")
 
     assert "target.path === '/v1/system/status'" in rendered
     assert "applyChatContext(activeChat(), { restoreDraft: false })" in rendered
