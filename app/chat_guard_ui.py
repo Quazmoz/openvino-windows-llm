@@ -180,6 +180,12 @@ CHAT_GUARD_JS = r"""
         ownerChatId: () => ownerChatId,
         clearForNavigation,
     });
+
+    // Context migration runs after the base page's initial render. Rebuild both
+    // surfaces once all wrappers are installed so repaired IDs and pending state are
+    // reflected atomically in the sidebar and active transcript.
+    renderChatList();
+    renderChat();
 })();
 """
 
