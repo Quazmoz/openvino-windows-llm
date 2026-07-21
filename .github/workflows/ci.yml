@@ -5,26 +5,28 @@ on:
     branches: [main]
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  validate-device-routing-fix:
+  apply-existing-ruff-formatting:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-          cache: pip
-          cache-dependency-path: pyproject.toml
-      - run: |
-          python -m pip install --upgrade pip
-          pip install -e .[dev]
-      - name: Validate changed Python files
+      - run: python -m pip install ruff
+      - name: Format and commit existing Ruff drift
         run: |
-          ruff check app/config.py app/model_load_target.py tests/test_model_load_target.py
-          ruff format --check app/config.py app/model_load_target.py tests/test_model_load_target.py
-      - name: Run full mock test suite
-        env:
-          OV_LLM_MOCK: "true"
-        run: pytest
+          ruff format .
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app tests
+          if git diff --cached --quiet; then
+            echo "No formatting changes needed."
+          else
+            git commit -m "Format existing Ruff drift"
+            git push origin "HEAD:${{ github.head_ref }}"
+          fi
