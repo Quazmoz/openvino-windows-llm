@@ -80,10 +80,13 @@ def test_indexed_npu_vlm_nests_only_npu_properties(monkeypatch, tmp_path):
             "NPU.0",
             {
                 "config": {
-                    "CACHE_DIR": str(tmp_path),
                     "DEVICE_PROPERTIES": {
-                        "NPU": {"MAX_PROMPT_LEN": 1536, "MIN_RESPONSE_LEN": 512}
-                    },
+                        "NPU": {
+                            "MAX_PROMPT_LEN": 1536,
+                            "MIN_RESPONSE_LEN": 512,
+                            "CACHE_DIR": str(tmp_path),
+                        }
+                    }
                 }
             },
         )
