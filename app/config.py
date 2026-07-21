@@ -22,10 +22,9 @@ from app.ui_quality import install_ui_quality_extension
 from runtime.device_check import normalize_device
 from runtime.npu_compat import install_openvino_genai_compat
 
-# Install compatibility and UI composition before app.model_manager/app.server
-# bind their imported engine and browser-injection functions. Progress remains the
-# sole progress observer, while the first-run NPU bootstrap is installed last so it
-# can reconcile the fully composed browser and fetch pipeline.
+# Install compatibility and UI composition before app.model_manager/app.server bind
+# their imported engine and browser-injection functions. Progress owns preparation
+# feedback, while the first-run NPU bootstrap runs last against the composed fetch path.
 install_openvino_genai_compat()
 install_chat_context_extension()
 install_chat_queue_extension()
