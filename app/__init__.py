@@ -13,6 +13,7 @@ __all__ = [
     "chat_format",
     "config",
     "errors",
+    "model_load_target",
     "model_manager",
     "model_registry",
     "multimodal",
@@ -23,3 +24,15 @@ __all__ = [
     "tools",
     "ui_extension",
 ]
+
+
+def _install_runtime_extensions() -> None:
+    # Install after the package version is defined. The installer imports and
+    # patches ModelManager once, before server/application instances are created.
+    from app.model_load_target import install_model_load_target_routing
+
+    install_model_load_target_routing()
+
+
+_install_runtime_extensions()
+del _install_runtime_extensions
