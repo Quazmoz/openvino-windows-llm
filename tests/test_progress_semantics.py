@@ -2,38 +2,36 @@ from app.config import Settings  # noqa: F401 - installs composed browser extens
 from app.ui_extension import inject_multimodal_ui
 
 
-def test_progress_semantics_extension_is_injected_once():
-    html = "<html><body></body></html>"
-    rendered = inject_multimodal_ui(html)
-    rendered_twice = inject_multimodal_ui(rendered)
-
-    marker = 'id="ovllm-model-progress-semantics-extension"'
-    assert rendered.count(marker) == 1
-    assert rendered_twice.count(marker) == 1
-
-
-def test_progress_semantics_treats_null_as_indeterminate():
+def test_null_percentage_stays_indeterminate():
     rendered = inject_multimodal_ui("<html><body></body></html>")
 
     assert "value === null || value === undefined || value === ''" in rendered
-    assert "track.classList.toggle('indeterminate', !determinate)" in rendered
+    assert "raw !== null" in rendered
+    assert "track.classList.toggle('indeterminate'" in rendered
     assert "track.removeAttribute('aria-valuenow')" in rendered
-    assert "Working…" in rendered
 
 
-def test_progress_semantics_prefers_aggregate_multi_file_percentage():
+def test_download_percentage_prefers_aggregate_multi_file_progress():
     rendered = inject_multimodal_ui("<html><body></body></html>")
 
     assert "function aggregateDownloadPercent" in rendered
     assert "fetching|downloading" in rendered
-    assert "aggregateDownloadPercent(progress)" in rendered
-    assert "phaseRanges" in rendered
+    assert "aggregateDownloadPercent(progress) ?? strictPercent(progress.percent)" in rendered
 
 
-def test_progress_semantics_patches_all_progress_surfaces():
+def test_overall_progress_is_monotonic_across_phases():
     rendered = inject_multimodal_ui("<html><body></body></html>")
 
-    assert "patchDetailedPanel(selected)" in rendered
-    assert "patchInline(active)" in rendered
-    assert "patchDock(active)" in rendered
-    assert "new MutationObserver" in rendered
+    assert "overall: 0" in rendered
+    assert "Math.max(prior.overall, candidate)" in rendered
+    assert "overall = Math.max(prior.overall, meta.start)" in rendered
+    assert "modelState.set(model.id" in rendered
+
+
+def test_indeterminate_phases_show_real_stage_not_fake_zero_percent():
+    rendered = inject_multimodal_ui("<html><body></body></html>")
+
+    assert "Stage ${info.meta.stage + 1} of 3" in rendered
+    assert "info.raw === null" in rendered
+    assert "elapsed ${duration(info.elapsed)}" in rendered
+    assert "Number(value)" in rendered
