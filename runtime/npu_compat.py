@@ -19,12 +19,6 @@ from runtime import openvino_engine as engine
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 _DIRECT_NPU_RE = re.compile(r"^NPU(?:\.\d+)?$")
-_NPU_LLM_PROPERTIES = {
-    "MAX_PROMPT_LEN",
-    "MIN_RESPONSE_LEN",
-    "NPUW_LLM_PREFILL_CHUNK_SIZE",
-}
-
 _ORIGINAL_CREATE_ENGINE = engine.create_engine
 _ORIGINAL_TEXT_ENGINE = engine.OpenVINOEngine
 _ORIGINAL_EMBEDDING_ENGINE = engine.OpenVINOEmbeddingEngine
@@ -171,15 +165,9 @@ def build_plugin_config(
 
 
 def _vlm_config(plugin_config: dict[str, Any]) -> dict[str, Any]:
-    """Nest NPU-only VLM properties while keeping common properties top-level."""
+    """Nest every NPU VLM property under ``DEVICE_PROPERTIES`` as required."""
 
-    common = {
-        key: value for key, value in plugin_config.items() if key not in _NPU_LLM_PROPERTIES
-    }
-    npu = {key: value for key, value in plugin_config.items() if key in _NPU_LLM_PROPERTIES}
-    if npu:
-        common["DEVICE_PROPERTIES"] = {"NPU": npu}
-    return common
+    return {"DEVICE_PROPERTIES": {"NPU": dict(plugin_config)}}
 
 
 class OpenVINOVisionEngine(_ORIGINAL_VISION_ENGINE):
