@@ -1,8 +1,7 @@
+from runtime import device_check
 from runtime.npu_compat import install_openvino_genai_compat
 
 install_openvino_genai_compat()
-
-from runtime import device_check
 
 
 def test_normalize_device_defaults_and_casing():
