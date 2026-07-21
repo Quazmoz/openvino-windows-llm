@@ -12,12 +12,14 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from app.progress_ui import install_progress_ui_extension
 from runtime.device_check import normalize_device
 from runtime.npu_compat import install_openvino_genai_compat
 
-# Install the NPU constructor compatibility layer before app.model_manager binds
-# runtime.openvino_engine.create_engine into its module namespace.
+# Install compatibility and UI composition before app.model_manager/app.server
+# bind their imported engine and browser-injection functions.
 install_openvino_genai_compat()
+install_progress_ui_extension()
 
 logger = logging.getLogger("ov-llm.config")
 
