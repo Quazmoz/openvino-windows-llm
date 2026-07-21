@@ -3,7 +3,7 @@ from app.ui_extension import inject_multimodal_ui
 
 
 def test_chat_guard_extension_is_injected_once_and_last():
-    html = '<html><body></body></html>'
+    html = "<html><body></body></html>"
 
     rendered = inject_multimodal_ui(html)
     rendered_twice = inject_multimodal_ui(rendered)
@@ -16,7 +16,7 @@ def test_chat_guard_extension_is_injected_once_and_last():
 
 
 def test_chat_guard_assigns_attachments_to_the_selecting_chat():
-    rendered = inject_multimodal_ui('<html><body></body></html>')
+    rendered = inject_multimodal_ui("<html><body></body></html>")
 
     assert "let ownerChatId = null" in rendered
     assert "function markOwner()" in rendered
@@ -26,7 +26,7 @@ def test_chat_guard_assigns_attachments_to_the_selecting_chat():
 
 
 def test_chat_guard_handles_files_without_browser_mime_metadata():
-    rendered = inject_multimodal_ui('<html><body></body></html>')
+    rendered = inject_multimodal_ui("<html><body></body></html>")
 
     assert "function isSupportedImageFile(file)" in rendered
     assert "type.startsWith('image/')" in rendered
@@ -34,7 +34,7 @@ def test_chat_guard_handles_files_without_browser_mime_metadata():
 
 
 def test_chat_guard_clears_images_on_chat_or_model_changes():
-    rendered = inject_multimodal_ui('<html><body></body></html>')
+    rendered = inject_multimodal_ui("<html><body></body></html>")
 
     assert "attachmentAwareSwitchChat" in rendered
     assert "attachmentAwareNewChat" in rendered
@@ -45,7 +45,7 @@ def test_chat_guard_clears_images_on_chat_or_model_changes():
 
 
 def test_chat_guard_blocks_cross_chat_attachment_requests():
-    rendered = inject_multimodal_ui('<html><body></body></html>')
+    rendered = inject_multimodal_ui("<html><body></body></html>")
 
     assert "window.__ovllmRequestChatId" in rendered
     assert "ownerChatId !== requestChatId" in rendered

@@ -68,9 +68,7 @@ def test_console_progress_splits_carriage_returns_and_strips_ansi():
 
 def test_progress_emitter_labels_download_bars(capsys):
     emitter = mc._ProgressLineEmitter()
-    emitter.emit(
-        "model.safetensors: 25%|##5       | 1.0MiB/4.0MiB [00:01<00:03, 1.0MiB/s]"
-    )
+    emitter.emit("model.safetensors: 25%|##5       | 1.0MiB/4.0MiB [00:01<00:03, 1.0MiB/s]")
 
     output = capsys.readouterr().out
     assert output.startswith("Downloading model.safetensors: 25%")

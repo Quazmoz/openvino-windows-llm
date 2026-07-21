@@ -72,6 +72,13 @@ class Settings:
     rate_limit: int = 0  # requests per minute per IP; 0 = disabled
     max_request_body_mb: int = 40
 
+    def __post_init__(self) -> None:
+        # ModelManager imports Settings, so install this lifecycle extension only
+        # when a Settings instance is created, after the manager class is defined.
+        from app.model_load_target import install_model_load_target_routing
+
+        install_model_load_target_routing()
+
     @classmethod
     def from_env(cls) -> Settings:
         return cls(
