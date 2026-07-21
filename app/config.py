@@ -12,6 +12,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from app.progress_dock import install_progress_dock_extension
 from app.progress_ui import install_progress_ui_extension
 from runtime.device_check import normalize_device
 from runtime.npu_compat import install_openvino_genai_compat
@@ -20,6 +21,7 @@ from runtime.npu_compat import install_openvino_genai_compat
 # bind their imported engine and browser-injection functions.
 install_openvino_genai_compat()
 install_progress_ui_extension()
+install_progress_dock_extension()
 
 logger = logging.getLogger("ov-llm.config")
 
