@@ -14,6 +14,8 @@ CHAT_QUEUE_JS = r"""
 
     if (typeof startQueuedLoad !== 'function' || typeof executeGeneration !== 'function') return;
 
+    const MAX_PENDING_AGE_MS = 24 * 60 * 60 * 1000;
+    const PREPARATION_RETRY_MS = 15000;
     const pendingChats = new Map();
 
     function chatStillExists(chat) {
@@ -27,15 +29,27 @@ CHAT_QUEUE_JS = r"""
         return bubble;
     }
 
-    function loaderBubble(model, loadDevice) {
+    function modelFor(job) {
+        return availableModels.get(job.modelId) || {
+            id: job.modelId,
+            name: job.modelId,
+            status: job.running ? 'generating' : 'loading',
+            can_convert: false,
+        };
+    }
+
+    function loaderBubble(model, loadDevice, running = false) {
         const bubble = appendMessage('ai', '', true);
-        const action = model.status === 'converting' || model.can_convert
-            ? 'Downloading and converting'
-            : 'Loading';
+        const action = running
+            ? 'Generating response'
+            : model.status === 'converting' || model.can_convert
+                ? 'Downloading and converting'
+                : 'Loading';
+        const suffix = running ? '' : ` on <strong>${escapeHtml(loadDevice)}</strong>`;
         bubble.firstElementChild.innerHTML = `
             <div class="model-loader-status" style="display:flex;align-items:center;gap:10px;padding:4px 0;color:var(--amber);">
                 <div class="spinner"></div>
-                <span>${escapeHtml(action)} <strong>${escapeHtml(model.name)}</strong> on <strong>${escapeHtml(loadDevice)}</strong>…</span>
+                <span>${escapeHtml(action)} with <strong>${escapeHtml(model.name || model.id)}</strong>${suffix}…</span>
             </div>
         `;
         return bubble;
@@ -43,13 +57,14 @@ CHAT_QUEUE_JS = r"""
 
     function rememberPending(chat, modelId, bubble = null) {
         chat.pendingModelId = modelId;
-        chat.pendingSince = chat.pendingSince || Date.now();
+        chat.pendingSince = Number(chat.pendingSince) || Date.now();
         const job = {
             chat,
             modelId,
             bubble: bubble || detachedBubble(),
             running: false,
             resumeStarted: false,
+            resumeAttemptedAt: 0,
         };
         pendingChats.set(chat.id, job);
         saveChats();
@@ -65,7 +80,16 @@ CHAT_QUEUE_JS = r"""
         }
     }
 
+    function ensureVisibleBubble(job) {
+        if (activeChatId !== job.chat.id) return job.bubble;
+        if (job.bubble?.isConnected) return job.bubble;
+        job.bubble = loaderBubble(modelFor(job), modelLoadDevice(), job.running);
+        scrollToBottom(true);
+        return job.bubble;
+    }
+
     function showPreparationError(job, message) {
+        ensureVisibleBubble(job);
         const content = job.bubble?.firstElementChild;
         if (content) {
             content.innerHTML = `<span style="color:var(--red)">⚠ Failed to prepare model: ${escapeHtml(message || 'Unknown error')}</span>`;
@@ -80,9 +104,27 @@ CHAT_QUEUE_JS = r"""
             return;
         }
         job.running = true;
+        ensureVisibleBubble(job);
         void executeGeneration(job.bubble, job.chat)
             .catch(() => undefined)
-            .finally(() => clearPending(job));
+            .finally(() => {
+                clearPending(job);
+                if (activeChatId === job.chat.id) renderChat();
+            });
+    }
+
+    function startPreparation(model, job = null) {
+        if (!model || model.is_loaded || model.is_loading) return;
+        if (job) {
+            job.resumeStarted = true;
+            job.resumeAttemptedAt = Date.now();
+        }
+        let request = null;
+        if (model.can_load) request = requestModelLoad(model.id, true);
+        else if (model.can_convert) request = requestModelConvert(model.id, true);
+        Promise.resolve(request).catch(() => {
+            if (job) job.resumeStarted = false;
+        });
     }
 
     function processStatus(data) {
@@ -95,8 +137,15 @@ CHAT_QUEUE_JS = r"""
                 clearPending(job);
                 return;
             }
+            if (Date.now() - Number(job.chat.pendingSince || 0) > MAX_PENDING_AGE_MS) {
+                showPreparationError(job, 'The pending request expired. Send the message again.');
+                return;
+            }
             const model = byId.get(job.modelId);
-            if (!model) return;
+            if (!model) {
+                showPreparationError(job, `Model '${job.modelId}' is no longer available.`);
+                return;
+            }
             if (model.is_loaded) {
                 runPending(job);
                 return;
@@ -105,21 +154,25 @@ CHAT_QUEUE_JS = r"""
                 showPreparationError(job, model.error || model.status_label);
                 return;
             }
-            if (job.resumeStarted || model.is_loading) return;
-            if (model.can_load) {
-                job.resumeStarted = true;
-                requestModelLoad(model.id, true);
-            } else if (model.can_convert) {
-                job.resumeStarted = true;
-                requestModelConvert(model.id, true);
+            if (
+                job.resumeStarted && !model.is_loading &&
+                Date.now() - job.resumeAttemptedAt > PREPARATION_RETRY_MS
+            ) {
+                job.resumeStarted = false;
             }
+            if (job.resumeStarted || model.is_loading) return;
+            startPreparation(model, job);
         });
     }
 
     // Recover pending chats after a browser refresh. The user message is already
     // persisted in that chat, so only the eventual assistant response is resumed.
     chats.forEach(chat => {
-        if (chat?.pendingModelId && Array.isArray(chat.messages) && chat.messages.at(-1)?.role === 'user') {
+        const pendingAge = Date.now() - Number(chat?.pendingSince || 0);
+        if (
+            chat?.pendingModelId && pendingAge <= MAX_PENDING_AGE_MS &&
+            Array.isArray(chat.messages) && chat.messages.at(-1)?.role === 'user'
+        ) {
             rememberPending(chat, chat.pendingModelId);
         } else if (chat && (chat.pendingModelId || chat.pendingSince)) {
             delete chat.pendingModelId;
@@ -128,11 +181,31 @@ CHAT_QUEUE_JS = r"""
     });
     saveChats();
 
+    const previousRenderChat = renderChat;
+    renderChat = function pendingAwareRenderChat() {
+        const result = previousRenderChat();
+        const job = pendingChats.get(activeChatId);
+        if (job) ensureVisibleBubble(job);
+        return result;
+    };
+
     startQueuedLoad = function perChatQueuedLoad(text, selectedModel) {
         const chat = activeChat();
         if (!chat || !selectedModel) return;
         if (pendingChats.has(chat.id)) {
             showToast('This chat already has a prompt waiting for its model.');
+            return;
+        }
+
+        // Data-URL image attachments are intentionally in-memory only. Do not move a
+        // prompt containing them into a background queue where another visible chat
+        // could own the shared attachment tray by the time generation starts.
+        if (window.__ovllmVisionGuard?.hasPendingForChat?.(chat.id)) {
+            chat.modelId = selectedModel.id;
+            waitingForModelId = selectedModel.id;
+            startPreparation(selectedModel);
+            setStatusPolling(1000);
+            showToast('Model preparation started. Images and draft were kept; send again when ready.');
             return;
         }
 
@@ -158,8 +231,7 @@ CHAT_QUEUE_JS = r"""
         activeLoaderBubble = null;
         waitingForModelId = selectedModel.id;
 
-        if (selectedModel.can_convert) requestModelConvert(selectedModel.id, true);
-        else if (selectedModel.can_load) requestModelLoad(selectedModel.id, true);
+        startPreparation(selectedModel, pendingChats.get(chat.id));
         setStatusPolling(1000);
     };
 
@@ -198,6 +270,7 @@ CHAT_QUEUE_JS = r"""
             if (response.ok) processStatus(await response.json());
         } catch { /* base UI owns connectivity errors */ }
     }
+    renderChat();
     void initialStatus();
 })();
 """
