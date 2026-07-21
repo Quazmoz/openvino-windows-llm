@@ -1,3 +1,7 @@
+from runtime.npu_compat import install_openvino_genai_compat
+
+install_openvino_genai_compat()
+
 from runtime import device_check
 
 
@@ -111,21 +115,42 @@ def test_probe_functions_return_safe_types_without_openvino():
 def test_build_plugin_config(tmp_path):
     from runtime.openvino_engine import build_plugin_config
 
-    # CPU/GPU/AUTO should return empty config by default, or config with CACHE_DIR if set
+    # CPU/GPU/AUTO do not receive direct-NPU generation properties.
     cfg_cpu = build_plugin_config("CPU", 1024)
     assert cfg_cpu == {}
 
     cfg_npu = build_plugin_config("NPU", 1024)
-    assert cfg_npu == {"MAX_PROMPT_LEN": 1024}
+    assert cfg_npu == {"MAX_PROMPT_LEN": 1024, "MIN_RESPONSE_LEN": 128}
+
+    cfg_npu_explicit = build_plugin_config("NPU", 1536, max_response_len=512)
+    assert cfg_npu_explicit == {"MAX_PROMPT_LEN": 1536, "MIN_RESPONSE_LEN": 512}
+
+    cfg_indexed_npu = build_plugin_config("NPU.0", 3072, max_response_len=1024)
+    assert cfg_indexed_npu == {"MAX_PROMPT_LEN": 3072, "MIN_RESPONSE_LEN": 1024}
 
     cfg_auto_npu = build_plugin_config("AUTO:NPU,GPU,CPU", 1024)
     assert cfg_auto_npu == {}
 
-    # If cache_dir is provided
+    # Cache is common, but embedding pipelines must not receive LLM-only NPU keys.
     cache_dir = tmp_path / "my_cache"
     cfg_cache = build_plugin_config("CPU", 1024, cache_dir=cache_dir)
     assert cfg_cache == {"CACHE_DIR": str(cache_dir)}
     assert cache_dir.exists()
 
-    cfg_npu_cache = build_plugin_config("NPU", 2048, cache_dir=cache_dir)
-    assert cfg_npu_cache == {"MAX_PROMPT_LEN": 2048, "CACHE_DIR": str(cache_dir)}
+    cfg_npu_cache = build_plugin_config(
+        "NPU", 1536, cache_dir=cache_dir, max_response_len=512
+    )
+    assert cfg_npu_cache == {
+        "MAX_PROMPT_LEN": 1536,
+        "MIN_RESPONSE_LEN": 512,
+        "CACHE_DIR": str(cache_dir),
+    }
+
+    cfg_embedding = build_plugin_config(
+        "NPU",
+        1024,
+        cache_dir=cache_dir,
+        max_response_len=512,
+        backend="openvino-embeddings",
+    )
+    assert cfg_embedding == {"CACHE_DIR": str(cache_dir)}
