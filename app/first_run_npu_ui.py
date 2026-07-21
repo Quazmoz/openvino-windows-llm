@@ -189,16 +189,8 @@ def install_first_run_npu_extension() -> None:
         if f'id="{_EXTENSION_ID}"' in html:
             return html
 
-        bootstrap = (
-            f'\n<script id="{_BOOTSTRAP_ID}">\n'
-            f"{FIRST_RUN_NPU_BOOTSTRAP_JS}\n"
-            "</script>\n"
-        )
-        extension = (
-            f'\n<script id="{_EXTENSION_ID}">\n'
-            f"{FIRST_RUN_NPU_EXTENSION_JS}\n"
-            "</script>\n"
-        )
+        bootstrap = f'\n<script id="{_BOOTSTRAP_ID}">\n{FIRST_RUN_NPU_BOOTSTRAP_JS}\n</script>\n'
+        extension = f'\n<script id="{_EXTENSION_ID}">\n{FIRST_RUN_NPU_EXTENSION_JS}\n</script>\n'
         if "</head>" in html:
             html = html.replace("</head>", f"{bootstrap}</head>", 1)
         else:
