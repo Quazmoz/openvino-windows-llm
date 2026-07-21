@@ -30,24 +30,51 @@ def test_export_model_raises_when_cli_missing(monkeypatch, tmp_path):
         mc.export_model("org/model", tmp_path / "out")
 
 
-def test_export_model_runs_command_and_makes_parent(monkeypatch, tmp_path):
+def test_export_model_runs_streaming_command_and_makes_parent(monkeypatch, tmp_path, capsys):
     captured = {}
 
-    def fake_run(cmd, check=False):
+    def fake_streaming_command(cmd):
         captured["cmd"] = cmd
-        captured["check"] = check
 
     monkeypatch.setattr(mc.shutil, "which", lambda name: "/usr/bin/optimum-cli")
-    monkeypatch.setattr(mc.subprocess, "run", fake_run)
+    monkeypatch.setattr(mc, "_run_streaming_command", fake_streaming_command)
 
     out = tmp_path / "ir" / "model"
     result = mc.export_model("org/model", out, "int8")
 
     assert result == out
     assert out.parent.is_dir()  # parent created before export
-    assert captured["check"] is True
     assert "org/model" in captured["cmd"]
     assert "int8" in captured["cmd"]
+    console = capsys.readouterr().out
+    assert "Downloading model metadata and weights" in console
+    assert "Saving OpenVINO IR" in console
+
+
+def test_console_progress_splits_carriage_returns_and_strips_ansi():
+    chunks = [
+        b"\x1b[2Kmodel.safetensors: 10%|#         | 1.0MiB/10MiB\r",
+        b"model.safetensors: 20%|##        | 2.0MiB/10MiB\r\n",
+        b"Exporting OpenVINO model\nDone",
+    ]
+
+    assert list(mc._iter_console_lines(chunks)) == [
+        "model.safetensors: 10%|#         | 1.0MiB/10MiB",
+        "model.safetensors: 20%|##        | 2.0MiB/10MiB",
+        "Exporting OpenVINO model",
+        "Done",
+    ]
+
+
+def test_progress_emitter_labels_download_bars(capsys):
+    emitter = mc._ProgressLineEmitter()
+    emitter.emit(
+        "model.safetensors: 25%|##5       | 1.0MiB/4.0MiB [00:01<00:03, 1.0MiB/s]"
+    )
+
+    output = capsys.readouterr().out
+    assert output.startswith("Downloading model.safetensors: 25%")
+    assert "1.0MiB/s" in output
 
 
 def test_resolve_from_catalog_reads_models_json(monkeypatch, tmp_path):
