@@ -21,6 +21,17 @@ def test_build_info_fallback_uses_canonical_version(tmp_path):
     assert not info.source_tree_clean
 
 
+def test_release_output_directories_are_git_ignored():
+    # The release pipeline (scripts/build_release.ps1) enforces a clean working
+    # tree before building and writes its output to build/, dist/, and
+    # artifacts/. If those generated directories are not ignored, a second run
+    # fails its own clean-tree gate on leftover output. Guard the ignore rules.
+    gitignore = (Path(__file__).resolve().parents[1] / ".gitignore").read_text()
+    patterns = {line.strip().strip("/") for line in gitignore.splitlines()}
+    for generated in ("build", "dist", "artifacts"):
+        assert generated in patterns, f"{generated}/ must be git-ignored for a re-runnable release"
+
+
 def test_release_output_secret_file_is_rejected(tmp_path):
     (tmp_path / ".env").write_text("OV_LLM_API_KEY=secret-value")
     with pytest.raises(RuntimeError, match="Forbidden release file"):
