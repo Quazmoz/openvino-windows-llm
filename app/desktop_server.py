@@ -1,4 +1,4 @@
-"""Packaged desktop server wrapper with onboarding APIs and writable paths."""
+"""Packaged desktop server wrapper with onboarding and tray operations APIs."""
 
 from __future__ import annotations
 
@@ -7,9 +7,33 @@ import logging
 import os
 import secrets
 import sys
+import threading
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any
+
+
+def owner_process_matches(
+    owner_pid: int,
+    owner_created_at: float,
+    *,
+    process_factory=None,
+) -> bool:
+    if owner_pid <= 0:
+        return True
+    try:
+        if process_factory is None:
+            import psutil
+
+            process_factory = psutil.Process
+        process = process_factory(owner_pid)
+        if not process.is_running():
+            return False
+        if owner_created_at > 0:
+            return abs(float(process.create_time()) - float(owner_created_at)) < 1.0
+        return True
+    except Exception:
+        return False
 
 
 def prepare_desktop_environment(
@@ -49,6 +73,9 @@ def create_desktop_app(
     *,
     port: int,
     instance_nonce: str,
+    control_token: str,
+    owner_pid: int = 0,
+    owner_created_at: float = 0.0,
     portable: bool = False,
     data_dir: str | None = None,
     mock: bool = False,
@@ -57,6 +84,8 @@ def create_desktop_app(
 
     from app.config import Settings
     from app.desktop_onboarding import DesktopOnboardingService
+    from app.desktop_operations import DesktopOperationsService
+    from app.desktop_operations_routes import register_desktop_operations_routes
     from app.onboarding_routes import register_onboarding_routes
     from app.onboarding_state import OnboardingStateStore
     from app.paths import (
@@ -69,6 +98,7 @@ def create_desktop_app(
     paths = resolve_runtime_paths(portable=portable, desktop=True)
     ensure_data_root_writable(paths)
     materialize_user_catalog(paths)
+    _configure_file_logging(paths.logs_dir)
     os.environ.setdefault("HF_HOME", str(paths.huggingface_cache_dir))
     os.environ.setdefault("HUGGINGFACE_HUB_CACHE", str(paths.huggingface_cache_dir / "hub"))
     os.environ.setdefault("TRANSFORMERS_CACHE", str(paths.huggingface_cache_dir / "transformers"))
@@ -92,21 +122,43 @@ def create_desktop_app(
             "diagnostic command and reinstall a complete build. Mock mode is never enabled "
             "silently for a normal desktop launch."
         )
-    _configure_file_logging(paths.logs_dir)
-    service = DesktopOnboardingService(
+    onboarding = DesktopOnboardingService(
         settings=settings,
         manager=app.state.manager,
         paths=paths,
         state_store=state_store,
         endpoint_port=port,
     )
+    operations = DesktopOperationsService(
+        settings=settings,
+        manager=app.state.manager,
+        onboarding=onboarding,
+        paths=paths,
+        endpoint_port=port,
+    )
     app.state.desktop_paths = paths
-    app.state.onboarding_service = service
-    register_onboarding_routes(
+    app.state.onboarding_service = onboarding
+    app.state.desktop_operations_service = operations
+    app.state.shutting_down = False
+
+    @app.middleware("http")
+    async def desktop_shutdown_guard(request, call_next):
+        if app.state.shutting_down and request.method.upper() not in {"GET", "HEAD", "OPTIONS"}:
+            from fastapi.responses import JSONResponse
+
+            return JSONResponse(
+                status_code=503,
+                content={"detail": "The desktop server is shutting down."},
+                headers={"Retry-After": "5"},
+            )
+        return await call_next(request)
+    register_onboarding_routes(app, service=onboarding, settings=settings)
+    register_desktop_operations_routes(
         app,
-        service=service,
+        service=operations,
         settings=settings,
         instance_nonce=instance_nonce,
+        control_token=control_token,
     )
     return app
 
@@ -115,6 +167,9 @@ def run_server(
     *,
     port: int,
     instance_nonce: str,
+    control_token: str,
+    owner_pid: int = 0,
+    owner_created_at: float = 0.0,
     portable: bool = False,
     data_dir: str | None = None,
     mock: bool = False,
@@ -124,6 +179,7 @@ def run_server(
     app = create_desktop_app(
         port=port,
         instance_nonce=instance_nonce,
+        control_token=control_token,
         portable=portable,
         data_dir=data_dir,
         mock=mock,
@@ -134,10 +190,35 @@ def run_server(
         port=port,
         log_level="info",
         access_log=False,
+        timeout_graceful_shutdown=20,
     )
     server = uvicorn.Server(config)
     app.state.shutdown_callback = lambda: setattr(server, "should_exit", True)
-    server.run()
+    monitor_stop = threading.Event()
+
+    def monitor_owner() -> None:
+        if owner_pid <= 0:
+            return
+        while not monitor_stop.wait(2.0):
+            if owner_process_matches(owner_pid, owner_created_at):
+                continue
+            logging.getLogger("ov-llm.desktop").warning(
+                "The tray owner process is no longer active; stopping the local server."
+            )
+            server.should_exit = True
+            return
+
+    monitor = threading.Thread(
+        target=monitor_owner,
+        name="ovllm-owner-monitor",
+        daemon=True,
+    )
+    monitor.start()
+    try:
+        server.run()
+    finally:
+        monitor_stop.set()
+        monitor.join(timeout=3)
     return 0 if server.started else 1
 
 
@@ -148,14 +229,21 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--data-dir")
     parser.add_argument("--mock", action="store_true")
     parser.add_argument("--instance-nonce", default="")
+    parser.add_argument("--control-token", default="")
+    parser.add_argument("--owner-pid", type=int, default=0)
+    parser.add_argument("--owner-created-at", type=float, default=0.0)
     args = parser.parse_args(argv)
     if args.port < 1 or args.port > 65535:
         parser.error("--port must be between 1 and 65535")
     nonce = args.instance_nonce or secrets.token_urlsafe(24)
+    control = args.control_token or secrets.token_urlsafe(32)
     try:
         return run_server(
             port=args.port,
             instance_nonce=nonce,
+            control_token=control,
+            owner_pid=args.owner_pid,
+            owner_created_at=args.owner_created_at,
             portable=args.portable,
             data_dir=args.data_dir,
             mock=args.mock,

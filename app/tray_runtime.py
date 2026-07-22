@@ -1,0 +1,110 @@
+"""Startup and pystray runtime boundary for the desktop tray."""
+
+from __future__ import annotations
+
+import contextlib
+import logging
+import threading
+import time
+from datetime import UTC, datetime
+
+from app.desktop_launcher import _read_metadata, verify_instance
+from app.desktop_shell import open_browser, show_dialog
+from app.tray_state import TrayPhase, TraySnapshot, tooltip
+from app.tray_support import APP_TITLE, atomic_json, tray_icon
+
+logger = logging.getLogger("ov-llm.tray")
+
+class TrayRuntimeMixin:
+    def run(self) -> int:
+        if not self.lock.acquire():
+            self._activate_existing_instance()
+            return 0
+        try:
+            with contextlib.suppress(OSError):
+                self.command_file.unlink()
+            if not self.args.start_stopped:
+                try:
+                    self._start_server(open_chat=not self.args.no_browser and not self.args.startup)
+                except Exception as exc:  # noqa: BLE001 - keep the tray available for recovery
+                    message = str(exc)[:300] or "The local server could not be started."
+                    logger.exception("Initial server startup failed")
+                    self.snapshot = TraySnapshot(
+                        phase=TrayPhase.ERROR,
+                        server_status="Startup failed",
+                        warning=message,
+                    )
+                    if not self.args.headless:
+                        show_dialog(APP_TITLE, message, error=True)
+            if self.args.headless:
+                return self._run_headless()
+            return self._run_tray()
+        finally:
+            self._shutdown_owned_resources()
+            self.lock.release()
+
+    def _activate_existing_instance(self) -> None:
+        metadata = _read_metadata(self.paths.launcher_metadata_file)
+        if metadata and verify_instance(metadata):
+            if not self.args.no_browser:
+                open_browser(f"http://127.0.0.1:{metadata.port}/")
+            return
+        try:
+            atomic_json(
+                self.command_file,
+                {
+                    "command": "start-open-chat" if not self.args.no_browser else "start",
+                    "created_at": datetime.now(UTC).isoformat(),
+                },
+            )
+        except OSError as exc:
+            show_dialog(
+                APP_TITLE,
+                f"The tray controller is already running, but it could not be activated: {exc}",
+                error=True,
+            )
+
+    def _run_headless(self) -> int:
+        deadline = time.monotonic() + self.args.headlss_seconds if self.args.headless_seconds else None
+        while not self.stop_event.wait(0.5):
+            self._poll_once()
+            if deadline and time.monotonic() >= deadline:
+                break
+        return 0
+
+    def _run_tray(self) -> int:
+        try:
+            import pystray
+        except Exception as exc:
+            show_dialog(
+                APP_TITLE,
+                "The system-tray component could not initialize. Reinstall a complete desktop "
+                f"build. Details: {str(exc)[:200]}",
+                error=True,
+            )
+            return 6
+
+        menu = self._build_menu(pystray)
+        self.icon = pystray.Icon(
+            "OpenVINOWindowsLLM",
+            tray_icon(self.snapshot.phase),
+            tooltip(self.snapshot),
+            menu,
+        )
+
+        def setup(icon):
+            icon.visible = True
+            self.poll_thread = threading.Thread(
+                target=self._poll_loop,
+                name="ovllm-tray-poll",
+                daemon=True,
+            )
+            self.poll_thread.start()
+
+        try:
+            self.icon.run(setup=setup)
+            return 0
+        except Exception as exc:  # noqa: BLE001 - tray backend boundary
+            logger.exception("Tray library failed")
+            show_dialog(APP_TITLE, f"The tray icon stopped unexpectedly: {str(exc)[:240]}", error=True)
+            return 7

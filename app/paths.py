@@ -1,9 +1,4 @@
-"""Runtime resource and writable-data path resolution for desktop distributions.
-
-Development checkouts retain the repository-relative layout. Packaged desktop builds
-store mutable state under the current user's local application data directory, while
-portable builds keep it in a sibling ``data`` directory.
-"""
+"""Runtime resource and writable-data path resolution for desktop distributions."""
 
 from __future__ import annotations
 
@@ -47,6 +42,18 @@ class RuntimePaths:
     @property
     def launcher_lock_file(self) -> Path:
         return self.data_root / "desktop-instance.lock"
+
+    @property
+    def tray_heartbeat_file(self) -> Path:
+        return self.data_root / "tray-heartbeat.json"
+
+    @property
+    def tray_command_file(self) -> Path:
+        return self.data_root / "tray-command.json"
+
+    @property
+    def restart_request_file(self) -> Path:
+        return self.data_root / "restart-server.request"
 
 
 def _truthy(value: str | None) -> bool:
@@ -173,12 +180,6 @@ def _rebased_entry(raw: dict, models_dir: Path, model_id: str) -> dict:
 
 
 def materialize_user_catalog(paths: RuntimePaths) -> Path:
-    """Create or conservatively extend the writable desktop model catalog.
-
-    Existing entries are retained verbatim so upgrades do not silently move or replace
-    user models. New bundled catalog entries are appended with absolute writable paths.
-    """
-
     if paths.models_file == paths.resource_root / "models.json":
         return paths.models_file
 

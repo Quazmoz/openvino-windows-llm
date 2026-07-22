@@ -48,30 +48,9 @@ def register_onboarding_routes(
     *,
     service: OnboardingService,
     settings: Settings,
-    instance_nonce: str,
 ) -> None:
     router = APIRouter(prefix="/v1/onboarding", tags=["onboarding"])
     mutation_auth = [Depends(_state_change_auth(settings))]
-
-    @app.get("/desktop/instance", include_in_schema=False)
-    async def desktop_instance():
-        return {
-            "application": "OpenVINO Windows LLM",
-            "instance_nonce": instance_nonce,
-            "port": service.endpoint_port,
-        }
-
-    @app.post("/desktop/shutdown", include_in_schema=False)
-    async def desktop_shutdown(x_instance_nonce: str | None = Header(default=None)):
-        if not x_instance_nonce or not secrets.compare_digest(x_instance_nonce, instance_nonce):
-            raise HTTPException(status_code=403, detail="Invalid desktop instance token")
-        callback = getattr(app.state, "shutdown_callback", None)
-        if callback is None:
-            raise HTTPException(status_code=409, detail="Desktop shutdown is unavailable")
-        import asyncio
-
-        asyncio.get_running_loop().call_later(0.2, callback)
-        return {"status": "shutting_down"}
 
     @router.get("/documentation", include_in_schema=False)
     async def onboarding_documentation():

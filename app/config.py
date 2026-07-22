@@ -11,6 +11,7 @@ from pathlib import Path
 from app.chat_context_ui import install_chat_context_extension
 from app.chat_guard_ui import install_chat_guard_extension
 from app.chat_queue_ui import install_chat_queue_extension
+from app.desktop_operations_ui import install_desktop_operations_ui_extension
 from app.doctor_ui import install_system_doctor_extension
 from app.header_overflow_ui import install_header_overflow_extension
 from app.onboarding_ui import install_onboarding_ui_extension
@@ -22,8 +23,8 @@ from runtime.device_check import normalize_device
 from runtime.npu_compat import install_openvino_genai_compat
 
 # Install compatibility and UI composition before app.model_manager/app.server bind
-# their imported engine and browser-injection functions. The desktop wizard probes for
-# its API and remains dormant in ordinary development-server mode.
+# their imported engine and browser-injection functions. Desktop-only surfaces probe
+# for their APIs and remain dormant in ordinary development-server mode.
 install_openvino_genai_compat()
 install_chat_context_extension()
 install_chat_queue_extension()
@@ -34,6 +35,7 @@ install_system_doctor_extension()
 install_header_overflow_extension()
 install_progress_ui_extension()
 install_onboarding_ui_extension()
+install_desktop_operations_ui_extension()
 
 logger = logging.getLogger("ov-llm.config")
 _RUNTIME_PATHS = resolve_runtime_paths()
@@ -75,12 +77,14 @@ class Settings:
 
     def __post_init__(self) -> None:
         from app.desktop_model_paths import install_desktop_model_path_extension
+        from app.desktop_shutdown_safety import install_desktop_shutdown_safety
         from app.lifecycle_safety import install_model_lifecycle_safety
         from app.model_load_target import install_model_load_target_routing
 
         install_desktop_model_path_extension()
         install_model_load_target_routing()
         install_model_lifecycle_safety()
+        install_desktop_shutdown_safety()
 
     @classmethod
     def from_env(cls) -> Settings:
