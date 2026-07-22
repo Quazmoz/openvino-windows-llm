@@ -7,7 +7,7 @@ from typing import Any, Mapping
 from app import model_registry as registry
 from app.config import BASE_DIR
 
-from .common import PROFILE_LABELS, PROFILE_ORDER, normalize_profile
+from .common import PROFILE_LABELS, PROFILE_ORDER, normalize_profile, utc_now
 
 
 class ProfileRankingMixin:
