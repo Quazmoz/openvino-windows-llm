@@ -14,6 +14,7 @@ from app.tray_support import POLL_SECONDS, atomic_json, tray_icon
 
 logger = logging.getLogger("ov-llm.tray")
 
+
 class TrayPollingMixin:
     def _poll_loop(self) -> None:
         while not self.stop_event.wait(POLL_SECONDS):
@@ -84,7 +85,9 @@ class TrayPollingMixin:
         except (OSError, ValueError, json.JSONDecodeError):
             return
         name = command.get("command") if isinstance(command, dict) else None
-        if name in {"start", "start-open-chat"} and not self.controller.running:
+        if name == "quit":
+            self.stop_event.set()
+        elif name in {"start", "start-open-chat"} and not self.controller.running:
             self._start_server(open_chat=name == "start-open-chat")
         elif name == "start-open-chat":
             self.open_chat()
