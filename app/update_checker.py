@@ -249,7 +249,7 @@ class UpdateChecker:
                 message="The published update metadata was invalid and was rejected.",
                 compatibility_warning="The published update metadata could not be validated.",
             )
-        except (urllib.error.URLError, TimeoutError, OSError):
+        except (TimeoutError, OSError):
             return UpdateCheckResult(
                 status="offline", checked_at=checked_at, message="Update check unavailable."
             )
