@@ -1,27 +1,34 @@
-"""Compose the vision and hardware-advisor browser extensions."""
+"""Compose the vision, hardware-advisor, and release browser extensions."""
 
 from __future__ import annotations
 
 from app import ui_extension_vision as _vision
 from app.advisor_ui import ADVISOR_EXTENSION_JS
+from app.release_ui import RELEASE_EXTENSION_JS
 from app.ui_extension_vision import VISION_EXTENSION_JS
 from app.ui_extension_vision import inject_multimodal_ui as _inject_vision_ui
 
 __all__ = ["VISION_EXTENSION_JS", "inject_multimodal_ui"]
 
 _ADVISOR_EXTENSION_ID = "ovllm-hardware-advisor-extension"
+_RELEASE_EXTENSION_ID = "ovllm-release-extension"
 
 
-def inject_multimodal_ui(html: str) -> str:
-    """Inject the existing multimodal controls and the hardware advisor exactly once."""
-
-    html = _inject_vision_ui(html)
-    if f'id="{_ADVISOR_EXTENSION_ID}"' in html:
+def _inject_script(html: str, extension_id: str, javascript: str) -> str:
+    if f'id="{extension_id}"' in html:
         return html
-    script = f'\n<script id="{_ADVISOR_EXTENSION_ID}">\n{ADVISOR_EXTENSION_JS}\n</script>\n'
+    script = f'\n<script id="{extension_id}">\n{javascript}\n</script>\n'
     if "</body>" in html:
         return html.replace("</body>", f"{script}</body>", 1)
     return html + script
+
+
+def inject_multimodal_ui(html: str) -> str:
+    """Inject browser extensions exactly once without changing the base frontend stack."""
+
+    html = _inject_vision_ui(html)
+    html = _inject_script(html, _ADVISOR_EXTENSION_ID, ADVISOR_EXTENSION_JS)
+    return _inject_script(html, _RELEASE_EXTENSION_ID, RELEASE_EXTENSION_JS)
 
 
 def __getattr__(name: str):
