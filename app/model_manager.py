@@ -30,6 +30,100 @@ class ModelManager(_CoreModelManager):
     def __init__(self, settings: Settings) -> None:
         super().__init__(settings)
         self.advisor = HardwareAdvisor(settings, self.catalog, force_mock=self.force_mock)
+        self._install_advisor_load_hook()
+
+    def _install_advisor_load_hook(self) -> None:
+        """Observe the final composed load scheduler without replacing lifecycle guards.
+
+        ``Settings`` installs device-authoritative and cross-operation lifecycle wrappers
+        before manager instances are created. Observing the bound scheduler here keeps
+        advisor measurements compatible with those newer wrappers and with future
+        scheduler composition, instead of competing for the class-level ``_load_task``.
+        """
+
+        upstream_schedule_load = self.schedule_load
+        observed_tasks: set[asyncio.Task[Any]] = set()
+
+        def schedule_load_with_advisor(
+            model_id: str,
+            device: str | None = None,
+            *,
+            draft_model: str | None = None,
+        ) -> asyncio.Task[Any] | None:
+            cfg = self.catalog.get(model_id)
+            previous_engine = self.engines.get(model_id)
+            was_downloaded = bool(
+                cfg is not None and (self.force_mock or registry.is_downloaded(cfg, BASE_DIR))
+            )
+            queued_behind_another_load = self._load_lock.locked()
+            started = time.perf_counter()
+
+            task = upstream_schedule_load(model_id, device, draft_model=draft_model)
+            if task is None or cfg is None or task in observed_tasks:
+                return task
+
+            observed_tasks.add(task)
+
+            def after_load(done: asyncio.Task[Any]) -> None:
+                observed_tasks.discard(done)
+                if done.cancelled():
+                    return
+                try:
+                    done.result()
+                except Exception:
+                    return
+
+                current_engine = self.engines.get(model_id)
+                # Conversion tasks can be returned while a deferred load is queued, and
+                # failed device switches intentionally retain the previous engine. Only
+                # a newly installed engine represents a successful load worth measuring.
+                if current_engine is None or current_engine is previous_engine:
+                    return
+
+                elapsed_ms = (time.perf_counter() - started) * 1000.0
+                measured_load_ms = (
+                    elapsed_ms
+                    if was_downloaded and not queued_behind_another_load and not self.force_mock
+                    else None
+                )
+                finalize_task = asyncio.create_task(
+                    self._finalize_advisor_load(
+                        model_id,
+                        cfg,
+                        load_time_ms=measured_load_ms,
+                    ),
+                    name=f"advisor-load-finalize-{model_id}",
+                )
+                self.advisor._tasks.add(finalize_task)
+                finalize_task.add_done_callback(self.advisor._tasks.discard)
+
+            task.add_done_callback(after_load)
+            return task
+
+        self.schedule_load = schedule_load_with_advisor  # type: ignore[method-assign]
+
+    async def _finalize_advisor_load(
+        self,
+        model_id: str,
+        cfg: registry.ModelConfig,
+        *,
+        load_time_ms: float | None,
+    ) -> None:
+        """Record safe local evidence without allowing advisor work to fail a load."""
+
+        try:
+            await asyncio.to_thread(self.advisor.measure_converted_size, cfg)
+        except Exception:  # noqa: BLE001 - advisory evidence must not break model loading
+            _core.logger.exception("Could not measure converted size for '%s'", model_id)
+
+        try:
+            self.advisor.schedule_auto_benchmark(
+                self,
+                model_id,
+                load_time_ms=load_time_ms,
+            )
+        except Exception:  # noqa: BLE001 - advisory evidence must not break model loading
+            _core.logger.exception("Could not schedule advisor benchmark for '%s'", model_id)
 
     def resolve_engine(self, model_id: str):
         text = str(model_id or "").strip()
@@ -64,29 +158,6 @@ class ModelManager(_CoreModelManager):
         summary = super().metrics_summary()
         summary["advisor"] = self.advisor.summary(self.engines, self.devices)
         return summary
-
-    async def _load_task(
-        self,
-        model_id: str,
-        device: str,
-        draft_model_path: str | None = None,
-    ) -> None:
-        cfg = self.catalog[model_id]
-        was_downloaded = self.force_mock or registry.is_downloaded(cfg, BASE_DIR)
-        queued_behind_another_load = self._load_lock.locked()
-        started = time.perf_counter()
-        await super()._load_task(model_id, device, draft_model_path=draft_model_path)
-        if model_id in self.engines:
-            elapsed_ms = (time.perf_counter() - started) * 1000.0
-            await asyncio.to_thread(self.advisor.measure_converted_size, cfg)
-            measured_load_ms = (
-                elapsed_ms if was_downloaded and not queued_behind_another_load and not self.force_mock else None
-            )
-            self.advisor.schedule_auto_benchmark(
-                self,
-                model_id,
-                load_time_ms=measured_load_ms,
-            )
 
     async def _convert_task(
         self,
