@@ -1,4 +1,4 @@
-"""Packaged desktop server wrapper with onboarding and tray operations APIs."""
+"""Packaged desktop server wrapper with onboarding, operations, and release APIs."""
 
 from __future__ import annotations
 
@@ -83,6 +83,7 @@ def create_desktop_app(
     prepare_desktop_environment(portable=portable, data_dir=data_dir, mock=mock)
 
     from app.config import Settings
+    from app.data_migrations import ensure_data_schema
     from app.desktop_onboarding import DesktopOnboardingService
     from app.desktop_operations import DesktopOperationsService
     from app.desktop_operations_routes import register_desktop_operations_routes
@@ -93,10 +94,12 @@ def create_desktop_app(
         materialize_user_catalog,
         resolve_runtime_paths,
     )
+    from app.release_routes import register_release_routes
     from app.server import create_app
 
     paths = resolve_runtime_paths(portable=portable, desktop=True)
     ensure_data_root_writable(paths)
+    ensure_data_schema(paths)
     materialize_user_catalog(paths)
     _configure_file_logging(paths.logs_dir)
     os.environ.setdefault("HF_HOME", str(paths.huggingface_cache_dir))
@@ -152,6 +155,7 @@ def create_desktop_app(
                 headers={"Retry-After": "5"},
             )
         return await call_next(request)
+
     register_onboarding_routes(app, service=onboarding, settings=settings)
     register_desktop_operations_routes(
         app,
@@ -160,6 +164,7 @@ def create_desktop_app(
         instance_nonce=instance_nonce,
         control_token=control_token,
     )
+    register_release_routes(app, paths=paths)
     return app
 
 
