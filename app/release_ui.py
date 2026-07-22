@@ -1,6 +1,6 @@
 """Dependency-free About and Updates UI extension."""
 
-RELEASE_EXTENSION_JS = r'''
+RELEASE_EXTENSION_JS = r"""
 (() => {
   if (document.getElementById('ovllm-release-button')) return;
   const state = { status: null, result: null };
@@ -106,9 +106,22 @@ RELEASE_EXTENSION_JS = r'''
       }
     } catch (_) { content.textContent='Release information is unavailable. Local inference is unaffected.'; }
   };
+  const checkOnOpen = async () => {
+    try {
+      state.status = await api('/desktop/release/status');
+      if (!state.status.update_checks.enabled || !state.status.check_due) return;
+      state.result = await api('/desktop/release/check', {method:'POST', body:'{}'});
+      if (state.result.status === 'available' && state.result.latest_version) {
+        button.textContent = `Update ${state.result.latest_version} Available`;
+      }
+    } catch (_) {
+      // Update discovery never blocks or interrupts local inference.
+    }
+  };
   button.addEventListener('click', open);
   modal.querySelector('#ovllm-release-close').addEventListener('click', () => { modal.style.display='none'; });
   modal.addEventListener('click', event => { if (event.target === modal) modal.style.display='none'; });
   if (new URLSearchParams(location.search).get('updates') === '1') open();
+  else setTimeout(checkOnOpen, 1200);
 })();
-'''
+"""
