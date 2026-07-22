@@ -158,16 +158,29 @@ class UpdateChecker:
         self.now = now
         self.timeout_seconds = timeout_seconds
 
+    def _validated_cached_manifest(self, cache: UpdateCache) -> ReleaseManifest | None:
+        if not cache.manifest:
+            return None
+        try:
+            return ReleaseManifest.model_validate(cache.manifest)
+        except ValueError:
+            cache.releases_etag = None
+            cache.last_checked_at = None
+            cache.latest_checked_version = None
+            cache.manifest = None
+            self.store.save_cache(cache)
+            return None
+
     def check(self, *, force: bool = False) -> UpdateCheckResult:
         preferences = self.store.load_preferences()
         cache = self.store.load_cache()
+        cached_manifest = self._validated_cached_manifest(cache)
         checked_at = self.now()
         if not preferences.enabled:
             return UpdateCheckResult(status="disabled", checked_at=cache.last_checked_at)
         if not force and not check_due(cache.last_checked_at, checked_at):
-            manifest = ReleaseManifest.model_validate(cache.manifest) if cache.manifest else None
             return self._result_for_manifest(
-                manifest, preferences, "not_due", cache.last_checked_at
+                cached_manifest, preferences, "not_due", cache.last_checked_at
             )
 
         headers = {
@@ -220,11 +233,12 @@ class UpdateChecker:
             self.store.save_cache(cache)
             return self._result_for_manifest(manifest, preferences, "current", checked_at)
         except urllib.error.HTTPError as exc:
-            if exc.code == 304 and cache.manifest:
+            if exc.code == 304 and cached_manifest:
                 cache.last_checked_at = checked_at
                 self.store.save_cache(cache)
-                manifest = ReleaseManifest.model_validate(cache.manifest)
-                return self._result_for_manifest(manifest, preferences, "current", checked_at)
+                return self._result_for_manifest(
+                    cached_manifest, preferences, "current", checked_at
+                )
             return UpdateCheckResult(
                 status="offline", checked_at=checked_at, message="Update check unavailable."
             )
@@ -235,7 +249,7 @@ class UpdateChecker:
                 message="The published update metadata was invalid and was rejected.",
                 compatibility_warning="The published update metadata could not be validated.",
             )
-        except OSError:
+        except (urllib.error.URLError, TimeoutError, OSError):
             return UpdateCheckResult(
                 status="offline", checked_at=checked_at, message="Update check unavailable."
             )
