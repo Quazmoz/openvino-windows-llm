@@ -39,9 +39,17 @@ function Stop-Server([AllowNull()][System.Diagnostics.Process]$Process) {
     }
 }
 
-function Assert-PortFree([int]$LocalPort) {
-    $listener = Get-NetTCPConnection -LocalPort $LocalPort -State Listen -ErrorAction SilentlyContinue
-    if ($listener) { throw "Port $LocalPort is already in use." }
+function Wait-PortFree([int]$LocalPort, [int]$TimeoutSeconds = 30) {
+    # After a prior device's server is force-stopped the listener can linger briefly
+    # while the OS releases the socket. Poll instead of failing on the first check so a
+    # device transition never aborts the remaining certification targets.
+    $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+    while ([DateTime]::UtcNow -lt $deadline) {
+        $listener = Get-NetTCPConnection -LocalPort $LocalPort -State Listen -ErrorAction SilentlyContinue
+        if (-not $listener) { return }
+        Start-Sleep -Milliseconds 500
+    }
+    throw "Port $LocalPort is still in use after $TimeoutSeconds seconds."
 }
 
 function Wait-Health(
@@ -170,21 +178,23 @@ print(json.dumps(versions))
         )
         if (-not $SkipConversion) { $serverArgs += "--auto-convert" }
 
-        Assert-PortFree $Port
         Write-Host "Validating $Model on $device..."
-        $start = @{
-            FilePath = $python
-            ArgumentList = $serverArgs
-            WorkingDirectory = $root
-            RedirectStandardOutput = $stdout
-            RedirectStandardError = $stderr
-            PassThru = $true
-            WindowStyle = "Hidden"
-        }
-        $server = Start-Process @start
-
         $stopAfterDevice = $false
         try {
+            # Wait for the previous device's server to release the port, then start
+            # inside the try so a transition failure is recorded per device and honors
+            # -ContinueOnFailure instead of aborting the whole certification run.
+            Wait-PortFree $Port
+            $start = @{
+                FilePath = $python
+                ArgumentList = $serverArgs
+                WorkingDirectory = $root
+                RedirectStandardOutput = $stdout
+                RedirectStandardError = $stderr
+                PassThru = $true
+                WindowStyle = "Hidden"
+            }
+            $server = Start-Process @start
             Wait-Health $baseUrl $server 60
             $validatorArgs = @(
                 $validator, "--base-url", $baseUrl, "--profile", "full",

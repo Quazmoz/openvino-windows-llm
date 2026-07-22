@@ -58,7 +58,11 @@ def test_windows_harness_forces_real_local_validation():
     script = (ROOT / "scripts" / "validate_windows.ps1").read_text(encoding="utf-8")
     assert '$env:OV_LLM_MOCK = ""' in script
     assert '"--expect-real"' in script
-    assert "Assert-PortFree $Port" in script
+    # The harness must wait for the previous device's server to release the port
+    # (rather than aborting the run on a transient conflict) and must do so inside
+    # the per-device try so -ContinueOnFailure still covers the next device.
+    assert "Wait-PortFree $Port" in script
+    assert "Assert-PortFree" not in script
     assert "OV_LLM_API_KEY" in script
     assert '"--api-key"' not in script
     assert "certification/results" in script
