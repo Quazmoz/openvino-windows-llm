@@ -1,0 +1,98 @@
+# PyInstaller one-directory build for the Windows desktop launcher.
+
+import os
+from pathlib import Path
+
+from PyInstaller.utils.hooks import collect_all, collect_data_files, collect_submodules, copy_metadata
+
+root = Path(SPECPATH).parent
+
+datas = [
+    (str(root / "web"), "web"),
+    (str(root / "models.json"), "."),
+    (str(root / "LICENSE"), "."),
+    (str(root / "README.md"), "."),
+]
+third_party = Path(os.environ.get("OV_LLM_THIRD_PARTY_NOTICES", ""))
+if third_party.is_file():
+    datas.append((str(third_party), "."))
+
+binaries = []
+hiddenimports = collect_submodules("app") + collect_submodules("runtime")
+
+for package in ("openvino", "openvino_genai"):
+    package_datas, package_binaries, package_hidden = collect_all(package)
+    datas += package_datas
+    binaries += package_binaries
+    hiddenimports += package_hidden
+
+# Optimum performs dynamic command and exporter discovery. Conversion remains in the
+# same frozen directory, so the packaged launcher can dispatch the converter helper.
+for package in (
+    "optimum",
+    "optimum.intel",
+    "nncf",
+    "transformers",
+    "huggingface_hub",
+    "tokenizers",
+    "safetensors",
+    "sentencepiece",
+):
+    hiddenimports += collect_submodules(package)
+    datas += collect_data_files(package, include_py_files=False)
+
+for distribution in (
+    "openvino",
+    "openvino-genai",
+    "optimum",
+    "optimum-intel",
+    "nncf",
+    "transformers",
+    "huggingface-hub",
+):
+    try:
+        datas += copy_metadata(distribution, recursive=True)
+    except Exception:
+        pass
+
+analysis = Analysis(
+    [str(root / "app" / "desktop_launcher.py")],
+    pathex=[str(root)],
+    binaries=binaries,
+    datas=datas,
+    hiddenimports=hiddenimports,
+    hookspath=[],
+    hooksconfig={},
+    runtime_hooks=[],
+    excludes=["tkinter", "matplotlib", "notebook", "jupyter"],
+    noarchive=False,
+    optimize=1,
+)
+pyz = PYZ(analysis.pure)
+exe = EXE(
+    pyz,
+    analysis.scripts,
+    [],
+    exclude_binaries=True,
+    name="OpenVINOWindowsLLM",
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=False,
+    console=False,
+    disable_windowed_traceback=False,
+    argv_emulation=False,
+    target_arch=None,
+    codesign_identity=None,
+    entitlements_file=None,
+    version=str(root / "packaging" / "version_info.txt"),
+)
+collection = COLLECT(
+    exe,
+    analysis.binaries,
+    analysis.datas,
+    strip=False,
+    upx=False,
+    upx_exclude=[],
+    name="OpenVINOWindowsLLM",
+)
