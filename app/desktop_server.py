@@ -56,8 +56,8 @@ def create_desktop_app(
     prepare_desktop_environment(portable=portable, data_dir=data_dir, mock=mock)
 
     from app.config import Settings
+    from app.desktop_onboarding import DesktopOnboardingService
     from app.onboarding_routes import register_onboarding_routes
-    from app.onboarding_service import OnboardingService
     from app.onboarding_state import OnboardingStateStore
     from app.paths import (
         ensure_data_root_writable,
@@ -87,7 +87,7 @@ def create_desktop_app(
 
     app = create_app(settings)
     _configure_file_logging(paths.logs_dir)
-    service = OnboardingService(
+    service = DesktopOnboardingService(
         settings=settings,
         manager=app.state.manager,
         paths=paths,

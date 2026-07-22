@@ -12,6 +12,14 @@ def test_pyinstaller_is_windowed_one_directory_and_collects_openvino():
     assert '("openvino", "openvino_genai")' in spec
     assert "models.json" in spec
     assert "web" in spec
+    assert "runtime_hook.py" in spec
+
+
+def test_windowed_runtime_hook_restores_redirected_child_streams():
+    hook = (ROOT / "packaging" / "runtime_hook.py").read_text(encoding="utf-8")
+    assert 'os.dup(descriptor)' in hook
+    assert '_restore_output("stdout", 1)' in hook
+    assert '_restore_output("stderr", 2)' in hook
 
 
 def test_installer_is_per_user_and_preserves_data_by_default():
