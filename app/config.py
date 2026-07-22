@@ -1,8 +1,4 @@
-"""Server configuration resolved from environment variables (and CLI overrides).
-
-All paths are resolved relative to the repository root so the server behaves the
-same regardless of the working directory it is launched from.
-"""
+"""Server configuration resolved from environment variables and desktop paths."""
 
 from __future__ import annotations
 
@@ -16,8 +12,9 @@ from app.chat_context_ui import install_chat_context_extension
 from app.chat_guard_ui import install_chat_guard_extension
 from app.chat_queue_ui import install_chat_queue_extension
 from app.doctor_ui import install_system_doctor_extension
-from app.first_run_npu_ui import install_first_run_npu_extension
 from app.header_overflow_ui import install_header_overflow_extension
+from app.onboarding_ui import install_onboarding_ui_extension
+from app.paths import resolve_runtime_paths
 from app.progress_reliability import install_progress_ui_extension
 from app.ui_polish import install_ui_polish_extension
 from app.ui_quality import install_ui_quality_extension
@@ -25,8 +22,8 @@ from runtime.device_check import normalize_device
 from runtime.npu_compat import install_openvino_genai_compat
 
 # Install compatibility and UI composition before app.model_manager/app.server bind
-# their imported engine and browser-injection functions. Progress owns preparation
-# feedback, while the first-run NPU bootstrap runs last against the composed fetch path.
+# their imported engine and browser-injection functions. The desktop wizard probes for
+# its API and remains dormant in ordinary development-server mode.
 install_openvino_genai_compat()
 install_chat_context_extension()
 install_chat_queue_extension()
@@ -36,22 +33,21 @@ install_ui_quality_extension()
 install_system_doctor_extension()
 install_header_overflow_extension()
 install_progress_ui_extension()
-install_first_run_npu_extension()
+install_onboarding_ui_extension()
 
 logger = logging.getLogger("ov-llm.config")
+_RUNTIME_PATHS = resolve_runtime_paths()
+BASE_DIR = _RUNTIME_PATHS.resource_root
 
-# Repository root: .../openvino-windows-llm  (parent of the app/ package).
-BASE_DIR = Path(__file__).resolve().parent.parent
-
-VALID_DEVICES = ("CPU", "GPU", "NPU", "AUTO")  # Simple UI/default choices; parser accepts more.
-
+VALID_DEVICES = ("CPU", "GPU", "NPU", "AUTO")
 _TRUTHY = {"1", "true", "yes", "on"}
 
 
 def _resolve(path_str: str) -> Path:
-    """Resolve a possibly-relative path against the repository root."""
-    p = Path(path_str)
-    return p if p.is_absolute() else (BASE_DIR / p)
+    """Resolve explicit relative paths against packaged resources or the repo root."""
+
+    path = Path(path_str).expanduser()
+    return path if path.is_absolute() else (BASE_DIR / path)
 
 
 def _bool_env(name: str) -> bool:
@@ -65,40 +61,42 @@ class Settings:
     host: str = "127.0.0.1"
     port: int = 8000
     device: str = "NPU"
-    models_file: Path = BASE_DIR / "models.json"
-    models_dir: Path = BASE_DIR / "models" / "openvino"
-    cache_dir: Path = BASE_DIR / "models" / "cache"
-    benchmark_results_file: Path = BASE_DIR / "benchmark" / "results" / "benchmarks.json"
+    models_file: Path = _RUNTIME_PATHS.models_file
+    models_dir: Path = _RUNTIME_PATHS.models_dir
+    cache_dir: Path = _RUNTIME_PATHS.compiled_cache_dir
+    benchmark_results_file: Path = _RUNTIME_PATHS.benchmarks_dir / "benchmarks.json"
     default_model: str | None = None
     api_key: str | None = None
     force_mock: bool = False
     auto_convert: bool = False
     cors_origins: str = ""
-    rate_limit: int = 0  # requests per minute per IP; 0 = disabled
+    rate_limit: int = 0
     max_request_body_mb: int = 40
 
     def __post_init__(self) -> None:
-        # ModelManager imports Settings, so install lifecycle extensions only when
-        # a Settings instance is created, after the manager class is defined.
-        # Target routing must be installed before cross-operation coordination so
-        # the latter wraps the authoritative load implementation.
+        from app.desktop_model_paths import install_desktop_model_path_extension
         from app.lifecycle_safety import install_model_lifecycle_safety
         from app.model_load_target import install_model_load_target_routing
 
+        install_desktop_model_path_extension()
         install_model_load_target_routing()
         install_model_lifecycle_safety()
 
     @classmethod
     def from_env(cls) -> Settings:
+        runtime_paths = resolve_runtime_paths()
         return cls(
             host=os.environ.get("OV_LLM_HOST", "127.0.0.1"),
             port=int(os.environ.get("OV_LLM_PORT", "8000")),
             device=normalize_device(os.environ.get("OV_LLM_DEVICE", "NPU")),
-            models_file=_resolve(os.environ.get("OV_LLM_MODELS_FILE", "models.json")),
-            models_dir=_resolve(os.environ.get("OV_LLM_MODELS_DIR", "models/openvino")),
-            cache_dir=_resolve(os.environ.get("OV_LLM_CACHE_DIR", "models/cache")),
+            models_file=_resolve(os.environ.get("OV_LLM_MODELS_FILE", str(runtime_paths.models_file))),
+            models_dir=_resolve(os.environ.get("OV_LLM_MODELS_DIR", str(runtime_paths.models_dir))),
+            cache_dir=_resolve(os.environ.get("OV_LLM_CACHE_DIR", str(runtime_paths.compiled_cache_dir))),
             benchmark_results_file=_resolve(
-                os.environ.get("OV_LLM_BENCHMARK_RESULTS", "benchmark/results/benchmarks.json")
+                os.environ.get(
+                    "OV_LLM_BENCHMARK_RESULTS",
+                    str(runtime_paths.benchmarks_dir / "benchmarks.json"),
+                )
             ),
             default_model=(os.environ.get("OV_LLM_MODEL") or "").strip() or None,
             api_key=(os.environ.get("OV_LLM_API_KEY") or "").strip() or None,
@@ -110,30 +108,23 @@ class Settings:
         )
 
     def replace(self, **changes) -> Settings:
-        """Return a copy with the given fields overridden (drops None values)."""
-        clean = {k: v for k, v in changes.items() if v is not None}
+        clean = {key: value for key, value in changes.items() if value is not None}
         return dataclasses.replace(self, **clean)
 
     def validate(self, catalog: dict | None = None) -> list[str]:
-        """Check for common misconfigurations. Returns a list of warning strings."""
         warnings: list[str] = []
 
         if not self.models_file.exists():
             warnings.append(f"Models catalog not found at {self.models_file}")
-
         if self.port < 1 or self.port > 65535:
             warnings.append(f"Port {self.port} is out of the valid range (1-65535)")
-
-        if self.default_model and catalog is not None:
-            if self.default_model not in catalog:
-                warnings.append(
-                    f"Default model '{self.default_model}' is not in the catalog. "
-                    f"Available: {', '.join(catalog) or '(none)'}"
-                )
-
+        if self.default_model and catalog is not None and self.default_model not in catalog:
+            warnings.append(
+                f"Default model '{self.default_model}' is not in the catalog. "
+                f"Available: {', '.join(catalog) or '(none)'}"
+            )
         if self.rate_limit < 0:
             warnings.append(f"Rate limit {self.rate_limit} is negative; treating as disabled (0)")
-
         if self.max_request_body_mb < 1:
             warnings.append(
                 f"Request body limit {self.max_request_body_mb} MiB is invalid; use at least 1 MiB"
@@ -145,7 +136,6 @@ class Settings:
                 "Wildcard CORS allows arbitrary websites to call the local API. Set explicit "
                 "OV_LLM_CORS_ORIGINS values or configure OV_LLM_API_KEY."
             )
-
         if self.host.strip() in {"0.0.0.0", "::"} and not self.api_key:
             warnings.append(
                 f"OV_LLM_HOST is set to {self.host!r}, which can expose the server beyond "

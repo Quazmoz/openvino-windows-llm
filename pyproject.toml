@@ -1,6 +1,6 @@
 [project]
 name = "openvino-windows-llm"
-version = "0.2.1"
+version = "0.3.0"
 description = "Windows-first local LLM and VLM server built on OpenVINO GenAI for Intel CPU/GPU/NPU."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -27,9 +27,14 @@ dev = [
     "httpx>=0.27.0",
     "ruff>=0.6.0",
 ]
+distribution = [
+    "pyinstaller>=6.10.0",
+    "pip-licenses>=5.0.0",
+]
 
 [project.scripts]
 ov-llm = "app.server:main"
+ov-llm-desktop = "app.desktop_launcher:main"
 
 [build-system]
 requires = ["setuptools>=68"]
@@ -44,7 +49,7 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
-ignore = ["E501"]  # line length handled pragmatically
+ignore = ["E501"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

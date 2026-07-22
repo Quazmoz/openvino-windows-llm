@@ -1,0 +1,94 @@
+"""Inject the packaged desktop first-run wizard into the existing browser UI."""
+
+from __future__ import annotations
+
+from app import ui_extension
+
+_EXTENSION_ID = "ovllm-desktop-onboarding-extension"
+
+ONBOARDING_UI = r"""
+<style id="ovllm-desktop-onboarding-style">
+#ovw-shell{position:fixed;inset:0;z-index:1200;display:none;place-items:center;padding:18px;background:#030812c7}
+#ovw-shell.visible{display:grid}#ovw-open{position:fixed;right:18px;bottom:18px;z-index:1190}
+.ovw-card{width:min(900px,100%);max-height:calc(100vh - 30px);overflow:auto;padding:22px;border:1px solid var(--border);border-radius:18px;background:var(--surface-1);color:var(--text-1);box-shadow:var(--shadow-md)}
+.ovw-head,.ovw-actions{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px}.ovw-head{border-bottom:1px solid var(--border);padding-bottom:14px}.ovw-head h1,.ovw-panel h2{margin:0}.ovw-version{color:var(--text-3);font-size:12px}
+.ovw-steps{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:5px;margin:16px 0;padding:0;list-style:none}.ovw-steps li{padding:7px 4px;border:1px solid var(--border);border-radius:8px;text-align:center;color:var(--text-3);font-size:10px}.ovw-steps .active{border-color:var(--primary);color:var(--text-1)}
+.ovw-grid,.ovw-stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.ovw-item,.ovw-callout,.ovw-stat{padding:12px;border:1px solid var(--border);border-radius:11px;background:var(--surface-2)}.ovw-item strong,.ovw-stat strong{display:block}.ovw-status{display:block;margin-top:6px;font-size:11px;font-weight:800;text-transform:uppercase}.ready{color:var(--green)}.warning{color:var(--amber)}.unavailable,.failed,.cancelled,.ovw-error{color:var(--red)}.unknown{color:var(--text-3)}
+.ovw-form{display:grid;gap:10px}.ovw-form label{display:grid;gap:5px}.ovw-form input[type=text],.ovw-form select{padding:9px;border:1px solid var(--border);border-radius:8px;background:var(--surface-2);color:var(--text-1)}.ovw-check{display:flex!important;align-items:flex-start;gap:8px!important}
+.ovw-track{height:10px;overflow:hidden;border-radius:99px;background:var(--surface-3)}.ovw-fill{height:100%;background:var(--accent-grad)}.ovw-track.indeterminate:after{content:'';display:block;width:24%;height:100%;background:var(--primary);animation:ovw 1.1s infinite}@keyframes ovw{from{transform:translateX(-120%)}to{transform:translateX(520%)}}
+.ovw-stage-list{display:grid;gap:6px;padding:0;list-style:none}.ovw-stage-list li{padding:8px;border:1px solid var(--border);border-radius:8px}.ovw-code{position:relative;padding:12px;border-radius:9px;background:var(--code-bg);color:var(--code-text);white-space:pre-wrap;overflow:auto;font:12px/1.45 ui-monospace,Consolas,monospace}.ovw-copy{position:absolute;top:5px;right:5px}
+.ovw-btn{padding:9px 13px;border:1px solid var(--border);border-radius:8px;background:var(--surface-2);color:var(--text-1);font:inherit;font-weight:700;cursor:pointer}.ovw-primary{border-color:var(--primary);background:var(--primary);color:white}.ovw-btn:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid var(--primary);outline-offset:2px}.ovw-btn:disabled{opacity:.5}.ovw-actions{justify-content:flex-end;margin-top:16px}
+@media(max-width:680px){#ovw-shell{padding:6px}.ovw-card{max-height:calc(100vh - 12px)}.ovw-grid,.ovw-stats{grid-template-columns:1fr}.ovw-steps{grid-template-columns:repeat(4,1fr)}}
+@media(prefers-reduced-motion:reduce){.ovw-track.indeterminate:after{animation:none;transform:translateX(300%)}}
+</style>
+<script id="ovllm-desktop-onboarding-extension">
+(() => {
+'use strict';
+if (window.__ovllmDesktopOnboardingInstalled) return;
+window.__ovllmDesktopOnboardingInstalled = true;
+const API='/v1/onboarding';
+const labels=['Welcome','System scan','NPU readiness','Recommended model','Prepare model','Benchmark','Ready'];
+const preparationLabels=['Downloading model files','Converting or quantizing to OpenVINO','Validating converted files','Compiling for the selected device','Loading the model','Running a short benchmark'];
+void preparationLabels;
+let step=0,status=null,npu=null,rec=null,job=null,connection=null,timer=null;
+const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+async function api(path,options={}){
+  let key='';try{key=localStorage.getItem('ovllm.apikey.v1')||''}catch{}
+  const headers={'Content-Type':'application/json',...(options.headers||{})};
+  if(key)headers.Authorization=`Bearer ${key}`;
+  const response=await fetch(path,{...options,headers});
+  if(!response.ok){let detail=`Request failed (${response.status})`;try{detail=(await response.json()).detail||detail}catch{}throw new Error(detail)}
+  return response.json();
+}
+const shell=document.createElement('div');
+shell.id='ovw-shell';
+shell.setAttribute('role','dialog');
+shell.setAttribute('aria-modal','true');
+shell.innerHTML=`<article class="ovw-card"><header class="ovw-head"><div><h1>OpenVINO Windows LLM</h1><span class="ovw-version">Version 0.3.0</span></div><button class="ovw-btn" id="ovw-close">Close</button></header><ol class="ovw-steps"></ol><main id="ovw-content" aria-live="polite"></main></article>`;
+document.body.appendChild(shell);
+const opener=document.createElement('button');
+opener.id='ovw-open';opener.className='ovw-btn';opener.textContent='Setup and connection';opener.hidden=true;
+document.body.appendChild(opener);
+const content=shell.querySelector('#ovw-content');
+const steps=shell.querySelector('.ovw-steps');
+function show(){shell.classList.add('visible');shell.querySelector('button,input,select')?.focus()}
+function hide(){shell.classList.remove('visible')}
+function buttons(items){return `<div class="ovw-actions">${items.map(x=>`<button class="ovw-btn ${x.primary?'ovw-primary':''}" data-action="${x.id}" ${x.disabled?'disabled':''}>${esc(x.label)}</button>`).join('')}</div>`}
+function panel(html){steps.innerHTML=labels.map((x,i)=>`<li class="${i===step?'active':''}">${i+1}. ${esc(x)}</li>`).join('');content.innerHTML=`<section class="ovw-panel">${html}</section>`}
+function fail(error,retry){panel(`<h2>Setup could not continue</h2><p class="ovw-error">${esc(error.message||error)}</p>${buttons([{id:retry,label:'Retry',primary:true},{id:'exit',label:'Exit'}])}`)}
+function welcome(){step=0;panel(`<h2>Run local AI through OpenVINO</h2><p>Prompts and chat content are processed on this machine. Models are downloaded separately and may require several gigabytes of disk space. Compatible Intel CPU, GPU, or NPU devices can be used through OpenVINO. Localhost is the default endpoint.</p><div class="ovw-callout"><strong>Download → Install → Choose recommended model → Chat</strong><p>The first setup can take time because each preparation stage is performed separately.</p></div>${status?.recovery_message?`<p class="ovw-error">${esc(status.recovery_message)}</p>`:''}${buttons([{id:'docs',label:'Documentation'},{id:'exit',label:'Exit'},{id:'continue',label:'Continue',primary:true}])}`)}
+async function scan(refresh=false){step=1;panel('<h2>System scan</h2><p>Scanning the existing hardware advisor and OpenVINO devices…</p>');try{const data=await api(`${API}/system-scan?refresh=${refresh}`);panel(`<h2>System scan</h2>${data.warnings.map(x=>`<p class="ovw-error">${esc(x)}</p>`).join('')}<div class="ovw-grid">${data.items.map(x=>`<div class="ovw-item"><strong>${esc(x.label)}</strong><span>${esc(x.value)}</span><small>${esc(x.detail||'')}</small><span class="ovw-status ${esc(x.status)}">${esc(x.status)}</span></div>`).join('')}</div>${buttons([{id:'welcome',label:'Back'},{id:'rescan',label:'Rescan'},{id:'to-npu',label:'Continue',primary:true}])}`)}catch(error){fail(error,'rescan')}}
+async function npuPage(refresh=false){step=2;panel('<h2>NPU readiness</h2><p>Checking Windows and OpenVINO evidence…</p>');try{npu=await api(`${API}/npu-readiness?refresh=${refresh}`);panel(`<h2>NPU readiness</h2><div class="ovw-callout"><strong>${esc(npu.title)}</strong><p>${esc(npu.explanation)}</p><p>Fallback: ${esc(npu.fallback_device||'None reported')}</p><p>Driver: ${esc(npu.driver_version||'Unknown')}</p></div>${buttons([{id:'scan',label:'Back'},{id:'intel',label:'Official Intel support'},{id:'npu-rescan',label:'Rescan'},{id:'to-rec',label:'Continue',primary:true}])}`)}catch(error){fail(error,'npu-rescan')}}
+async function recommendation(refresh=false){step=3;panel('<h2>Recommended model</h2><p>Selecting a conservative compatible model…</p>');try{rec=await api(`${API}/recommendation?refresh=${refresh}`);const gb=v=>v==null?'Unknown':`${Number(v).toFixed(2)} GB`;panel(`<h2>Recommended model</h2><div class="ovw-callout"><strong>${esc(rec.model_name)}</strong><p>${esc(rec.description)}</p><p>${esc(rec.reason)}</p></div><div class="ovw-stats"><div class="ovw-stat"><span>Device</span><strong>${esc(rec.requested_device)}</strong></div><div class="ovw-stat"><span>Download</span><strong>${gb(rec.download_size_gb)}</strong></div><div class="ovw-stat"><span>Converted</span><strong>${gb(rec.converted_size_gb)}</strong></div><div class="ovw-stat"><span>Runtime memory</span><strong>${gb(rec.runtime_memory_gb)}</strong></div><div class="ovw-stat"><span>First load</span><strong>${esc(rec.first_load_seconds==null?'Unknown':`${rec.first_load_seconds}s`)}</strong></div><div class="ovw-stat"><span>Context / output</span><strong>${esc(rec.context_length)} / ${esc(rec.output_tokens)}</strong></div></div>${rec.warnings.map(x=>`<p class="warning">${esc(x.message)}</p>`).join('')}${buttons([{id:'npu',label:'Back'},{id:'rec-rescan',label:'Rescan hardware'},{id:'other',label:'Choose another model'},{id:'use',label:'Use recommended',primary:true}])}`)}catch(error){fail(error,'rec-rescan')}}
+function prepare(device){step=4;panel(`<h2>Prepare model</h2><p>Confirm the model source, disk requirement, and warnings before downloading.</p><div class="ovw-form"><label>Model<input type="text" value="${esc(rec.model_name)}" disabled></label><label>Device<select id="ovw-device"><option>CPU</option><option>GPU</option><option>NPU</option><option>AUTO</option></select></label><label>Model storage location, optional<input id="ovw-storage" type="text" placeholder="Use default writable storage"></label><label class="ovw-check"><input id="ovw-license" type="checkbox">I accept the model source license implications.</label><label class="ovw-check"><input id="ovw-disk" type="checkbox">I confirm the estimated disk requirement.</label><label class="ovw-check"><input id="ovw-warning" type="checkbox">I acknowledge the preflight warnings.</label>${rec.trust_remote_code?'<label class="ovw-check"><input id="ovw-remote" type="checkbox">Allow reviewed repository code for this model.</label>':''}</div>${buttons([{id:'rec',label:'Back'},{id:'start',label:'Prepare model',primary:true}])}`);const select=content.querySelector('#ovw-device');select.value=device||rec.requested_device}
+async function start(){const body={model_id:rec.model_id,device:content.querySelector('#ovw-device').value,model_storage_location:content.querySelector('#ovw-storage').value||null,confirm_license:content.querySelector('#ovw-license').checked,confirm_disk_requirement:content.querySelector('#ovw-disk').checked,acknowledge_warnings:content.querySelector('#ovw-warning').checked,trust_remote_code:Boolean(content.querySelector('#ovw-remote')?.checked)};try{job=await api(`${API}/prepare`,{method:'POST',body:JSON.stringify(body)});progress();poll()}catch(error){fail(error,'rec')}}
+function progress(){step=job?.stage==='benchmarking'?5:4;const pct=job?.determinate&&job.percent!=null?Math.round(job.percent):0;panel(`<h2>${esc(job?.stage_label||'Prepare model')}</h2><p>${esc(job?.message||'Working')}</p><div class="ovw-track ${job?.determinate?'':'indeterminate'}"><div class="ovw-fill" style="width:${pct}%"></div></div><p>${job?.determinate?`${pct}%`:'Indeterminate'} · ${esc(job?.elapsed_seconds||0)}s</p><ol class="ovw-stage-list">${(job?.stages||[]).map(x=>`<li class="${esc(x.status)}">${esc(x.label)}</li>`).join('')}</ol>${job?.error_detail?`<p class="ovw-error">${esc(job.error_detail)}</p>`:''}${buttons([{id:'cancel',label:'Cancel',disabled:!job?.can_cancel},{id:'retry',label:'Retry',disabled:!job?.can_retry},{id:'cpu',label:'Fall back to CPU',disabled:!job?.can_fallback_to_cpu}])}`);const bar=content.querySelector('.ovw-track');bar?.setAttribute('role', 'progressbar');bar?.setAttribute('aria-label',job?.stage_label||'Model preparation');if(job?.determinate)bar?.setAttribute('aria-valuenow',String(pct))}
+function poll(){clearTimeout(timer);if(!job||job.status!=='running'){if(job?.status==='ready')complete();return}timer=setTimeout(async()=>{try{job=await api(`${API}/preparation/${encodeURIComponent(job.job_id)}`);progress();poll()}catch(error){fail(error,'retry')}},550)}
+async function complete(){try{connection=await api(`${API}/complete`,{method:'POST',body:JSON.stringify({job_id:job.job_id})});ready()}catch(error){fail(error,'retry')}}
+function code(title,text,id){return `<h3>${esc(title)}</h3><pre class="ovw-code" id="${id}"><button class="ovw-btn ovw-copy" data-copy="${id}">Copy</button>${esc(text)}</pre>`}
+function ready(){step=6;panel(`<h2>Ready</h2><div class="ovw-callout"><strong>${esc(connection.active_model_id)} is ready on ${esc(connection.actual_device)}</strong><p>The endpoint below uses the actual selected port.</p></div><div class="ovw-stats"><div class="ovw-stat"><span>Chat URL</span><strong>${esc(connection.chat_url)}</strong></div><div class="ovw-stat"><span>Base URL</span><strong>${esc(connection.base_url)}</strong></div><div class="ovw-stat"><span>Health</span><strong>${esc(connection.health_url)}</strong></div></div>${code('OpenAI Python client',connection.openai_python,'ovw-python')}${code('Environment variables',connection.environment_variables,'ovw-env')}${code('Open WebUI',`Base URL: ${connection.open_webui.base_url}\nAPI key: ${connection.open_webui.api_key}\n${connection.open_webui.note}`,'ovw-webui')}${code('n8n',`Base URL: ${connection.n8n.base_url}\nAPI key: ${connection.n8n.api_key}\n${connection.n8n.note}`,'ovw-n8n')}${buttons([{id:'restart',label:'Restart onboarding'},{id:'chat',label:'Open chat',primary:true}])}`);opener.hidden=false}
+async function exitApp(){try{const instance=await api('/desktop/instance');await fetch('/desktop/shutdown',{method:'POST',headers:{'X-Instance-Nonce':instance.instance_nonce}})}catch{hide()}}
+content.addEventListener('click',async event=>{const copyButton=event.target.closest('[data-copy]');if(copyButton){const node=document.getElementById(copyButton.dataset.copy);const text=[...node.childNodes].filter(x=>x.nodeType===Node.TEXT_NODE).map(x=>x.textContent).join('');await navigator.clipboard.writeText(text);copyButton.textContent='Copied';return}const button=event.target.closest('[data-action]');if(!button)return;const action=button.dataset.action;if(action==='continue')scan();else if(action==='docs')window.open(`${API}/documentation`,'_blank','noopener');else if(action==='exit')exitApp();else if(action==='welcome')welcome();else if(action==='rescan')scan(true);else if(action==='to-npu')npuPage();else if(action==='scan')scan();else if(action==='npu-rescan')npuPage(true);else if(action==='intel'&&npu?.support_url)window.open(npu.support_url,'_blank','noopener');else if(action==='to-rec')recommendation();else if(action==='npu')npuPage();else if(action==='rec-rescan')recommendation(true);else if(action==='other'){hide();document.getElementById('model-select')?.focus()}else if(action==='use')prepare();else if(action==='rec')recommendation();else if(action==='start')start();else if(action==='cancel'&&job){await api(`${API}/preparation/${job.job_id}/cancel`,{method:'POST'});poll()}else if(action==='retry')prepare();else if(action==='cpu')prepare('CPU');else if(action==='chat')hide();else if(action==='restart'){await api(`${API}/restart`,{method:'POST'});status.completed=false;welcome();show()}});
+shell.querySelector('#ovw-close').addEventListener('click',hide);
+opener.addEventListener('click',async()=>{try{connection=await api(`${API}/connection`);ready()}catch{welcome()}show()});
+(async()=>{try{const response=await fetch(`${API}/status`);if(response.status===404||!response.ok)return;status=await response.json();if(status.completed&&!status.restart_requested){opener.hidden=false;if(status.rerun_scan_recommended)opener.textContent='Rescan recommended';return}welcome();show()}catch{}})();
+})();
+</script>
+"""
+
+
+def install_onboarding_ui_extension() -> None:
+    if getattr(ui_extension, "_DESKTOP_ONBOARDING_UI_INSTALLED", False):
+        return
+    previous = ui_extension.inject_multimodal_ui
+
+    def inject(html: str) -> str:
+        html = previous(html)
+        if f'id="{_EXTENSION_ID}"' in html:
+            return html
+        if "</body>" in html:
+            return html.replace("</body>", f"\n{ONBOARDING_UI}\n</body>", 1)
+        return html + ONBOARDING_UI
+
+    ui_extension.inject_multimodal_ui = inject
+    ui_extension._DESKTOP_ONBOARDING_UI_INSTALLED = True

@@ -5,18 +5,24 @@ GenAI. Pure request/response logic remains importable in mock mode without an
 OpenVINO runtime.
 """
 
-__version__ = "0.2.1"
+__version__ = "0.3.0"
 
 __all__ = [
     "__version__",
     "body_limit",
     "chat_format",
     "config",
+    "desktop_launcher",
+    "desktop_server",
     "errors",
     "model_manager",
     "model_registry",
     "multimodal",
+    "onboarding_models",
+    "onboarding_service",
+    "onboarding_state",
     "openai_api",
+    "paths",
     "rate_limit",
     "server",
     "telemetry",
