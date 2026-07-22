@@ -13,6 +13,7 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "psutil>=5.9.0",
     "pillow>=10.0.0",
+    "httpx>=0.27.0",
 ]
 
 [project.optional-dependencies]
@@ -34,8 +35,8 @@ ov-llm = "app.server:main"
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
-[tool.setuptools]
-packages = ["app", "runtime"]
+[tool.setuptools.packages.find]
+include = ["app*", "runtime*"]
 
 [tool.ruff]
 line-length = 100
