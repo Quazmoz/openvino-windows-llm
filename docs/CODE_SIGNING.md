@@ -1,22 +1,46 @@
 # Code signing
 
-Development artifacts can be built without a certificate. They are named with the `unsigned` suffix and must not be described as signed releases.
+Unsigned local-development builds are supported. Artifact filenames remain deterministic and do not use `signed` or `unsigned` suffixes. Trust state is recorded only in the validated release manifest and summary.
 
-## Certificate-store signing hook
+## Secure configuration
 
-The build script signs with Windows SignTool when both variables are present:
+Preferred Windows certificate-store signing:
 
 ```text
 OV_LLM_SIGNTOOL_PATH
 OV_LLM_SIGN_CERT_SHA1
-```
-
-Optional:
-
-```text
 OV_LLM_SIGN_TIMESTAMP_URL
 ```
 
-`OV_LLM_SIGN_CERT_SHA1` identifies a certificate already installed in the Windows certificate store. No certificate file, private key, password, token, or signing secret belongs in the repository.
+Certificate-file fallback:
 
-The script signs the packaged launcher before staging artifacts and signs the final installer after Inno Setup compilation. Signed artifacts use the `signed` filename suffix. Always inspect the Authenticode signature before publishing.
+```text
+OV_LLM_SIGN_CERTIFICATE
+OV_LLM_SIGN_CERTIFICATE_PASSWORD
+OV_LLM_SIGN_TIMESTAMP_URL
+```
+
+Certificates, private keys, passwords, tokens, and signing secrets must never enter the repository, generated release output, or logs. Prefer a certificate-store thumbprint or secure CI secret injection over a PFX file.
+
+## Build behavior
+
+```powershell
+.\scripts\build_release.ps1 -Version 0.4.0 -Sign
+```
+
+The release build:
+
+1. signs the packaged launcher before portable staging;
+2. timestamps the signature;
+3. verifies the launcher with `signtool verify /pa /all`;
+4. compiles the installer;
+5. signs, timestamps, and verifies the installer;
+6. marks trust fields true only after verification succeeds.
+
+A signing, timestamp, or verification failure blocks a signed release. The ZIP archive itself is not Authenticode-signed. Its manifest records whether the contained launcher signature was verified, and users must still verify the ZIP SHA-256 checksum.
+
+Unsigned validation:
+
+```powershell
+.\scripts\build_release.ps1 -Version 0.4.0 -Unsigned -SkipInstaller -MockSmokeTest
+```
