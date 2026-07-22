@@ -39,6 +39,24 @@ _TEXT_SUFFIXES = {
     ".py",
     ".iss",
 }
+# certifi ships a public CA trust store required for TLS. It contains only public
+# root certificates (no private keys), so it is exempt from the key/cert suffix rule.
+_ALLOWED_CERT_NAMES = {"cacert.pem"}
+_SOURCE_SUFFIXES = {".py", ".pyx", ".pyi", ".pyc", ".pyd"}
+# Application-owned top-level entries inside the PyInstaller bundle. Everything else
+# nested under _internal/ is bundled third-party dependency code (torch, transformers,
+# datasets, …). Its public source legitimately contains tokenizer terminology and
+# upstream maintainers' example paths, so the leak heuristics (secret filename/value
+# and local path) must not deep-scan it. Structural checks still apply bundle-wide.
+_APP_OWNED_ROOTS = {"app", "runtime", "web"}
+
+
+def _is_dependency_file(relative: Path) -> bool:
+    parts = [part.lower() for part in relative.parts]
+    if "_internal" not in parts:
+        return False
+    rest = parts[parts.index("_internal") + 1 :]
+    return len(rest) >= 2 and rest[0] not in _APP_OWNED_ROOTS
 
 
 def sha256_file(path: Path) -> str:
@@ -83,11 +101,16 @@ def verify_native_distribution(root: Path) -> None:
 def _check_name(relative: Path, suffix: str) -> None:
     dirs = {part.lower() for part in relative.parts[:-1]}
     name = relative.name.lower()
-    if name in _FORBIDDEN_NAMES or suffix in _FORBIDDEN_SUFFIXES:
+    if name in _FORBIDDEN_NAMES or (
+        suffix in _FORBIDDEN_SUFFIXES and name not in _ALLOWED_CERT_NAMES
+    ):
         raise RuntimeError(f"Forbidden release file: {relative.as_posix()}")
-    if dirs & _FORBIDDEN_DIRS:
+    # A model/cache *directory* holding weight or cache data is forbidden, but a
+    # third-party package directory that merely happens to be named "models"
+    # (e.g. transformers/models) contains Python source, not weights.
+    if dirs & _FORBIDDEN_DIRS and suffix not in _SOURCE_SUFFIXES:
         raise RuntimeError(f"Model or cache directory included in release: {relative.as_posix()}")
-    if _SECRET_NAME.search(name):
+    if not _is_dependency_file(relative) and _SECRET_NAME.search(name):
         raise RuntimeError(f"Secret-like filename included in release: {relative.as_posix()}")
 
 
@@ -101,7 +124,11 @@ def _check_text(text: str, relative: Path) -> None:
 def _scan_file(path: Path, relative: Path) -> None:
     suffix = path.suffix.lower()
     _check_name(relative, suffix)
-    if suffix in _TEXT_SUFFIXES and path.stat().st_size <= 2 * 1024 * 1024:
+    if (
+        suffix in _TEXT_SUFFIXES
+        and not _is_dependency_file(relative)
+        and path.stat().st_size <= 2 * 1024 * 1024
+    ):
         _check_text(path.read_text(encoding="utf-8", errors="ignore"), relative)
 
 
@@ -134,7 +161,11 @@ def scan_release_path(path: Path) -> None:
                     "Forbidden release file", "Forbidden release archive entry"
                 )
                 raise RuntimeError(message) from exc
-            if suffix in _TEXT_SUFFIXES and item.file_size <= 2 * 1024 * 1024:
+            if (
+                suffix in _TEXT_SUFFIXES
+                and not _is_dependency_file(relative)
+                and item.file_size <= 2 * 1024 * 1024
+            ):
                 _check_text(archive.read(item).decode("utf-8", errors="ignore"), relative)
 
 
