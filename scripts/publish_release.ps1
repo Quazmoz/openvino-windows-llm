@@ -26,7 +26,10 @@ $Expected = @(
     "OpenVINO-Windows-LLM-$Version-checksums.txt",
     "OpenVINO-Windows-LLM-$Version-release-manifest.json",
     "OpenVINO-Windows-LLM-$Version-third-party-licenses.zip",
-    "OpenVINO-Windows-LLM-$Version-release-notes.md"
+    "OpenVINO-Windows-LLM-$Version-release-notes.md",
+    "OpenVINO-Windows-LLM-$Version-dependency-inventory.json",
+    "OpenVINO-Windows-LLM-$Version-dependency-freeze.txt",
+    "OpenVINO-Windows-LLM-$Version-release-summary.json"
 )
 $Existing = Get-ChildItem $ArtifactDirectory -File | Select-Object -ExpandProperty Name
 foreach ($Name in $Expected) {
