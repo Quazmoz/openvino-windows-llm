@@ -5,10 +5,11 @@ from __future__ import annotations
 import secrets
 from typing import Any
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from fastapi.responses import RedirectResponse
 
 from app.config import Settings
+from app.local_request_security import require_safe_browser_origin
 from app.onboarding_models import (
     CancelPreparationResponse,
     CompleteOnboardingRequest,
@@ -25,7 +26,11 @@ from app.onboarding_service import OnboardingService
 
 
 def _state_change_auth(settings: Settings):
-    async def require_key(authorization: str | None = Header(default=None)) -> None:
+    async def require_key(
+        request: Request,
+        authorization: str | None = Header(default=None),
+    ) -> None:
+        require_safe_browser_origin(request)
         configured = [item.strip() for item in (settings.api_key or "").split(",") if item.strip()]
         if not configured:
             return
