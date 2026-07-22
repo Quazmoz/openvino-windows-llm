@@ -1,34 +1,33 @@
 # Windows installer guide
 
-The installer is defined in `packaging/installer.iss` and targets Windows 11 x64-compatible systems.
+The Inno Setup configuration targets Windows 11 x64-compatible systems and installs the tray-enabled desktop build per-user.
 
 ## Installation behavior
 
-- Per-user installation under `%LOCALAPPDATA%\Programs\OpenVINOWindowsLLM`
-- No administrator rights required for the normal path
-- Start Menu shortcut
-- Optional desktop shortcut
+- per-user installation under `%LOCALAPPDATA%\Programs\OpenVINOWindowsLLM`
+- no administrator rights required for the normal path
+- Start Menu shortcut launching the system-tray controller
+- optional desktop shortcut
 - Windows uninstall entry
-- Same application ID across releases for in-place upgrades
-- User models and data stored outside the installation directory
-- User data preserved by default during upgrades and uninstall
+- stable application ID for in-place upgrades
+- models and mutable state stored outside the installation directory
+- user data preserved by default during upgrades and uninstall
+- Start with Windows disabled by default
 
-The application binds to `127.0.0.1`. It does not expose a public or LAN endpoint unless an operator deliberately uses the server CLI with a different host and appropriate API-key controls.
+Launching the shortcut starts the tray controller, which owns the localhost FastAPI child server and opens the existing browser UI. Closing the browser does not stop the application.
+
+Start with Windows is enabled later from the tray. It creates one HKCU Run value and starts the tray/server in the background without opening the browser.
 
 ## Build
-
-From a Windows PowerShell environment with Python 3.11 or newer and Inno Setup 6:
 
 ```powershell
 .\scripts\build_windows_distribution.ps1
 ```
 
-Use `-SkipInstaller` to create only the portable ZIP when Inno Setup is unavailable.
-
-Artifacts are written to `artifacts` with deterministic versioned names. A SHA-256 manifest is generated for every release artifact.
+Use `-SkipInstaller` to create only the portable ZIP when Inno Setup is unavailable. Artifacts are versioned, checksummed, and accurately marked signed or unsigned.
 
 ## Upgrade and uninstall
 
 Installer upgrades replace application files only. Mutable data remains under `%LOCALAPPDATA%\OpenVINOWindowsLLM`.
 
-During interactive uninstall, the user is asked whether to retain downloaded models, settings, logs, and benchmarks. Preservation is the default. Silent uninstall preserves user data.
+Interactive uninstall asks whether to retain downloaded models, settings, logs, benchmarks, onboarding state, and diagnostics. Preservation is the default. Disable Start with Windows from the tray before uninstall when possible; the per-user Run value can also be removed manually.

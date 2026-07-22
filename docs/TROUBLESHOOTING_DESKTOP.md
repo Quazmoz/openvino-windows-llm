@@ -1,31 +1,41 @@
-# Desktop troubleshooting
+# Desktop and tray troubleshooting
 
-## Application does not open
+## Tray icon does not appear
 
-Run `OpenVINOWindowsLLM.exe --diagnostic` and review `%LOCALAPPDATA%\OpenVINOWindowsLLM\logs\launcher.log` and `desktop.log`. Startup failures are also shown in a Windows dialog.
-
-## Port conflict
-
-The launcher tries port 8000 first and then asks Windows for an available loopback port. Connection examples in the Ready screen use the selected port rather than assuming 8000.
+Review `%LOCALAPPDATA%\OpenVINOWindowsLLM\logs\tray.log` or the portable `data\logs\tray.log`. A native error dialog should identify a missing or failed tray dependency. Reinstall a complete artifact rather than installing Python packages manually into the packaged directory.
 
 ## Application data is not writable
 
-Move the portable package to a writable directory or set `OV_LLM_DATA_DIR` to a writable absolute path. Do not use a protected installation directory for model storage.
+Move a portable build to a writable local directory or set `OV_LLM_DATA_DIR` to a writable absolute path. Protected application directories and read-only removable media cannot hold models, logs, or diagnostics.
 
-## NPU not available
+## Server remains in Starting
 
-Use the wizard's NPU readiness explanation and official Intel support action. Rescan after changing a driver. A driver installation cannot add unsupported hardware and does not guarantee that a model works on NPU. CPU or Intel GPU remains a valid fallback when OpenVINO reports it.
+The tray waits for instance identity, `/health/live`, and `/health/ready`. Review `tray.log` and `desktop.log` for packaged OpenVINO, port, catalog, driver, or model-load failures. The tray uses the configured port when available and otherwise selects a safe loopback fallback.
 
-## Download or conversion fails
+## Server stopped unexpectedly
 
-Check network access, Hugging Face model access, accepted license terms, available disk space, and managed-network TLS inspection. Remote model code remains disabled unless the catalog entry was reviewed and the user explicitly opts in.
+The tray enters an Error state and offers Restart. It does not restart forever. Export diagnostics before restarting when the failure is reproducible.
 
-Incomplete conversion output is not treated as a valid model. New partial output may be moved under `diagnostics\incomplete-models` for inspection.
+## Stop or Restart takes time
 
-## Compilation or load fails
+Active generation requests receive bounded drain time. Model conversion, loading, and benchmark operations are not accepted after shutdown begins. If graceful shutdown exceeds its bound, the tray terminates only its validated child process.
 
-Retry, select a different OpenVINO-visible device, or use CPU fallback. A requested device is not proof of actual execution. Successful measured generation and the runtime's reported actual device are the evidence shown by the benchmark step.
+## Start with Windows fails
 
-## Setup state is corrupt
+The registration is stored in `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\OpenVINOWindowsLLM`. No administrator access is required. Portable mode deliberately disables this option. Security software or managed Windows policy may block registry writes; the tray reports the sanitized error.
 
-The unreadable state is copied to a `.corrupt` file when possible, existing models are retained, and the wizard restarts with safe defaults.
+## Diagnostics export fails
+
+Verify that the writable diagnostics directory is not a symlink and has free space. The collector writes only there, uses a temporary archive, and removes incomplete temporary output after a failure.
+
+## NPU is not shown
+
+The tray displays the actual device reported for the loaded engine. A requested NPU or `AUTO` target is not proof of NPU execution. Use Hardware Scan and the first-run NPU readiness panel, then fall back to an OpenVINO-visible CPU or Intel GPU when necessary.
+
+## Support workflow
+
+1. Reproduce the issue once.
+2. Choose **Tray icon → Export Diagnostics**.
+3. Review the ZIP contents.
+4. Attach the ZIP to a GitHub issue with the steps that triggered the problem.
+5. Do not attach models, tokens, certificates, prompts, chat exports, or source images.

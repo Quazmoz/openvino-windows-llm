@@ -1,4 +1,4 @@
-# PyInstaller one-directory build for the Windows desktop launcher.
+# PyInstaller one-directory build for the Windows desktop tray launcher.
 
 import os
 from pathlib import Path
@@ -26,6 +26,10 @@ for package in ("openvino", "openvino_genai"):
     binaries += package_binaries
     hiddenimports += package_hidden
 
+# pystray selects its Windows backend dynamically at runtime.
+hiddenimports += collect_submodules("pystray")
+datas += collect_data_files("pystray", include_py_files=False)
+
 # Optimum performs dynamic command and exporter discovery. Conversion remains in the
 # same frozen directory, so the packaged launcher can dispatch the converter helper.
 for package in (
@@ -49,6 +53,7 @@ for distribution in (
     "nncf",
     "transformers",
     "huggingface-hub",
+    "pystray",
 ):
     try:
         datas += copy_metadata(distribution, recursive=True)

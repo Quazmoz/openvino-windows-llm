@@ -1,27 +1,44 @@
 # Desktop distribution architecture
 
-The desktop build is intentionally a thin launcher around the existing server and browser UI.
+The desktop distribution remains a thin controller around the existing FastAPI server and dependency-free browser UI. It does not introduce Electron, Node.js, Docker, cloud inference, or a second model lifecycle system.
 
-## Components
+## Process model
 
-- `app.desktop_launcher` owns single-instance locking, port selection, child-process identity, startup polling, browser launch, user-visible startup errors, diagnostics, and exact child shutdown.
-- `app.desktop_server` prepares writable paths, initializes the user catalog, configures local caches and logs, creates the existing FastAPI application, and registers desktop-only routes.
-- `app.onboarding_service` orchestrates the existing hardware advisor, model lifecycle, conversion progress, load locks, and benchmark runner.
-- `app.onboarding_ui` injects the accessible wizard into the existing dependency-free browser UI.
-- `app.paths` separates packaged resources from installed or portable mutable data.
+```text
+OpenVINOWindowsLLM.exe
+  └─ tray controller, authoritative per-user owner
+       └─ packaged server child
+            ├─ existing FastAPI/OpenAI-compatible API
+            ├─ existing browser UI
+            ├─ existing ModelManager and lifecycle locks
+            ├─ existing hardware advisor
+            └─ existing benchmark store
+```
 
-No Electron runtime, Node frontend, Docker service, cloud inference provider, or second model manager is introduced.
+`app.desktop_launcher` remains the packaged executable entry point and converter/server-child dispatcher. Normal desktop launch delegates to `app.tray_app`.
 
-## Single-instance behavior
+`app.desktop_controller` owns start, stop, restart, readiness polling, child identity, port selection, metadata, graceful shutdown, and crash detection. It reuses the P0 instance lock, nonce verification, and writable paths.
 
-A per-user file lock remains held by the launcher for the server lifetime. Metadata includes a random nonce, selected port, child PID, executable path, and start time. A stale PID is never trusted by itself. An existing instance is accepted only when the local identity endpoint returns the expected nonce and the liveness endpoint succeeds.
+`app.desktop_operations` presents one typed operational view over existing model-manager, onboarding, hardware-advisor, benchmark, event, and configuration state. Tray status is derived from this view rather than becoming another source of truth.
 
-The launcher terminates only the child process handle it created. It never scans for or kills unrelated Python processes.
+`app.diagnostics` owns privacy-safe bundle collection independently of tray callbacks so browser and future support/certification tooling can reuse it.
 
-## Liveness and readiness
+## Lifecycle control boundary
 
-`/health/live` confirms that the HTTP process is running. `/health/ready` confirms that startup is complete and no startup load is still pending. The launcher performs bounded polling and reports failure through a Windows dialog and sanitized logs.
+The server binds to `127.0.0.1`. Public OpenAI-compatible routes keep the existing optional API-key policy.
 
-## Packaged conversion dispatch
+Desktop control routes are excluded from OpenAPI documentation, enforce loopback clients, and require a random per-process `X-Desktop-Control` token. The token is passed from tray to child server and kept in tray memory. It is not returned in status responses or written to normal logs.
 
-The existing lifecycle starts conversion through `sys.executable -m runtime.model_converter`. A frozen executable detects this invocation and dispatches to the bundled converter. Inside that helper process, the packaged Optimum CLI entry point is invoked in-process, preserving streamed progress without requiring a separately installed Python or `optimum-cli` command.
+Graceful shutdown sets a shutting-down state, rejects new heavyweight model work, allows Uvicorn and ModelManager bounded drain time, cancels managed load/conversion tasks, unloads models, and exits. The tray terminates or kills only its validated child after graceful shutdown exceeds the configured bound.
+
+Browser-initiated restart writes one safe restart marker, asks the server to stop, and lets the authoritative tray restore service once. Restart failure is surfaced and is not retried forever.
+
+## Single instance and crash recovery
+
+A file lock under the writable data root is held by the tray process. Server metadata is accepted only when its schema is valid and the local `/desktop/instance` nonce matches. Stale metadata is removed after failed live verification.
+
+An unexpected child exit changes tray state to error and makes Restart available. The tray does not automatically restart repeatedly. Only an explicit tray action or one browser restart marker starts another child.
+
+## Installed and portable paths
+
+Installed mode uses `%LOCALAPPDATA%\OpenVINOWindowsLLM`. Portable mode uses `<portable directory>\data`. Models, configuration, onboarding state, benchmarks, logs, diagnostics, and caches remain outside packaged resources and survive ordinary upgrades.
