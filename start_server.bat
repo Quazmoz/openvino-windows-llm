@@ -34,16 +34,27 @@ call "%VENV%\Scripts\activate.bat"
 set PYTHONUTF8=1
 set PYTHONIOENCODING=utf-8
 
-REM Ensure runtime deps are present (cheap import check on the marker file).
-if not exist "%~dp0.deps_installed" (
-    echo Installing runtime dependencies ^(first run only^)...
-    python -m pip install -r "%~dp0requirements.txt"
+REM Reinstall runtime dependencies only when requirements.txt changed. The old
+REM boolean marker could leave upgraded checkouts missing newly declared packages.
+set "REQ_FILE=%~dp0requirements.txt"
+set "DEPS_MARKER=%~dp0.deps_installed"
+set "DEPS_CURRENT="
+"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -Command "$r=$env:REQ_FILE; $m=$env:DEPS_MARKER; if (-not (Test-Path -LiteralPath $r) -or -not (Test-Path -LiteralPath $m)) { exit 1 }; $actual=(Get-FileHash -LiteralPath $r -Algorithm SHA256).Hash.Trim(); $saved=(Get-Content -LiteralPath $m -Raw).Trim(); if ($actual -ceq $saved) { exit 0 }; exit 1" >nul 2>&1
+if not errorlevel 1 set "DEPS_CURRENT=1"
+
+if not defined DEPS_CURRENT (
+    echo Installing updated runtime dependencies...
+    python -m pip install -r "%REQ_FILE%"
     if errorlevel 1 (
         echo ERROR: Failed to install dependencies.
         pause
         exit /b 1
     )
-    echo. > "%~dp0.deps_installed"
+    "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -Command "$hash=(Get-FileHash -LiteralPath $env:REQ_FILE -Algorithm SHA256).Hash; Set-Content -LiteralPath $env:DEPS_MARKER -Value $hash -NoNewline -Encoding ascii"
+    if errorlevel 1 (
+        echo WARNING: Dependencies installed, but their version marker could not be updated.
+        echo          Startup may check them again next time.
+    )
 )
 
 cd /d "%~dp0"
