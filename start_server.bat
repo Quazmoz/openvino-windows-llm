@@ -59,5 +59,4 @@ if not defined DEPS_CURRENT (
 
 cd /d "%~dp0"
 python -m app.server %*
-
-endlocal
+exit /b %errorlevel%
