@@ -90,6 +90,23 @@ def test_release_text_with_local_user_path_is_rejected(tmp_path):
         scan_release_path(report)
 
 
+def test_release_text_with_posix_home_path_is_rejected(tmp_path):
+    report = tmp_path / "notes.txt"
+    report.write_text("Built at /home/builder/work/openvino-windows-llm on CI.\n")
+    with pytest.raises(RuntimeError, match="Local user path"):
+        scan_release_path(report)
+
+
+def test_release_text_with_homepage_url_is_allowed(tmp_path):
+    # A public URL that happens to contain a "/Home/" path segment (common in
+    # bundled third-party license files) must not be mistaken for a local path.
+    notices = tmp_path / "THIRD-PARTY-NOTICES.txt"
+    notices.write_text(
+        "See https://sites.google.com/site/gaviotachessengine/Home/endgame for details.\n"
+    )
+    scan_release_path(notices)
+
+
 def test_tray_owned_smoke_regressions_are_guarded():
     root = Path(__file__).resolve().parents[1]
     runtime = (root / "app" / "tray_runtime.py").read_text(encoding="utf-8")

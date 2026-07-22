@@ -14,7 +14,15 @@ _SECRET_VALUE = re.compile(
     r"Bearer\s+\S{12,}|hf_[A-Za-z0-9_=-]{8,}|(?:api[_-]?key|token|password|secret)\s*[:=]\s*['\"]?\S{8,}",
     re.I,
 )
-_LOCAL_PATH = re.compile(r"(?:[A-Za-z]:\\+(?:Users|home)\\+|/(?:home|Users)/)[^\r\n\"']+", re.I)
+# Windows drive paths are matched case-insensitively (the drive letter and folder
+# casing vary on a case-insensitive filesystem). POSIX home paths use canonical
+# casing and must sit at a non-word boundary, so public URLs that merely contain a
+# "/Home/" or "/home/" segment (e.g. a project homepage in a bundled license file)
+# are not mistaken for a local user path. See app.diagnostics_privacy.POSIX_HOME_RE.
+_LOCAL_PATH = re.compile(
+    r"(?i:[A-Za-z]:\\+(?:Users|home)\\+)[^\r\n\"']+"
+    r"|(?<![A-Za-z0-9_])/(?:home|Users)/[^\r\n\"']+"
+)
 _FORBIDDEN_NAMES = {".env", ".env.local", ".env.production", "desktop-instance.json"}
 _FORBIDDEN_SUFFIXES = {".pfx", ".p12", ".pem", ".key", ".crt", ".cer"}
 _FORBIDDEN_DIRS = {"models", "model-cache", "huggingface", "openvino-cache", ".cache", "cache"}
