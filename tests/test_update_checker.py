@@ -130,8 +130,24 @@ def test_update_check_interval_behavior():
     assert check_due(now - timedelta(hours=24), now)
 
 
+def test_fresh_update_checks_are_disabled_and_make_no_request(tmp_path):
+    store = UpdateStore(tmp_path)
+    assert store.load_preferences().enabled is False
+
+    def fail(*_args, **_kwargs):
+        raise AssertionError("network should not be used before opt-in")
+
+    result = UpdateChecker(
+        store=store,
+        installation_mode="installed",
+        opener=fail,
+    ).check(force=True)
+    assert result.status == "disabled"
+
+
 def test_stable_user_ignores_beta_release(tmp_path):
     store = UpdateStore(tmp_path)
+    store.save_preferences(UpdatePreferences(enabled=True))
     opener, _calls = opener_for("0.5.0-beta.1", "beta")
     result = UpdateChecker(
         store=store,
@@ -144,7 +160,7 @@ def test_stable_user_ignores_beta_release(tmp_path):
 
 def test_beta_user_sees_beta_release_and_installed_artifact(tmp_path):
     store = UpdateStore(tmp_path)
-    store.save_preferences(UpdatePreferences(channel="beta"))
+    store.save_preferences(UpdatePreferences(enabled=True, channel="beta"))
     opener, calls = opener_for("0.5.0-beta.1", "beta")
     result = UpdateChecker(
         store=store,
@@ -163,6 +179,7 @@ def test_beta_user_sees_beta_release_and_installed_artifact(tmp_path):
 
 def test_portable_user_receives_portable_artifact(tmp_path):
     store = UpdateStore(tmp_path)
+    store.save_preferences(UpdatePreferences(enabled=True))
     opener, _calls = opener_for("0.5.0", "stable")
     result = UpdateChecker(
         store=store,
@@ -175,7 +192,7 @@ def test_portable_user_receives_portable_artifact(tmp_path):
 
 def test_skip_version_persists_and_suppresses_prompt(tmp_path):
     store = UpdateStore(tmp_path)
-    store.save_preferences(UpdatePreferences(skipped_versions=["0.5.0"]))
+    store.save_preferences(UpdatePreferences(enabled=True, skipped_versions=["0.5.0"]))
     opener, _calls = opener_for("0.5.0", "stable")
     result = UpdateChecker(
         store=store,
@@ -203,6 +220,7 @@ def test_disabled_update_checks_make_no_request(tmp_path):
 
 def test_offline_update_check_fails_silently(tmp_path):
     store = UpdateStore(tmp_path)
+    store.save_preferences(UpdatePreferences(enabled=True))
 
     def offline(request, timeout):
         raise urllib.error.URLError("offline")
@@ -218,6 +236,7 @@ def test_offline_update_check_fails_silently(tmp_path):
 
 def test_malformed_manifest_is_rejected(tmp_path):
     store = UpdateStore(tmp_path)
+    store.save_preferences(UpdatePreferences(enabled=True))
 
     def opener(request, timeout):
         if "api.github.com" in request.full_url:
@@ -234,6 +253,7 @@ def test_malformed_manifest_is_rejected(tmp_path):
 
 def test_malformed_cached_manifest_is_cleared_and_refetched(tmp_path):
     store = UpdateStore(tmp_path)
+    store.save_preferences(UpdatePreferences(enabled=True))
     store.save_cache(
         UpdateCache(
             releases_etag='"stale"',
