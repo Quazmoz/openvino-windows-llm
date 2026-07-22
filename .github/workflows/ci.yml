@@ -1,10 +1,7 @@
 name: CI
 
 on:
-  push:
-    branches: [main, "dev/*"]
-  pull_request:
-    branches: [main, "dev/*"]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -113,7 +110,7 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
-  windows-harness-smoke:
+  windows-harness-syntax:
     name: Windows Harness Syntax
     runs-on: windows-latest
 
@@ -126,20 +123,31 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Parse PowerShell certification harness
+      - name: Parse PowerShell release and certification scripts
         shell: pwsh
         run: |
-          $tokens = $null
-          $errors = $null
-          [System.Management.Automation.Language.Parser]::ParseFile(
-            (Resolve-Path "scripts/validate_windows.ps1"),
-            [ref]$tokens,
-            [ref]$errors
-          ) | Out-Null
-          if ($errors.Count -gt 0) {
-            $errors | ForEach-Object { Write-Error $_.Message }
-            exit 1
+          $paths = @(
+            "scripts/build_release.ps1",
+            "scripts/build_windows_distribution.ps1",
+            "scripts/publish_release.ps1",
+            "scripts/smoke_test_packaged.ps1",
+            "scripts/validate_mock_contract.ps1",
+            "scripts/validate_windows.ps1"
+          )
+          foreach ($path in $paths) {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path $path),
+              [ref]$tokens,
+              [ref]$errors
+            ) | Out-Null
+            if ($errors.Count -gt 0) {
+              $errors | ForEach-Object { Write-Error "${path}: $($_.Message)" }
+              exit 1
+            }
           }
 
-      - name: Compile Python contract validator
-        run: python -m py_compile scripts/validate_api_contract.py
+      - name: Compile Python release and contract tools
+        run: |
+          python -m py_compile scripts/release_tools.py scripts/validate_api_contract.py
