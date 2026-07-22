@@ -42,9 +42,7 @@ def test_non_browser_local_client_is_allowed():
 
 
 def test_same_origin_loopback_browser_request_is_allowed():
-    require_safe_browser_origin(
-        _request(origin="http://127.0.0.1:8000", fetch_site="same-origin")
-    )
+    require_safe_browser_origin(_request(origin="http://127.0.0.1:8000", fetch_site="same-origin"))
 
 
 @pytest.mark.parametrize(

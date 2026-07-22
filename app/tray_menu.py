@@ -42,7 +42,9 @@ class TrayMenuMixin:
                         enabled=False,
                     ),
                     Item(
-                        lambda _item: f"Model: {self._snapshot().active_model_name or self._snapshot().active_model_id or 'None'}",
+                        lambda _item: (
+                            f"Model: {self._snapshot().active_model_name or self._snapshot().active_model_id or 'None'}"
+                        ),
                         lambda *_args: None,
                         enabled=False,
                     ),

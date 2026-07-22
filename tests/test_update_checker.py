@@ -72,11 +72,10 @@ def manifest_payload(version: str, channel: str):
             "compiled_cache_policy": "invalidate on runtime change",
         },
         "release_notes_url": (
-            "https://github.com/Quazmoz/openvino-windows-llm/" f"releases/tag/v{version}"
+            f"https://github.com/Quazmoz/openvino-windows-llm/releases/tag/v{version}"
         ),
         "known_issues_url": (
-            "https://github.com/Quazmoz/openvino-windows-llm/"
-            f"blob/v{version}/docs/KNOWN_ISSUES.md"
+            f"https://github.com/Quazmoz/openvino-windows-llm/blob/v{version}/docs/KNOWN_ISSUES.md"
         ),
         "compatibility_matrix_url": (
             "https://github.com/Quazmoz/openvino-windows-llm/"

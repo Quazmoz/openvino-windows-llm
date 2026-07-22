@@ -18,9 +18,9 @@ def test_instance_verification_requires_matching_nonce(monkeypatch):
     monkeypatch.setattr(
         desktop_launcher,
         "_http_json",
-        lambda url, timeout=1.5: {"instance_nonce": "other"}
-        if url.endswith("/desktop/instance")
-        else {"status": "ok"},
+        lambda url, timeout=1.5: (
+            {"instance_nonce": "other"} if url.endswith("/desktop/instance") else {"status": "ok"}
+        ),
     )
     assert desktop_launcher.verify_instance(metadata) is False
 
