@@ -19,15 +19,20 @@ def test_wizard_has_accessible_stages_and_real_connection_configuration():
         "System scan",
         "NPU readiness",
         "Recommended model",
+        "Advanced details",
+        "Change model storage location",
         "Downloading model files",
         "Converting or quantizing to OpenVINO",
         "Compiling for the selected device",
         "Running a short benchmark",
+        "Troubleshooting details",
+        "Change device",
         "OpenAI Python client",
         "Open WebUI",
         "n8n",
     ):
         assert label in rendered
     assert "aria-live" in rendered
-    assert "role', 'progressbar" in rendered
+    assert "role','progressbar" in rendered
+    assert "opener.hidden=false" in rendered
     assert "https://" not in rendered
