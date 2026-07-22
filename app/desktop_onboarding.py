@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import contextlib
-from typing import Any
 
 from app.onboarding_models import (
     OnboardingStatusResponse,
