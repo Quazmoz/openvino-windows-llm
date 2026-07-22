@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import logging
 import threading
+import webbrowser
 from typing import Callable
 
 from app import __version__
@@ -13,6 +14,7 @@ from app.tray_state import TrayPhase, TraySnapshot, connection_information, menu
 from app.tray_support import APP_TITLE
 
 logger = logging.getLogger("ov-llm.tray")
+
 
 class TrayMenuMixin:
     def _build_menu(self, pystray):
@@ -61,6 +63,7 @@ class TrayMenuMixin:
                 checked=lambda _item: self._startup_enabled(),
                 enabled=self._enabled("start_with_windows"),
             ),
+            Item("Check for Updates", self._action(self.open_updates)),
             Item("About", self._action(self.show_about)),
             Item("Quit", self._action(self.quit)),
         )
@@ -147,6 +150,12 @@ class TrayMenuMixin:
         if not self.controller.open_chat():
             raise RuntimeError(f"The browser could not be opened. Visit {self.controller.origin}/")
 
+    def open_updates(self) -> None:
+        if not self.controller.running:
+            self._start_server(open_chat=False)
+        if not webbrowser.open(f"{self.controller.origin}/?updates=1", new=2):
+            raise RuntimeError(f"The browser could not be opened. Visit {self.controller.origin}/?updates=1")
+
     def _connection(self) -> dict[str, str]:
         snapshot = self._snapshot()
         if not snapshot.port:
@@ -205,7 +214,8 @@ class TrayMenuMixin:
             APP_TITLE,
             f"OpenVINO Windows LLM {__version__}\n\n"
             "A local-first OpenVINO GenAI server for Windows. The tray controls only the "
-            "server process it started. Prompts and chat history are not included in diagnostics.",
+            "server process it started. Prompts and chat history are not included in diagnostics. "
+            "Use Check for Updates to review optional stable or beta releases.",
         )
 
     def quit(self) -> None:
