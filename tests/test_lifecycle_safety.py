@@ -48,6 +48,22 @@ def test_delete_rejects_an_active_conversion_task() -> None:
     asyncio.run(scenario())
 
 
+def test_delete_rejects_tracked_preparation_without_active_task() -> None:
+    async def scenario() -> None:
+        manager = _manager()
+        # A tracked preparation status must reject the delete even when no live
+        # task object is present (e.g. queued work waiting on the load lock).
+        manager._set_status(MODEL_ID, "loading")
+
+        with pytest.raises(ValueError, match="still being prepared"):
+            manager.delete(MODEL_ID)
+
+        manager._clear_status(MODEL_ID)
+        await manager.shutdown()
+
+    asyncio.run(scenario())
+
+
 def test_latest_load_request_resumes_after_conversion() -> None:
     async def scenario() -> None:
         manager = _manager()

@@ -198,16 +198,18 @@ def install_model_lifecycle_safety() -> None:
 
         load_task = self.load_tasks.get(model_id)
         convert_task = self.convert_tasks.get(model_id)
-        status = self.status_overrides.get(model_id, {}).get("status")
-        if (
-            _active(load_task)
-            or _active(convert_task)
-            or status in {"queued", "loading", "queued_convert", "converting"}
-        ):
+        # ``status_overrides`` is populated by the core manager's ``__init__``; guard the
+        # access so lightweight callers that only track tasks are still protected.
+        status = getattr(self, "status_overrides", {}).get(model_id, {}).get("status")
+        if status in {"queued", "loading", "queued_convert", "converting"}:
             raise ValueError(
                 f"Model '{model_id}' is still being prepared. "
                 "Wait for loading or conversion to finish before deleting its files."
             )
+        if _active(load_task):
+            raise ValueError(f"Model '{model_id}' is still loading and cannot be deleted.")
+        if _active(convert_task):
+            raise ValueError(f"Model '{model_id}' is still converting and cannot be deleted.")
 
         _mapping(self, _FOLLOWUPS_ATTR).pop(model_id, None)
         _mapping(self, _CALLBACKS_ATTR).pop(model_id, None)
