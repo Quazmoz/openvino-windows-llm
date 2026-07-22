@@ -19,6 +19,8 @@ $ErrorActionPreference = "Stop"
 $SetupRoot = Split-Path -Parent $PSScriptRoot
 $RepoRoot = Split-Path -Parent $SetupRoot
 $VenvDir = Join-Path $RepoRoot ".venv"
+$RequirementsPath = Join-Path $RepoRoot "requirements.txt"
+$DependencyMarker = Join-Path $RepoRoot ".deps_installed"
 
 function Invoke-Checked {
     param(
@@ -101,7 +103,7 @@ try {
     Invoke-Checked -FilePath $venvPython -Arguments @("-m", "pip", "install", "--upgrade", "pip")
 
     Write-Host "Installing runtime dependencies (requirements.txt) ..." -ForegroundColor Cyan
-    Invoke-Checked -FilePath $venvPython -Arguments @("-m", "pip", "install", "-r", (Join-Path $RepoRoot "requirements.txt"))
+    Invoke-Checked -FilePath $venvPython -Arguments @("-m", "pip", "install", "-r", $RequirementsPath)
 
     if ($WithConvert) {
         Write-Host "Installing conversion dependencies (requirements-convert.txt) ..." -ForegroundColor Cyan
@@ -141,8 +143,9 @@ try {
     throw $_
 }
 
-# Mark deps installed so start_server.bat skips re-installing.
-"installed" | Out-File -FilePath (Join-Path $RepoRoot ".deps_installed") -Encoding ascii
+# Record the exact runtime requirements content installed into this environment.
+$requirementsHash = (Get-FileHash -LiteralPath $RequirementsPath -Algorithm SHA256).Hash
+Set-Content -LiteralPath $DependencyMarker -Value $requirementsHash -NoNewline -Encoding ascii
 
 Write-Host "Dependencies installed." -ForegroundColor Green
 Invoke-Checked -FilePath $venvPython -Arguments @("-m", "app.server", "--check-devices")
