@@ -86,6 +86,12 @@ def create_desktop_app(
         )
 
     app = create_app(settings)
+    if app.state.manager.force_mock and not mock:
+        raise RuntimeError(
+            "OpenVINO GenAI could not be loaded by the packaged application. Run the desktop "
+            "diagnostic command and reinstall a complete build. Mock mode is never enabled "
+            "silently for a normal desktop launch."
+        )
     _configure_file_logging(paths.logs_dir)
     service = DesktopOnboardingService(
         settings=settings,

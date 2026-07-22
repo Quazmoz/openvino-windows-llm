@@ -3,16 +3,90 @@
 from __future__ import annotations
 
 import contextlib
+import platform
+import re
 
 from app.onboarding_models import (
+    ItemStatus,
     OnboardingStatusResponse,
     PreparationStage,
+    SystemItem,
     SystemScanResponse,
 )
 from app.onboarding_service import OnboardingService, PreparationJob
 from runtime import device_check
 
 _COMPOSITE_DEVICE_KINDS = {"AUTO", "MULTI", "HETERO"}
+_WINDOWS_11_MINIMUM_BUILD = 22000
+
+
+def _windows_build(version: str | None) -> int | None:
+    parts = re.findall(r"\d+", str(version or ""))
+    if not parts:
+        return None
+    try:
+        return int(parts[-1])
+    except ValueError:
+        return None
+
+
+def augment_windows_scan(
+    scan: SystemScanResponse,
+    *,
+    edition: str | None = None,
+) -> SystemScanResponse:
+    """Add Windows edition/build status without turning unknown values into failures."""
+
+    os_info = dict(scan.hardware.get("os") or {})
+    if str(os_info.get("system") or "").lower() != "windows":
+        return scan
+
+    if edition is None:
+        try:
+            edition = platform.win32_edition()
+        except (AttributeError, OSError):
+            edition = None
+    edition = str(edition or "").strip() or None
+    version = str(os_info.get("version") or "").strip()
+    build = _windows_build(version)
+    build_status = (
+        ItemStatus.UNKNOWN
+        if build is None
+        else ItemStatus.READY
+        if build >= _WINDOWS_11_MINIMUM_BUILD
+        else ItemStatus.WARNING
+    )
+    build_detail = (
+        "Windows build information is unavailable."
+        if build is None
+        else "Windows 11 is the primary supported desktop target."
+        if build >= _WINDOWS_11_MINIMUM_BUILD
+        else "Windows 11 build 22000 or newer is the primary supported desktop target."
+    )
+    additions = [
+        SystemItem(
+            key="windows-edition",
+            label="Windows edition",
+            value=edition or "Unknown",
+            status=ItemStatus.READY if edition else ItemStatus.UNKNOWN,
+            detail=None if edition else "Windows edition information is unavailable.",
+        ),
+        SystemItem(
+            key="windows-build",
+            label="Windows version and build",
+            value=version or "Unknown",
+            status=build_status,
+            detail=build_detail,
+        ),
+    ]
+    keys = {item.key for item in scan.items}
+    items = [*scan.items, *(item for item in additions if item.key not in keys)]
+    warnings = list(scan.warnings)
+    if build is not None and build < _WINDOWS_11_MINIMUM_BUILD:
+        message = "This Windows build is older than the primary Windows 11 desktop target."
+        if message not in warnings:
+            warnings.append(message)
+    return scan.model_copy(update={"items": items, "warnings": warnings})
 
 
 def sanitize_system_scan(scan: SystemScanResponse) -> SystemScanResponse:
@@ -41,7 +115,17 @@ class DesktopOnboardingService(OnboardingService):
     """Add packaged-desktop privacy and recovery guarantees without duplicating lifecycle logic."""
 
     def system_scan(self, *, refresh: bool = False) -> SystemScanResponse:
-        return sanitize_system_scan(super().system_scan(refresh=refresh))
+        scan = super().system_scan(refresh=refresh)
+        return sanitize_system_scan(augment_windows_scan(scan))
+
+    def recommendation(self, *, refresh: bool = False):
+        snapshot = self.manager.advisor.hardware_snapshot(refresh=refresh)
+        if not snapshot.get("runtime", {}).get("mock") and not snapshot.get("available_devices"):
+            raise RuntimeError(
+                "OpenVINO did not report a usable CPU, GPU, or NPU device. Review the runtime "
+                "and driver diagnostics, then rescan before selecting a model."
+            )
+        return super().recommendation(refresh=refresh)
 
     def status(self) -> OnboardingStatusResponse:
         status = super().status()
