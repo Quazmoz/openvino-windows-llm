@@ -6,9 +6,10 @@ import asyncio
 import json
 import sys
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 from app import __version__
 from app.diagnostics import DiagnosticsCollector, DiagnosticsResult, redact_path
@@ -167,7 +168,9 @@ class DesktopOperationsService:
         try:
             candidates = [
                 path
-                for path in self.paths.diagnostics_dir.glob("openvino-windows-llm-diagnostics-*.zip")
+                for path in self.paths.diagnostics_dir.glob(
+                    "openvino-windows-llm-diagnostics-*.zip"
+                )
                 if path.is_file() and not path.is_symlink()
             ]
             if not candidates:
@@ -183,10 +186,14 @@ class DesktopOperationsService:
         snapshot = self.manager.advisor.hardware_snapshot()
         npu = self._npu_status()
         try:
-            startup = StartupRegistration(
-                executable=Path(sys.executable),
-                portable=self.paths.portable,
-            ).state().enabled
+            startup = (
+                StartupRegistration(
+                    executable=Path(sys.executable),
+                    portable=self.paths.portable,
+                )
+                .state()
+                .enabled
+            )
         except Exception:
             startup = False
         ready = self.manager.loading_count() == 0
@@ -243,7 +250,9 @@ class DesktopOperationsService:
                 runs=1,
             )
             await asyncio.to_thread(self.onboarding.benchmark_store.append, run)
-            self.manager.emit_event("info", f"Tray short benchmark completed for {model_id} on {actual_device}")
+            self.manager.emit_event(
+                "info", f"Tray short benchmark completed for {model_id} on {actual_device}"
+            )
             return run
         finally:
             self._benchmark_running = False

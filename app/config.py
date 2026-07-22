@@ -93,9 +93,13 @@ class Settings:
             host=os.environ.get("OV_LLM_HOST", "127.0.0.1"),
             port=int(os.environ.get("OV_LLM_PORT", "8000")),
             device=normalize_device(os.environ.get("OV_LLM_DEVICE", "NPU")),
-            models_file=_resolve(os.environ.get("OV_LLM_MODELS_FILE", str(runtime_paths.models_file))),
+            models_file=_resolve(
+                os.environ.get("OV_LLM_MODELS_FILE", str(runtime_paths.models_file))
+            ),
             models_dir=_resolve(os.environ.get("OV_LLM_MODELS_DIR", str(runtime_paths.models_dir))),
-            cache_dir=_resolve(os.environ.get("OV_LLM_CACHE_DIR", str(runtime_paths.compiled_cache_dir))),
+            cache_dir=_resolve(
+                os.environ.get("OV_LLM_CACHE_DIR", str(runtime_paths.compiled_cache_dir))
+            ),
             benchmark_results_file=_resolve(
                 os.environ.get(
                     "OV_LLM_BENCHMARK_RESULTS",

@@ -7,8 +7,9 @@ import importlib.metadata
 import json
 import os
 import platform
+from collections.abc import Mapping
 from functools import lru_cache
-from typing import Any, Mapping
+from typing import Any
 
 from runtime import device_check
 
@@ -27,6 +28,7 @@ def cpu_details() -> dict[str, Any]:
     frequency_mhz = None
     try:
         import psutil
+
         physical = int(psutil.cpu_count(logical=False) or 0)
         logical = int(psutil.cpu_count(logical=True) or 0)
         freq = psutil.cpu_freq()
@@ -45,11 +47,11 @@ def cpu_details() -> dict[str, Any]:
 
 
 def json_safe(value: Any) -> Any:
-    if value is None or isinstance(value, (str, int, float, bool)):
+    if value is None or isinstance(value, str | int | float | bool):
         return value
     if isinstance(value, Mapping):
         return {str(key): json_safe(item) for key, item in value.items()}
-    if isinstance(value, (list, tuple, set, frozenset)):
+    if isinstance(value, list | tuple | set | frozenset):
         return [json_safe(item) for item in value]
     return str(value)
 
@@ -65,8 +67,10 @@ def device_details() -> list[dict[str, Any]]:
         return [{"device": device, "base": base_device(device)} for device in available]
     details = []
     properties = (
-        ("FULL_DEVICE_NAME", "full_name"), ("DRIVER_VERSION", "driver_version"),
-        ("DEVICE_ARCHITECTURE", "architecture"), ("DEVICE_TYPE", "type"),
+        ("FULL_DEVICE_NAME", "full_name"),
+        ("DRIVER_VERSION", "driver_version"),
+        ("DEVICE_ARCHITECTURE", "architecture"),
+        ("DEVICE_TYPE", "type"),
         ("OPTIMIZATION_CAPABILITIES", "optimization_capabilities"),
         ("GPU_DEVICE_TOTAL_MEM_SIZE", "total_memory_bytes"),
     )
@@ -86,10 +90,14 @@ def device_details() -> list[dict[str, Any]]:
 
 def fingerprint(snapshot: Mapping[str, Any]) -> str:
     stable = {
-        "os": snapshot.get("os"), "cpu": snapshot.get("cpu"),
+        "os": snapshot.get("os"),
+        "cpu": snapshot.get("cpu"),
         "memory_total_gb": snapshot.get("memory", {}).get("total_gb"),
         "devices": [
-            {key: item.get(key) for key in ("device", "full_name", "driver_version", "architecture")}
+            {
+                key: item.get(key)
+                for key in ("device", "full_name", "driver_version", "architecture")
+            }
             for item in snapshot.get("devices", [])
         ],
         "openvino": snapshot.get("runtime", {}).get("openvino"),

@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import math
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 from .common import base_device, clamp, infer_parameter_count_b, normalize_profile, safe_float
 
@@ -21,7 +22,9 @@ class DeviceProfileMixin:
             return 0.0
         return clamp(score / 100.0) * 100.0
 
-    def _estimated_speed_score(self, cfg: Any, device: str, benchmark: Mapping[str, Any] | None) -> float:
+    def _estimated_speed_score(
+        self, cfg: Any, device: str, benchmark: Mapping[str, Any] | None
+    ) -> float:
         if benchmark and benchmark.get("tokens_sec") is not None:
             return min(safe_float(benchmark.get("tokens_sec")) * 4.0, 100.0)
         params = infer_parameter_count_b(cfg.id, cfg.name, cfg.source_model)
@@ -82,7 +85,9 @@ class DeviceProfileMixin:
         if evaluation.get("compatibility") == "blocked":
             return -10_000.0
         device = loaded_device or str(evaluation.get("recommended_device") or "CPU")
-        benchmark = evaluation.get("benchmark") if isinstance(evaluation.get("benchmark"), dict) else None
+        benchmark = (
+            evaluation.get("benchmark") if isinstance(evaluation.get("benchmark"), dict) else None
+        )
         speed = self._estimated_speed_score(cfg, device, benchmark)
         quality = self._quality_score(cfg)
         memory = safe_float(evaluation.get("runtime_memory_gb"), 1.0)

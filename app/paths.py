@@ -7,9 +7,9 @@ import json
 import os
 import shutil
 import sys
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Mapping
 
 _APP_DIR_NAME = "OpenVINOWindowsLLM"
 _TRUTHY = {"1", "true", "yes", "on"}

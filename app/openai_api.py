@@ -82,12 +82,12 @@ class ChatCompletionRequest(BaseModel):
         contents = [
             message.content if isinstance(message, ChatMessage) else message.get("content")
             for message in messages
-            if isinstance(message, (ChatMessage, dict))
+            if isinstance(message, ChatMessage | dict)
         ]
         roles = [
             message.role if isinstance(message, ChatMessage) else str(message.get("role", "user"))
             for message in messages
-            if isinstance(message, (ChatMessage, dict))
+            if isinstance(message, ChatMessage | dict)
         ]
         multimodal.preflight_request_contents(contents, roles=roles)
         return value
@@ -269,14 +269,14 @@ class ChatExportRequest(BaseModel):
             [
                 message.content if isinstance(message, ChatMessage) else message.get("content")
                 for message in messages
-                if isinstance(message, (ChatMessage, dict))
+                if isinstance(message, ChatMessage | dict)
             ],
             roles=[
                 message.role
                 if isinstance(message, ChatMessage)
                 else str(message.get("role", "user"))
                 for message in messages
-                if isinstance(message, (ChatMessage, dict))
+                if isinstance(message, ChatMessage | dict)
             ],
         )
         return value

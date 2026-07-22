@@ -14,7 +14,9 @@ from app.version import DATA_SCHEMA_VERSION
 
 def _require_local_ui(request: Request) -> None:
     if request.headers.get("X-OV-LLM-UI") != "1":
-        raise HTTPException(status_code=403, detail="This action requires the local application UI.")
+        raise HTTPException(
+            status_code=403, detail="This action requires the local application UI."
+        )
 
 
 def register_release_routes(app, *, paths) -> None:

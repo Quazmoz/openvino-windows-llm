@@ -19,6 +19,8 @@ from app.hardware_advisor import HardwareAdvisor, parse_auto_model
 from app.model_manager_core import *  # noqa: F401,F403 - preserve the public module contract
 from app.model_manager_core import (
     ModelManager as _CoreModelManager,
+)
+from app.model_manager_core import (
     NoModelsLoaded,
     UnknownModel,
 )

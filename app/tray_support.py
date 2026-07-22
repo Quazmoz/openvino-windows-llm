@@ -13,6 +13,7 @@ from app.tray_state import TrayPhase
 APP_TITLE = "OpenVINO Windows LLM"
 POLL_SECONDS = 3.0
 
+
 def configure_logging(logs_dir: Path) -> Path:
     logs_dir.mkdir(parents=True, exist_ok=True)
     path = logs_dir / "tray.log"
@@ -78,5 +79,3 @@ def tray_icon(phase: TrayPhase):
         draw.line((25, 25, 31, 19, 39, 21, 40, 28, 32, 34, 32, 39), fill="white", width=4)
         draw.ellipse((29, 44, 35, 50), fill="white")
     return image
-
-

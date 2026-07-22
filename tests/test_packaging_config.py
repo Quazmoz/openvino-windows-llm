@@ -1,6 +1,5 @@
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -17,7 +16,7 @@ def test_pyinstaller_is_windowed_one_directory_and_collects_openvino():
 
 def test_windowed_runtime_hook_restores_redirected_child_streams():
     hook = (ROOT / "packaging" / "runtime_hook.py").read_text(encoding="utf-8")
-    assert 'os.dup(descriptor)' in hook
+    assert "os.dup(descriptor)" in hook
     assert '_restore_output("stdout", 1)' in hook
     assert '_restore_output("stderr", 2)' in hook
 
@@ -32,8 +31,18 @@ def test_installer_is_per_user_and_preserves_data_by_default():
 
 
 def test_build_script_generates_checksums_and_unsigned_names():
-    script = (ROOT / "scripts" / "build_windows_distribution.ps1").read_text(encoding="utf-8")
-    assert "Get-FileHash" in script
-    assert "SHA256" in script
-    assert '"unsigned"' in script
-    assert "OV_LLM_SIGN_CERT_SHA1" in script
+    # The canonical release entrypoint is build_release.ps1; the legacy wrapper delegates to it.
+    release = (ROOT / "scripts" / "build_release.ps1").read_text(encoding="utf-8")
+    assert "release_tools.py checksums" in release
+    assert "release_tools.py verify-checksums" in release
+    assert "unsigned artifacts" in release
+    assert "OV_LLM_SIGN_CERT_SHA1" in release
+
+    wrapper = (ROOT / "scripts" / "build_windows_distribution.ps1").read_text(encoding="utf-8")
+    assert "build_release.ps1" in wrapper
+    assert "Unsigned = $true" in wrapper
+    assert "GenerateChecksums = $true" in wrapper
+
+    scan = (ROOT / "scripts" / "release_scan.py").read_text(encoding="utf-8")
+    assert "hashlib.sha256" in scan
+    assert "{sha256_file(path)}  {path.name}" in scan

@@ -18,7 +18,11 @@ from .hardware import cpu_details, device_details, fingerprint, package_version
 class SnapshotMixin:
     def hardware_snapshot(self, *, refresh: bool = False) -> dict[str, Any]:
         now = time.monotonic()
-        if not refresh and self._snapshot is not None and now - self._snapshot_at < SNAPSHOT_TTL_SECONDS:
+        if (
+            not refresh
+            and self._snapshot is not None
+            and now - self._snapshot_at < SNAPSHOT_TTL_SECONDS
+        ):
             return self._snapshot
 
         memory = memory_stats()

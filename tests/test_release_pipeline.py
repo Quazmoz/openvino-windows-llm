@@ -2,6 +2,7 @@ import zipfile
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from app.build_info import load_build_info
 from app.release_models import ReleaseManifest, artifact_filename
@@ -53,7 +54,7 @@ def test_checksums_are_generated_and_verified(tmp_path):
 
 def test_manifest_schema_rejects_unknown_fields(tmp_path):
     payload = {"schema_version": 1, "unexpected": True}
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError):
         ReleaseManifest.model_validate(payload)
 
 

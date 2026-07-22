@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 
 class TrayPhase(StrEnum):
@@ -121,7 +122,7 @@ def snapshot_from_status(
     if isinstance(preparing, Mapping) and preparing.get("status") == "running":
         stage = str(preparing.get("stage_label") or preparing.get("stage") or "Preparing model")
         raw_percent = preparing.get("percent")
-        if isinstance(raw_percent, (int, float)):
+        if isinstance(raw_percent, int | float):
             percent = max(0.0, min(float(raw_percent), 100.0))
         return TraySnapshot(
             phase=TrayPhase.PREPARING,

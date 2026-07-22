@@ -7,13 +7,30 @@ import re
 import zipfile
 from pathlib import Path, PurePosixPath
 
-_SECRET_NAME = re.compile(r"(^|[._-])(api[_-]?key|token|password|secret|private[_-]?key)([._-]|$)", re.I)
-_SECRET_VALUE = re.compile(r"Bearer\s+\S{12,}|hf_[A-Za-z0-9_=-]{8,}|(?:api[_-]?key|token|password|secret)\s*[:=]\s*['\"]?\S{8,}", re.I)
+_SECRET_NAME = re.compile(
+    r"(^|[._-])(api[_-]?key|token|password|secret|private[_-]?key)([._-]|$)", re.I
+)
+_SECRET_VALUE = re.compile(
+    r"Bearer\s+\S{12,}|hf_[A-Za-z0-9_=-]{8,}|(?:api[_-]?key|token|password|secret)\s*[:=]\s*['\"]?\S{8,}",
+    re.I,
+)
 _LOCAL_PATH = re.compile(r"(?:[A-Za-z]:\\+(?:Users|home)\\+|/(?:home|Users)/)[^\r\n\"']+", re.I)
 _FORBIDDEN_NAMES = {".env", ".env.local", ".env.production", "desktop-instance.json"}
 _FORBIDDEN_SUFFIXES = {".pfx", ".p12", ".pem", ".key", ".crt", ".cer"}
 _FORBIDDEN_DIRS = {"models", "model-cache", "huggingface", "openvino-cache", ".cache", "cache"}
-_TEXT_SUFFIXES = {".txt", ".json", ".md", ".toml", ".ini", ".cfg", ".yaml", ".yml", ".ps1", ".py", ".iss"}
+_TEXT_SUFFIXES = {
+    ".txt",
+    ".json",
+    ".md",
+    ".toml",
+    ".ini",
+    ".cfg",
+    ".yaml",
+    ".yml",
+    ".ps1",
+    ".py",
+    ".iss",
+}
 
 
 def sha256_file(path: Path) -> str:
@@ -32,8 +49,12 @@ def verify_release_requirements(path: Path) -> None:
         if not line or line.startswith("#"):
             continue
         requirement = line.split(";", 1)[0].strip()
-        if "==" not in requirement or any(op in requirement for op in (">=", "<=", "~=", "!=", " @ ")):
-            raise RuntimeError(f"Release dependency must use an exact == pin at {path.name}:{number}: {line}")
+        if "==" not in requirement or any(
+            op in requirement for op in (">=", "<=", "~=", "!=", " @ ")
+        ):
+            raise RuntimeError(
+                f"Release dependency must use an exact == pin at {path.name}:{number}: {line}"
+            )
 
 
 def verify_native_distribution(root: Path) -> None:
@@ -101,7 +122,9 @@ def scan_release_path(path: Path) -> None:
             try:
                 _check_name(relative, suffix)
             except RuntimeError as exc:
-                message = str(exc).replace("Forbidden release file", "Forbidden release archive entry")
+                message = str(exc).replace(
+                    "Forbidden release file", "Forbidden release archive entry"
+                )
                 raise RuntimeError(message) from exc
             if suffix in _TEXT_SUFFIXES and item.file_size <= 2 * 1024 * 1024:
                 _check_text(archive.read(item).decode("utf-8", errors="ignore"), relative)
@@ -109,10 +132,14 @@ def scan_release_path(path: Path) -> None:
 
 def write_checksums(output_dir: Path, version: str, filename_factory) -> Path:
     checksum_path = output_dir / filename_factory(version, "checksums")
-    files = sorted(path for path in output_dir.iterdir() if path.is_file() and path != checksum_path)
+    files = sorted(
+        path for path in output_dir.iterdir() if path.is_file() and path != checksum_path
+    )
     if not files:
         raise RuntimeError("No release artifacts were found for checksum generation.")
-    checksum_path.write_text("\n".join(f"{sha256_file(path)}  {path.name}" for path in files) + "\n", encoding="ascii")
+    checksum_path.write_text(
+        "\n".join(f"{sha256_file(path)}  {path.name}" for path in files) + "\n", encoding="ascii"
+    )
     verify_checksums(checksum_path)
     return checksum_path
 

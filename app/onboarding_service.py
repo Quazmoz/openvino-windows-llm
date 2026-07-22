@@ -135,7 +135,9 @@ class PreparationJob:
                 current.started_at = now
             current.status = "active"
 
-    def terminal(self, stage: PreparationStage, message: str, *, error_code: str | None = None) -> None:
+    def terminal(
+        self, stage: PreparationStage, message: str, *, error_code: str | None = None
+    ) -> None:
         now = _utc_now()
         previous = self.stages.get(self.stage)
         if previous and previous.status == "active":
@@ -449,10 +451,14 @@ class OnboardingService:
                 await self._await_lifecycle_task(job, load_task)
             entry = self.manager.catalog_entry(job.model_id)
             if not entry.get("is_loaded"):
-                raise RuntimeError(entry.get("error") or "The model did not reach the loaded state.")
+                raise RuntimeError(
+                    entry.get("error") or "The model did not reach the loaded state."
+                )
 
             job.transition(PreparationStage.LOADING, "Confirming the loaded runtime state.")
-            job.actual_device = str(entry.get("device") or self.manager.devices.get(job.model_id) or "")
+            job.actual_device = str(
+                entry.get("device") or self.manager.devices.get(job.model_id) or ""
+            )
             if not job.actual_device:
                 raise RuntimeError("The loaded runtime did not report an actual OpenVINO device.")
 
@@ -520,7 +526,9 @@ class OnboardingService:
             )
 
     async def _cleanup_cancelled_job(self, job: PreparationJob) -> None:
-        task = self.manager.convert_tasks.get(job.model_id) or self.manager.load_tasks.get(job.model_id)
+        task = self.manager.convert_tasks.get(job.model_id) or self.manager.load_tasks.get(
+            job.model_id
+        )
         if task and not task.done():
             task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
@@ -569,7 +577,9 @@ class OnboardingService:
             )
             for state in job.stages.values()
         ]
-        available = {str(item).split(".", 1)[0].upper() for item in device_check.available_devices()}
+        available = {
+            str(item).split(".", 1)[0].upper() for item in device_check.available_devices()
+        }
         return PreparationProgressResponse(
             job_id=job.job_id,
             model_id=job.model_id,
@@ -656,9 +666,7 @@ class OnboardingService:
                 f'    api_key="{placeholder}",\n'
                 ")"
             ),
-            environment_variables=(
-                f"OPENAI_BASE_URL={base_url}\nOPENAI_API_KEY={placeholder}"
-            ),
+            environment_variables=(f"OPENAI_BASE_URL={base_url}\nOPENAI_API_KEY={placeholder}"),
             open_webui={
                 "base_url": base_url,
                 "api_key": placeholder,

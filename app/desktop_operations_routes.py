@@ -84,7 +84,7 @@ def register_desktop_operations_routes(
         if callback is None:
             raise HTTPException(status_code=409, detail="Desktop shutdown is unavailable")
         app.state.shutting_down = True
-        setattr(service.manager, "_model_manager_shutting_down", True)
+        service.manager._model_manager_shutting_down = True
         asyncio.get_running_loop().call_later(0.2, callback)
         return DesktopControlResponse(
             status="shutting_down",
@@ -175,12 +175,14 @@ def register_desktop_operations_routes(
             marker.parent.mkdir(parents=True, exist_ok=True)
             marker.write_text("restart\n", encoding="utf-8")
         except OSError as exc:
-            raise HTTPException(status_code=500, detail="Restart request could not be written.") from exc
+            raise HTTPException(
+                status_code=500, detail="Restart request could not be written."
+            ) from exc
         callback = getattr(app.state, "shutdown_callback", None)
         if callback is None:
             raise HTTPException(status_code=409, detail="Desktop restart is unavailable")
         app.state.shutting_down = True
-        setattr(service.manager, "_model_manager_shutting_down", True)
+        service.manager._model_manager_shutting_down = True
         asyncio.get_running_loop().call_later(0.2, callback)
         return DesktopControlResponse(
             status="restarting",

@@ -63,9 +63,7 @@ def _configure_file_logging(logs_dir: Path) -> None:
         backupCount=3,
         encoding="utf-8",
     )
-    handler.setFormatter(
-        logging.Formatter("%(asctime)s [%(levelname)s] [%(name)s] %(message)s")
-    )
+    handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] [%(name)s] %(message)s"))
     root.addHandler(handler)
 
 

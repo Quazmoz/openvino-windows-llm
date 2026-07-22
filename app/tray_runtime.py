@@ -67,9 +67,7 @@ class TrayRuntimeMixin:
 
     def _run_headless(self) -> int:
         deadline = (
-            time.monotonic() + self.args.headless_seconds
-            if self.args.headless_seconds
-            else None
+            time.monotonic() + self.args.headless_seconds if self.args.headless_seconds else None
         )
         while not self.stop_event.wait(0.5):
             self._poll_once()
@@ -111,5 +109,7 @@ class TrayRuntimeMixin:
             return 0
         except Exception as exc:  # noqa: BLE001 - tray backend boundary
             logger.exception("Tray library failed")
-            show_dialog(APP_TITLE, f"The tray icon stopped unexpectedly: {str(exc)[:240]}", error=True)
+            show_dialog(
+                APP_TITLE, f"The tray icon stopped unexpectedly: {str(exc)[:240]}", error=True
+            )
             return 7

@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import math
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 from .common import base_device, infer_parameter_count_b, safe_float
 
@@ -20,7 +21,9 @@ class ModelEstimateMixin:
         converted_gb = actual_converted_gb or estimated_converted_gb
 
         context_len = max(int(getattr(cfg, "max_context_len", 2048) or 2048), 128)
-        kv_cache_gb = min(max(context_len * math.sqrt(max(parameter_count_b, 0.02)) * 0.000055, 0.03), 10.0)
+        kv_cache_gb = min(
+            max(context_len * math.sqrt(max(parameter_count_b, 0.02)) * 0.000055, 0.03), 10.0
+        )
         runtime_memory_gb = max(converted_gb * 1.22 + kv_cache_gb + 0.35, 0.5)
 
         target = device or getattr(cfg, "recommended_device", "CPU") or "CPU"

@@ -738,7 +738,7 @@ def create_app(settings: Settings) -> FastAPI:
                     "tags": [
                         str(tag)[:200]
                         for tag in item.get("tags", [])[:50]
-                        if isinstance(tag, (str, int, float))
+                        if isinstance(tag, str | int | float)
                     ]
                     if isinstance(item.get("tags"), list)
                     else [],

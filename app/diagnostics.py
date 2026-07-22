@@ -4,21 +4,32 @@ from __future__ import annotations
 
 import platform
 import zipfile
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Callable, Iterable, Mapping
+from typing import Any
 
 from app import __version__
 from app.diagnostics_privacy import (
-    diagnostics_confirmation_summary, json_bytes, local_hardware_snapshot,
-    redact_path, safe_archive_name, safe_disk_payload, sanitize_text, sanitize_value,
-    bounded_log_text, windows_edition,
+    bounded_log_text,
+    diagnostics_confirmation_summary,
+    json_bytes,
+    local_hardware_snapshot,
+    safe_archive_name,
+    safe_disk_payload,
+    sanitize_text,
+    sanitize_value,
+    windows_edition,
+)
+from app.diagnostics_privacy import (
+    redact_path as redact_path,
 )
 from app.diagnostics_sections import DiagnosticsSectionsMixin
 from app.paths import RuntimePaths
 
 SCHEMA_VERSION = 1
+
 
 @dataclass(frozen=True)
 class DiagnosticsResult:
@@ -63,7 +74,9 @@ class DiagnosticsCollector(DiagnosticsSectionsMixin):
 
         files: dict[str, bytes] = {}
         categories: list[str] = []
-        self._collect_json(files, "application.json", self._application_payload, categories, "application")
+        self._collect_json(
+            files, "application.json", self._application_payload, categories, "application"
+        )
         self._collect_json(files, "hardware.json", self._hardware_payload, categories, "hardware")
         self._collect_json(files, "runtime.json", self._runtime_payload, categories, "runtime")
         self._collect_json(
@@ -73,7 +86,9 @@ class DiagnosticsCollector(DiagnosticsSectionsMixin):
             categories,
             "configuration",
         )
-        self._collect_json(files, "benchmarks.json", self._benchmark_payload, categories, "benchmarks")
+        self._collect_json(
+            files, "benchmarks.json", self._benchmark_payload, categories, "benchmarks"
+        )
         self._collect_json(files, "events.json", self._events_payload, categories, "events")
         self._collect_logs(files, categories)
         self._collect_certification_summaries(files, categories)
@@ -103,7 +118,9 @@ class DiagnosticsCollector(DiagnosticsSectionsMixin):
                 temp.unlink(missing_ok=True)
             except OSError:
                 pass
-            raise RuntimeError(f"Diagnostics ZIP could not be created: {sanitize_text(exc)}") from exc
+            raise RuntimeError(
+                f"Diagnostics ZIP could not be created: {sanitize_text(exc)}"
+            ) from exc
 
         return DiagnosticsResult(
             path=output,
@@ -115,7 +132,9 @@ class DiagnosticsCollector(DiagnosticsSectionsMixin):
         resolved = directory.resolve()
         expected = self.paths.diagnostics_dir.resolve()
         if resolved != expected:
-            raise RuntimeError("Diagnostics output must remain inside the application diagnostics directory.")
+            raise RuntimeError(
+                "Diagnostics output must remain inside the application diagnostics directory."
+            )
         if directory.is_symlink():
             raise RuntimeError("Diagnostics directory cannot be a symbolic link.")
         probe = directory / ".diagnostics-write-test"
@@ -194,4 +213,11 @@ class DiagnosticsCollector(DiagnosticsSectionsMixin):
         }
 
 
-__all__ = ["DiagnosticsCollector", "DiagnosticsResult", "diagnostics_confirmation_summary", "safe_archive_name", "sanitize_text", "bounded_log_text"]
+__all__ = [
+    "DiagnosticsCollector",
+    "DiagnosticsResult",
+    "diagnostics_confirmation_summary",
+    "safe_archive_name",
+    "sanitize_text",
+    "bounded_log_text",
+]

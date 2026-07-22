@@ -46,8 +46,7 @@ def make_snapshot(*, ram=32.0, available=28.0, disk=100.0, devices=("CPU", "GPU"
         "disk": {"free_gb": disk, "total_gb": 500.0, "models_gb": 0.0},
         "gpu": {"total_gb": 16.0},
         "devices": [
-            {"device": item, "base": item, "driver_version": "test-driver"}
-            for item in devices
+            {"device": item, "base": item, "driver_version": "test-driver"} for item in devices
         ],
         "available_devices": list(devices),
         "runtime": {"openvino": "test", "openvino_genai": "test", "mock": False},

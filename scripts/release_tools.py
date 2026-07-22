@@ -8,20 +8,27 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from app.release_models import ReleaseManifest, artifact_filename
-from app.version import __version__
-from scripts.release_manifest import (
+# Ensure the repository root is importable when this file is invoked directly as
+# `python scripts/release_tools.py` (the isolated release venv installs `app` but
+# never `scripts`, and script invocation only puts the scripts/ dir on sys.path).
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from app.release_models import ReleaseManifest, artifact_filename  # noqa: E402
+from app.version import __version__  # noqa: E402
+from scripts.release_manifest import (  # noqa: E402
     build_manifest,
     validate_version,
     verify_version_consistency,
     write_build_info,
     write_version_info,
 )
-from scripts.release_scan import (
+from scripts.release_scan import (  # noqa: E402
     scan_release_path,
     verify_checksums,
     verify_native_distribution,
     verify_release_requirements,
+)
+from scripts.release_scan import (  # noqa: E402
     write_checksums as _write_checksums,
 )
 

@@ -45,7 +45,9 @@ def manifest(version="0.5.0", channel="stable"):
         source_tree_clean=True,
         artifacts=[artifact(version, "installer"), artifact(version, "portable")],
         api_compatibility=ApiCompatibility(),
-        openvino=OpenVinoCompatibility(minimum_version="2025.1.0", bundled_version="2025.1.0", genai_version="2025.1.0"),
+        openvino=OpenVinoCompatibility(
+            minimum_version="2025.1.0", bundled_version="2025.1.0", genai_version="2025.1.0"
+        ),
         data_compatibility=DataCompatibility(
             minimum_supported_schema=1,
             current_schema=1,
@@ -83,8 +85,14 @@ def test_release_channel_filtering():
 
 
 def test_artifact_names_are_deterministic():
-    assert artifact_filename("0.3.0", "installer") == "OpenVINO-Windows-LLM-0.3.0-windows-x64-installer.exe"
-    assert artifact_filename("0.3.0", "portable") == "OpenVINO-Windows-LLM-0.3.0-windows-x64-portable.zip"
+    assert (
+        artifact_filename("0.3.0", "installer")
+        == "OpenVINO-Windows-LLM-0.3.0-windows-x64-installer.exe"
+    )
+    assert (
+        artifact_filename("0.3.0", "portable")
+        == "OpenVINO-Windows-LLM-0.3.0-windows-x64-portable.zip"
+    )
     assert artifact_filename("0.3.0", "checksums") == "OpenVINO-Windows-LLM-0.3.0-checksums.txt"
 
 
@@ -96,10 +104,16 @@ def test_signed_state_requires_verified_signature():
 
 
 def test_official_release_urls_are_strict():
-    assert is_official_release_url("https://github.com/Quazmoz/openvino-windows-llm/releases/download/v0.5.0/file.zip")
-    assert not is_official_release_url("http://github.com/Quazmoz/openvino-windows-llm/releases/download/v0.5.0/file.zip")
+    assert is_official_release_url(
+        "https://github.com/Quazmoz/openvino-windows-llm/releases/download/v0.5.0/file.zip"
+    )
+    assert not is_official_release_url(
+        "http://github.com/Quazmoz/openvino-windows-llm/releases/download/v0.5.0/file.zip"
+    )
     assert not is_official_release_url("https://evil.example/releases/download/v0.5.0/file.zip")
-    assert not is_official_release_url("https://github.com/Other/repo/releases/download/v0.5.0/file.zip")
+    assert not is_official_release_url(
+        "https://github.com/Other/repo/releases/download/v0.5.0/file.zip"
+    )
 
 
 def test_manifest_selects_installation_mode_artifact():
@@ -121,7 +135,13 @@ def test_manifest_rejects_wrong_artifact_filename_and_stable_prerelease():
 def test_data_schema_and_rollback_warnings():
     target = manifest().data_compatibility
     assert schema_compatibility(1, target) == (True, None)
-    newer_target = target.model_copy(update={"minimum_supported_schema": 2, "current_schema": 2, "downgrade_compatible_from_schema": 2})
+    newer_target = target.model_copy(
+        update={
+            "minimum_supported_schema": 2,
+            "current_schema": 2,
+            "downgrade_compatible_from_schema": 2,
+        }
+    )
     assert not schema_compatibility(1, newer_target)[0]
     assert rollback_warning(2, target)
 
@@ -141,6 +161,7 @@ def test_platform_compatibility_rejects_wrong_architecture_and_old_windows():
     )
     assert not compatible
     assert "19041" in warning
-    assert platform_compatibility(
-        value, os_name="nt", machine="AMD64", windows_build=19041
-    ) == (True, None)
+    assert platform_compatibility(value, os_name="nt", machine="AMD64", windows_build=19041) == (
+        True,
+        None,
+    )

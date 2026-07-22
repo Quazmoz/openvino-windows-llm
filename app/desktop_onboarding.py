@@ -111,7 +111,11 @@ def augment_windows_scan(
         if not capabilities:
             continue
         name = str(device.get("base") or device.get("device") or "device").upper()
-        value = ", ".join(str(item) for item in capabilities) if isinstance(capabilities, list) else str(capabilities)
+        value = (
+            ", ".join(str(item) for item in capabilities)
+            if isinstance(capabilities, list)
+            else str(capabilities)
+        )
         additions.append(
             SystemItem(
                 key=f"device-{name.lower()}-capabilities",
@@ -241,9 +245,7 @@ class DesktopOnboardingService(OnboardingService):
                 f"{required_gb:.1f} GB is required."
             )
 
-    async def start_preparation(
-        self, request: PrepareModelRequest
-    ) -> PreparationProgressResponse:
+    async def start_preparation(self, request: PrepareModelRequest) -> PreparationProgressResponse:
         self._validate_selected_storage_capacity(request)
         progress = await super().start_preparation(request)
         job = self._jobs[progress.job_id]

@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 from app import model_registry as registry
 from app.config import BASE_DIR
@@ -96,8 +97,7 @@ class ProfileRankingMixin:
     def summary(self, engines: Mapping[str, Any], devices: Mapping[str, str]) -> dict[str, Any]:
         snapshot = self.hardware_snapshot()
         profiles = {
-            profile: self.recommend_profile(profile, snapshot=snapshot)
-            for profile in PROFILE_ORDER
+            profile: self.recommend_profile(profile, snapshot=snapshot) for profile in PROFILE_ORDER
         }
         loaded_profiles = {
             profile: self.recommend_profile(

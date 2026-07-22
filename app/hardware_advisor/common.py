@@ -14,21 +14,33 @@ PROFILE_LABELS = {
     "lowest-power": "Lowest power",
 }
 _PROFILE_ALIASES = {
-    "fast": "fastest", "speed": "fastest", "default": "balanced",
-    "quality": "best-quality", "best": "best-quality", "best-quality": "best-quality",
-    "memory": "lowest-memory", "low-memory": "lowest-memory",
-    "power": "lowest-power", "low-power": "lowest-power",
+    "fast": "fastest",
+    "speed": "fastest",
+    "default": "balanced",
+    "quality": "best-quality",
+    "best": "best-quality",
+    "best-quality": "best-quality",
+    "memory": "lowest-memory",
+    "low-memory": "lowest-memory",
+    "power": "lowest-power",
+    "low-power": "lowest-power",
 }
 _AUTO_RE = re.compile(r"^auto(?:[:/](?P<profile>[a-z0-9 _-]+))?$", re.IGNORECASE)
 _SIZE_B_RE = re.compile(r"(?<![a-z0-9])([0-9]+(?:\.[0-9]+)?)\s*b(?:illion)?(?![a-z])", re.I)
 _SIZE_M_RE = re.compile(r"(?<![a-z0-9])([0-9]+(?:\.[0-9]+)?)\s*m(?:illion)?(?![a-z])", re.I)
 _KNOWN_PARAMETER_COUNTS_B = {
-    "tinyllama": 1.1, "phi-3.5-mini": 3.8, "phi3.5-mini": 3.8,
-    "phi-4-mini": 3.8, "phi4-mini": 3.8, "bge-small-en-v1.5": 0.033,
+    "tinyllama": 1.1,
+    "phi-3.5-mini": 3.8,
+    "phi3.5-mini": 3.8,
+    "phi-4-mini": 3.8,
+    "phi4-mini": 3.8,
+    "bge-small-en-v1.5": 0.033,
 }
 AUTO_BENCHMARK_TTL_SECONDS = 6 * 60 * 60
 SNAPSHOT_TTL_SECONDS = 30.0
-AUTOMATIC_PROMPT = "Reply with one short sentence confirming this local OpenVINO benchmark completed."
+AUTOMATIC_PROMPT = (
+    "Reply with one short sentence confirming this local OpenVINO benchmark completed."
+)
 
 
 def utc_now() -> str:

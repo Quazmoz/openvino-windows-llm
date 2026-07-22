@@ -5,9 +5,10 @@ from __future__ import annotations
 import json
 import urllib.error
 import urllib.request
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Callable, Literal
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -97,9 +98,7 @@ def check_due(
 ) -> bool:
     if last_checked_at is None:
         return True
-    normalized = (
-        last_checked_at if last_checked_at.tzinfo else last_checked_at.replace(tzinfo=UTC)
-    )
+    normalized = last_checked_at if last_checked_at.tzinfo else last_checked_at.replace(tzinfo=UTC)
     return now - normalized >= interval
 
 
@@ -110,9 +109,7 @@ def _read_json(response) -> object:
     return json.loads(raw.decode("utf-8"))
 
 
-def _candidate_manifest_url(
-    releases: object, channel: ReleaseChannel
-) -> tuple[str, str] | None:
+def _candidate_manifest_url(releases: object, channel: ReleaseChannel) -> tuple[str, str] | None:
     if not isinstance(releases, list):
         raise ValueError("GitHub releases response is not a list.")
     candidates: list[tuple[SemanticVersion, str, str]] = []

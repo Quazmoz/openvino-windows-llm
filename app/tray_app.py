@@ -21,6 +21,7 @@ from app.tray_runtime import TrayRuntimeMixin
 from app.tray_state import TrayPhase, TraySnapshot
 from app.tray_support import configure_logging
 
+
 class TrayApplication(
     TrayRuntimeMixin,
     TrayPollingMixin,

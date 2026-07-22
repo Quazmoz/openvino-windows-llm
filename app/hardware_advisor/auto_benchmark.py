@@ -27,7 +27,9 @@ class AutoBenchmarkRunnerMixin:
         cfg = manager.catalog.get(model_id)
         if cfg is None or "embedding" in str(getattr(cfg, "backend", "")).lower():
             return
-        device = manager.devices.get(model_id) or getattr(manager.engines[model_id], "device", "CPU")
+        device = manager.devices.get(model_id) or getattr(
+            manager.engines[model_id], "device", "CPU"
+        )
         if self._recent_auto_benchmark_exists(model_id, device):
             return
         task = asyncio.create_task(
@@ -144,7 +146,9 @@ class AutoBenchmarkRunnerMixin:
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # noqa: BLE001 - background evidence must never break model loading
-            manager.emit_event("warning", f"Automatic advisor benchmark skipped for {cfg.name}: {exc}")
+            manager.emit_event(
+                "warning", f"Automatic advisor benchmark skipped for {cfg.name}: {exc}"
+            )
 
     async def shutdown(self) -> None:
         # A load-finalization task can schedule the actual benchmark while it is being

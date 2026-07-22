@@ -9,7 +9,6 @@ from app.desktop_onboarding import (
 )
 from app.onboarding_models import PreparationStage, SystemScanResponse
 
-
 ROOT = Path(__file__).resolve().parent.parent
 
 

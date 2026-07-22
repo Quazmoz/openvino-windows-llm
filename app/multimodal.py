@@ -298,7 +298,7 @@ def decode_data_url(url: str) -> ImagePayload:
 def validate_content(content: Any) -> Any:
     """Normalize one OpenAI-style content value and decode each image once."""
 
-    if content is None or isinstance(content, (str, MultimodalContent)):
+    if content is None or isinstance(content, str | MultimodalContent):
         return content
     if not isinstance(content, list):
         raise ValueError("Message content must be a string, a list of content parts, or null.")
@@ -405,7 +405,7 @@ def content_to_transport_text(content: Any) -> str | MultimodalContent:
     normalized = validate_content(content)
     if normalized is None:
         return ""
-    if isinstance(normalized, (str, MultimodalContent)):
+    if isinstance(normalized, str | MultimodalContent):
         return normalized
     raise TypeError(f"Unexpected normalized content type: {type(normalized).__name__}")
 

@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 from .common import base_device, normalize_profile, safe_float
 
@@ -28,10 +29,14 @@ class PreflightMixin:
         total_ram = safe_float(memory.get("total_gb"))
         free_disk = safe_float(disk.get("free_gb"))
         runtime_memory = safe_float(estimates.get("runtime_memory_gb"))
-        required_disk = 0.35 if downloaded else (
-            safe_float(estimates.get("download_size_gb"))
-            + safe_float(estimates.get("converted_size_gb")) * 1.15
-            + 1.0
+        required_disk = (
+            0.35
+            if downloaded
+            else (
+                safe_float(estimates.get("download_size_gb"))
+                + safe_float(estimates.get("converted_size_gb")) * 1.15
+                + 1.0
+            )
         )
         base = base_device(target)
         available_bases = {base_device(item) for item in snapshot.get("available_devices", [])}

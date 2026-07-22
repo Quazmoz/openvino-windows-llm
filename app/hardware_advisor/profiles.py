@@ -6,4 +6,3 @@ from .profile_ranking import ProfileRankingMixin
 
 class ProfileMixin(ProfileRankingMixin, DeviceProfileMixin):
     """Provide device selection and saved recommendation profiles."""
-

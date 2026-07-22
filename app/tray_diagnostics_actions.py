@@ -11,20 +11,25 @@ from app.tray_support import APP_TITLE
 
 logger = logging.getLogger("ov-llm.tray")
 
+
 class TrayDiagnosticsActionsMixin:
     def export_diagnostics(self) -> None:
         if not confirm_dialog(APP_TITLE, diagnostics_confirmation_summary()):
             return
-        payload = self.controller.status_payload() or self.last_status_payload or {
-            "application_version": __version__,
-            "installation_mode": "portable" if self.paths.portable else "installed",
-            "controller_available": True,
-            "server_port": self.controller.port,
-            "live": False,
-            "ready": False,
-            "server_status": "stopped",
-            "events": [],
-        }
+        payload = (
+            self.controller.status_payload()
+            or self.last_status_payload
+            or {
+                "application_version": __version__,
+                "installation_mode": "portable" if self.paths.portable else "installed",
+                "controller_available": True,
+                "server_port": self.controller.port,
+                "live": False,
+                "ready": False,
+                "server_status": "stopped",
+                "events": [],
+            }
+        )
         hardware = None
         npu = payload.get("npu_readiness") if isinstance(payload, dict) else None
         if self.controller.running:
@@ -63,4 +68,3 @@ class TrayDiagnosticsActionsMixin:
             "Diagnostics ZIP created locally. Review it before attaching it to a GitHub issue.\n\n"
             f"{result.path}",
         )
-

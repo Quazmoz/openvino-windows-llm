@@ -9,7 +9,7 @@ import os
 from datetime import UTC, datetime
 
 from app import __version__
-from app.tray_state import TrayPhase, TraySnapshot, snapshot_from_status, tooltip
+from app.tray_state import snapshot_from_status, tooltip
 from app.tray_support import POLL_SECONDS, atomic_json, tray_icon
 
 logger = logging.getLogger("ov-llm.tray")

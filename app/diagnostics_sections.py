@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 from app.diagnostics_privacy import (
     benchmark_summary,
@@ -94,9 +95,7 @@ class DiagnosticsSectionsMixin:
             data = [value] if isinstance(value, Mapping) else []
         return {
             "summaries": [
-                benchmark_summary(item)
-                for item in data[:20]
-                if isinstance(item, Mapping)
+                benchmark_summary(item) for item in data[:20] if isinstance(item, Mapping)
             ]
         }
 
@@ -159,8 +158,6 @@ class DiagnosticsSectionsMixin:
                 )
                 included = True
             except Exception as exc:  # noqa: BLE001
-                self.collection_errors.append(
-                    f"certification/{path.name}: {sanitize_text(exc)}"
-                )
+                self.collection_errors.append(f"certification/{path.name}: {sanitize_text(exc)}")
         if included:
             categories.append("certification summaries")

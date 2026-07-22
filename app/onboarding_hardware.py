@@ -6,7 +6,8 @@ import json
 import os
 import platform
 import subprocess
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 from app.hardware_advisor.common import utc_now
 from app.onboarding_models import (

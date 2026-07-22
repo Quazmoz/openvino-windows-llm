@@ -18,8 +18,7 @@ def snapshot(*, mock=False, devices=None, cpu="Intel CPU"):
         "disk": {"free_gb": 100},
         "available_devices": devices,
         "devices": [
-            {"device": item, "base": item.split(".")[0], "full_name": item}
-            for item in devices
+            {"device": item, "base": item.split(".")[0], "full_name": item} for item in devices
         ],
         "runtime": {"openvino": "2026.2", "openvino_genai": "2026.2", "mock": mock},
     }
@@ -41,9 +40,7 @@ def test_hardware_without_plugin_is_distinct_from_no_npu():
 
 
 def test_mock_mode_never_claims_hardware_support():
-    result = classify_npu_readiness(
-        snapshot(mock=True, devices=["CPU", "NPU"]), pnp_devices=[]
-    )
+    result = classify_npu_readiness(snapshot(mock=True, devices=["CPU", "NPU"]), pnp_devices=[])
     assert result.state is NpuState.MOCK
     assert result.usable is False
 

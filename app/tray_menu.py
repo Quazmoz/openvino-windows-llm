@@ -6,11 +6,17 @@ import contextlib
 import logging
 import threading
 import webbrowser
-from typing import Callable
+from collections.abc import Callable
 
 from app import __version__
 from app.desktop_shell import copy_to_clipboard, open_path, show_dialog
-from app.tray_state import TrayPhase, TraySnapshot, connection_information, menu_state, snapshot_from_status
+from app.tray_state import (
+    TrayPhase,
+    TraySnapshot,
+    connection_information,
+    menu_state,
+    snapshot_from_status,
+)
 from app.tray_support import APP_TITLE
 
 logger = logging.getLogger("ov-llm.tray")
@@ -21,42 +27,107 @@ class TrayMenuMixin:
         Menu = pystray.Menu
         Item = pystray.MenuItem
         return Menu(
-            Item("Open Chat", self._action(self.open_chat), default=True, enabled=self._enabled("open_chat")),
+            Item(
+                "Open Chat",
+                self._action(self.open_chat),
+                default=True,
+                enabled=self._enabled("open_chat"),
+            ),
             Item(
                 "Status",
                 Menu(
-                    Item(lambda _item: f"Server: {self._snapshot().server_status}", lambda *_args: None, enabled=False),
-                    Item(lambda _item: f"Model: {self._snapshot().active_model_name or self._snapshot().active_model_id or 'None'}", lambda *_args: None, enabled=False),
-                    Item(lambda _item: f"Device: {self._snapshot().actual_device or 'None'}", lambda *_args: None, enabled=False),
-                    Item(lambda _item: f"Preparation: {self._preparation_label()}", lambda *_args: None, enabled=False),
+                    Item(
+                        lambda _item: f"Server: {self._snapshot().server_status}",
+                        lambda *_args: None,
+                        enabled=False,
+                    ),
+                    Item(
+                        lambda _item: f"Model: {self._snapshot().active_model_name or self._snapshot().active_model_id or 'None'}",
+                        lambda *_args: None,
+                        enabled=False,
+                    ),
+                    Item(
+                        lambda _item: f"Device: {self._snapshot().actual_device or 'None'}",
+                        lambda *_args: None,
+                        enabled=False,
+                    ),
+                    Item(
+                        lambda _item: f"Preparation: {self._preparation_label()}",
+                        lambda *_args: None,
+                        enabled=False,
+                    ),
                 ),
             ),
             Item(
                 "Copy",
                 Menu(
-                    Item("API Base URL", self._action(self.copy_api_url), enabled=self._enabled("copy_connection")),
-                    Item("Chat URL", self._action(self.copy_chat_url), enabled=self._enabled("copy_connection")),
-                    Item("OpenAI Configuration", self._action(self.copy_openai_configuration), enabled=self._enabled("copy_connection")),
+                    Item(
+                        "API Base URL",
+                        self._action(self.copy_api_url),
+                        enabled=self._enabled("copy_connection"),
+                    ),
+                    Item(
+                        "Chat URL",
+                        self._action(self.copy_chat_url),
+                        enabled=self._enabled("copy_connection"),
+                    ),
+                    Item(
+                        "OpenAI Configuration",
+                        self._action(self.copy_openai_configuration),
+                        enabled=self._enabled("copy_connection"),
+                    ),
                 ),
             ),
             Item(
                 "Server",
                 Menu(
-                    Item("Start Server", self._action(self.start_server), enabled=self._enabled("start_server")),
-                    Item("Stop Server", self._action(self.stop_server), enabled=self._enabled("stop_server")),
-                    Item("Restart Server", self._action(self.restart_server), enabled=self._enabled("restart_server")),
-                    Item("Run Hardware Scan", self._action(self.run_hardware_scan), enabled=self._enabled("run_hardware_scan")),
-                    Item("Run Short Benchmark", self._action(self.run_short_benchmark), enabled=self._enabled("run_benchmark")),
+                    Item(
+                        "Start Server",
+                        self._action(self.start_server),
+                        enabled=self._enabled("start_server"),
+                    ),
+                    Item(
+                        "Stop Server",
+                        self._action(self.stop_server),
+                        enabled=self._enabled("stop_server"),
+                    ),
+                    Item(
+                        "Restart Server",
+                        self._action(self.restart_server),
+                        enabled=self._enabled("restart_server"),
+                    ),
+                    Item(
+                        "Run Hardware Scan",
+                        self._action(self.run_hardware_scan),
+                        enabled=self._enabled("run_hardware_scan"),
+                    ),
+                    Item(
+                        "Run Short Benchmark",
+                        self._action(self.run_short_benchmark),
+                        enabled=self._enabled("run_benchmark"),
+                    ),
                 ),
             ),
             Item(
                 "Folders",
                 Menu(
-                    Item("Open Model Folder", self._action(self.open_model_folder), enabled=self._enabled("open_model_folder")),
-                    Item("Open Log Folder", self._action(self.open_log_folder), enabled=self._enabled("open_log_folder")),
+                    Item(
+                        "Open Model Folder",
+                        self._action(self.open_model_folder),
+                        enabled=self._enabled("open_model_folder"),
+                    ),
+                    Item(
+                        "Open Log Folder",
+                        self._action(self.open_log_folder),
+                        enabled=self._enabled("open_log_folder"),
+                    ),
                 ),
             ),
-            Item("Export Diagnostics", self._action(self.export_diagnostics), enabled=self._enabled("export_diagnostics")),
+            Item(
+                "Export Diagnostics",
+                self._action(self.export_diagnostics),
+                enabled=self._enabled("export_diagnostics"),
+            ),
             Item(
                 "Start with Windows",
                 self._toggle_startup,
@@ -134,11 +205,15 @@ class TrayMenuMixin:
     def restart_server(self) -> None:
         snapshot = self._snapshot()
         if snapshot.benchmark_running:
-            raise RuntimeError("Wait for the short benchmark to finish before restarting the server.")
+            raise RuntimeError(
+                "Wait for the short benchmark to finish before restarting the server."
+            )
         if snapshot.phase is TrayPhase.PREPARING:
             raise RuntimeError("Cancel or finish model preparation before restarting the server.")
         self._set_snapshot(
-            snapshot_from_status(None, port=self.controller.port, process_running=False, starting=True)
+            snapshot_from_status(
+                None, port=self.controller.port, process_running=False, starting=True
+            )
         )
         self.controller.restart(open_chat=False)
         self._poll_once()
@@ -154,7 +229,9 @@ class TrayMenuMixin:
         if not self.controller.running:
             self._start_server(open_chat=False)
         if not webbrowser.open(f"{self.controller.origin}/?updates=1", new=2):
-            raise RuntimeError(f"The browser could not be opened. Visit {self.controller.origin}/?updates=1")
+            raise RuntimeError(
+                f"The browser could not be opened. Visit {self.controller.origin}/?updates=1"
+            )
 
     def _connection(self) -> dict[str, str]:
         snapshot = self._snapshot()

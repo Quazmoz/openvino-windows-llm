@@ -48,7 +48,7 @@ def test_fresh_mock_onboarding_reaches_chat_and_persists_completion(tmp_path):
         state_store=store,
         endpoint_port=8765,
     )
-    register_onboarding_routes(app, service=service, settings=settings, instance_nonce="test-nonce")
+    register_onboarding_routes(app, service=service, settings=settings)
 
     with TestClient(app) as client:
         status = client.get("/v1/onboarding/status").json()
@@ -88,9 +88,7 @@ def test_fresh_mock_onboarding_reaches_chat_and_persists_completion(tmp_path):
             "ready",
         }
 
-        connection = client.post(
-            "/v1/onboarding/complete", json={"job_id": job["job_id"]}
-        ).json()
+        connection = client.post("/v1/onboarding/complete", json={"job_id": job["job_id"]}).json()
         assert connection["base_url"] == "http://127.0.0.1:8765/v1"
         assert connection["active_model_id"] == recommendation["model_id"]
 

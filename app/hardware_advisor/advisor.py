@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 from app.file_locks import path_lock
 
@@ -13,7 +14,9 @@ from .profiles import ProfileMixin
 
 
 class HardwareAdvisor(AutomaticBenchmarkMixin, ProfileMixin, EstimateMixin):
-    def __init__(self, settings: Any, catalog: Mapping[str, Any], *, force_mock: bool = False) -> None:
+    def __init__(
+        self, settings: Any, catalog: Mapping[str, Any], *, force_mock: bool = False
+    ) -> None:
         self.settings = settings
         self.catalog = catalog
         self.force_mock = bool(force_mock)

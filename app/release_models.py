@@ -35,7 +35,7 @@ class SemanticVersion:
     build: tuple[str, ...] = ()
 
     @classmethod
-    def parse(cls, value: str) -> "SemanticVersion":
+    def parse(cls, value: str) -> SemanticVersion:
         match = _VERSION_RE.fullmatch(value.strip())
         if not match:
             raise ValueError(f"Invalid semantic version: {value}")
@@ -226,9 +226,7 @@ class ReleaseManifest(BaseModel):
         if self.channel == "stable" and parsed.prerelease:
             raise ValueError("a stable manifest cannot contain a pre-release version")
         if self.channel == "beta":
-            if not parsed.prerelease or not parsed.prerelease[0].lower().startswith(
-                ("beta", "rc")
-            ):
+            if not parsed.prerelease or not parsed.prerelease[0].lower().startswith(("beta", "rc")):
                 raise ValueError("a beta manifest must use a beta or rc pre-release version")
         if self.channel == "nightly" and not parsed.prerelease:
             raise ValueError("a nightly manifest must use a pre-release version")
@@ -282,9 +280,7 @@ def platform_compatibility(
     return True, None
 
 
-def schema_compatibility(
-    local_schema: int, target: DataCompatibility
-) -> tuple[bool, str | None]:
+def schema_compatibility(local_schema: int, target: DataCompatibility) -> tuple[bool, str | None]:
     if local_schema < target.minimum_supported_schema:
         return False, "The installed data schema is too old for this release."
     if local_schema > target.current_schema:

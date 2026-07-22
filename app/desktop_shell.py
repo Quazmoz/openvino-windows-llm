@@ -59,6 +59,7 @@ def copy_to_clipboard(text: str) -> None:
         raise RuntimeError("Clipboard integration is only available in the Windows desktop build.")
 
     import ctypes
+
     user32 = ctypes.windll.user32
     kernel32 = ctypes.windll.kernel32
     GMEM_MOVEABLE = 0x0002
