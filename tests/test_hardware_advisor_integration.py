@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 from app.model_manager import ModelManager, NoModelsLoaded, UnknownModel
@@ -38,6 +40,57 @@ def test_model_manager_rejects_unknown_auto_profile():
     manager = bare_manager(None)
     with pytest.raises(UnknownModel, match="Unknown advisor profile"):
         manager.resolve_engine("auto:impossible")
+
+
+def test_advisor_observes_the_composed_load_scheduler():
+    async def exercise() -> None:
+        class RecordingAdvisor:
+            def __init__(self) -> None:
+                self._tasks: set[asyncio.Task] = set()
+                self.measured: list[object] = []
+                self.benchmarked: list[tuple[str, float | None]] = []
+
+            def measure_converted_size(self, cfg) -> None:
+                self.measured.append(cfg)
+
+            def schedule_auto_benchmark(self, manager, model_id, *, load_time_ms=None) -> None:
+                self.benchmarked.append((model_id, load_time_ms))
+
+        manager = ModelManager.__new__(ModelManager)
+        cfg = object()
+        manager.catalog = {"text-model": cfg}
+        manager.engines = {}
+        manager.devices = {}
+        manager.force_mock = True
+        manager._load_lock = asyncio.Lock()
+        manager.advisor = RecordingAdvisor()
+
+        async def finish_load() -> None:
+            await asyncio.sleep(0)
+            manager.engines["text-model"] = object()
+            manager.devices["text-model"] = "NPU"
+
+        def composed_schedule_load(model_id, device=None, *, draft_model=None):
+            assert model_id == "text-model"
+            assert device == "NPU"
+            assert draft_model is None
+            return asyncio.create_task(finish_load())
+
+        manager.schedule_load = composed_schedule_load
+        manager._install_advisor_load_hook()
+
+        load_task = manager.schedule_load("text-model", "NPU")
+        assert load_task is not None
+        await load_task
+        await asyncio.sleep(0)
+        pending = list(manager.advisor._tasks)
+        if pending:
+            await asyncio.gather(*pending)
+
+        assert manager.advisor.measured == [cfg]
+        assert manager.advisor.benchmarked == [("text-model", None)]
+
+    asyncio.run(exercise())
 
 
 def test_ui_composes_vision_and_hardware_advisor_extensions_once():
