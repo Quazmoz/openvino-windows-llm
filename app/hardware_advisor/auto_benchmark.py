@@ -89,10 +89,13 @@ class AutoBenchmarkRunnerMixin:
                 "run_id": run_id,
                 "model_id": model_id,
                 "requested_device": device,
-                "actual_device": getattr(engine, "actual_device", None) or getattr(engine, "device", device),
+                "actual_device": getattr(engine, "actual_device", None)
+                or getattr(engine, "device", device),
                 "load_time_ms": round(load_time_ms, 3) if load_time_ms is not None else None,
                 "time_to_first_token_ms": (
-                    round((first_token_at - started) * 1000, 3) if first_token_at is not None else None
+                    round((first_token_at - started) * 1000, 3)
+                    if first_token_at is not None
+                    else None
                 ),
                 "total_latency_ms": round(latency_s * 1000, 3),
                 "prompt_tokens": prompt_tokens,
@@ -144,9 +147,12 @@ class AutoBenchmarkRunnerMixin:
             manager.emit_event("warning", f"Automatic advisor benchmark skipped for {cfg.name}: {exc}")
 
     async def shutdown(self) -> None:
-        tasks = list(self._tasks)
-        for task in tasks:
-            task.cancel()
-        if tasks:
+        # A load-finalization task can schedule the actual benchmark while it is being
+        # cancelled. Drain in waves so shutdown cannot leave an untracked generation
+        # task running against engines that are about to be closed.
+        while self._tasks:
+            tasks = list(self._tasks)
+            self._tasks.difference_update(tasks)
+            for task in tasks:
+                task.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
-        self._tasks.clear()
