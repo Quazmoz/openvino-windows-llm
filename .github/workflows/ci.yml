@@ -150,4 +150,8 @@ jobs:
 
       - name: Compile Python release and contract tools
         run: |
-          python -m py_compile scripts/release_tools.py scripts/validate_api_contract.py
+          python -m py_compile \
+            scripts/release_tools.py \
+            scripts/release_manifest.py \
+            scripts/release_scan.py \
+            scripts/validate_api_contract.py
