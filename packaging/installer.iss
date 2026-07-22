@@ -1,14 +1,14 @@
 #ifndef MyAppVersion
-  #define MyAppVersion "0.4.0"
+  #error MyAppVersion must be supplied by scripts\build_release.ps1
+#endif
+#ifndef MyAppVersionNumeric
+  #error MyAppVersionNumeric must be supplied by scripts\build_release.ps1
 #endif
 #ifndef SourceRoot
-  #define SourceRoot "..\\dist\\OpenVINOWindowsLLM"
+  #error SourceRoot must be supplied by scripts\build_release.ps1
 #endif
 #ifndef ArtifactDir
-  #define ArtifactDir "..\\artifacts"
-#endif
-#ifndef ArtifactSuffix
-  #define ArtifactSuffix "unsigned"
+  #error ArtifactDir must be supplied by scripts\build_release.ps1
 #endif
 
 #define MyAppName "OpenVINO Windows LLM"
@@ -19,6 +19,7 @@
 AppId={{F94A3938-C943-4E6D-B482-852D4AAE06F8}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
+AppVerName={#MyAppName} {#MyAppVersion}
 AppPublisher={#MyAppPublisher}
 AppPublisherURL=https://github.com/Quazmoz/openvino-windows-llm
 AppSupportURL=https://github.com/Quazmoz/openvino-windows-llm/issues
@@ -29,22 +30,27 @@ DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
 OutputDir={#ArtifactDir}
-OutputBaseFilename=OpenVINOWindowsLLM-{#MyAppVersion}-windows-x64-setup-{#ArtifactSuffix}
+OutputBaseFilename=OpenVINO-Windows-LLM-{#MyAppVersion}-windows-x64-installer
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
+MinVersion=10.0.19041
 UninstallDisplayIcon={app}\{#MyAppExeName}
 LicenseFile=..\LICENSE
-VersionInfoVersion={#MyAppVersion}
+VersionInfoVersion={#MyAppVersionNumeric}
 VersionInfoCompany={#MyAppPublisher}
 VersionInfoDescription={#MyAppName} installer
 VersionInfoProductName={#MyAppName}
 VersionInfoProductVersion={#MyAppVersion}
 CloseApplications=yes
-RestartApplications=no
+CloseApplicationsFilter=OpenVINOWindowsLLM.exe
+RestartApplications=yes
 SetupLogging=yes
+UsePreviousAppDir=yes
+UsePreviousGroup=yes
+DisableDirPage=auto
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -63,6 +69,70 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDi
 Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall skipifsilent
 
 [Code]
+function CoreVersionPart(const Value: String; PartIndex: Integer): Integer;
+var
+  Clean, Segment: String;
+  DashPos, DotPos, Index: Integer;
+begin
+  Result := 0;
+  Clean := Value;
+  DashPos := Pos('-', Clean);
+  if DashPos > 0 then
+    Delete(Clean, DashPos, Length(Clean));
+  for Index := 0 to PartIndex do
+  begin
+    DotPos := Pos('.', Clean);
+    if DotPos > 0 then
+    begin
+      Segment := Copy(Clean, 1, DotPos - 1);
+      Delete(Clean, 1, DotPos);
+    end
+    else
+    begin
+      Segment := Clean;
+      Clean := '';
+    end;
+  end;
+  Result := StrToIntDef(Segment, 0);
+end;
+
+function CompareCoreVersions(const Left, Right: String): Integer;
+var
+  Index, LeftPart, RightPart: Integer;
+begin
+  Result := 0;
+  for Index := 0 to 2 do
+  begin
+    LeftPart := CoreVersionPart(Left, Index);
+    RightPart := CoreVersionPart(Right, Index);
+    if LeftPart < RightPart then begin Result := -1; exit; end;
+    if LeftPart > RightPart then begin Result := 1; exit; end;
+  end;
+end;
+
+function InstalledVersion(): String;
+var
+  Key: String;
+begin
+  Result := '';
+  Key := 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{F94A3938-C943-4E6D-B482-852D4AAE06F8}_is1';
+  RegQueryStringValue(HKCU, Key, 'DisplayVersion', Result);
+end;
+
+function InitializeSetup(): Boolean;
+var
+  Existing: String;
+begin
+  Result := True;
+  Existing := InstalledVersion();
+  if (Existing <> '') and (CompareCoreVersions(Existing, '{#MyAppVersion}') > 0) then
+    Result := MsgBox(
+      'A newer version (' + Existing + ') is installed.' + #13#10 + #13#10 +
+      'Downgrading can leave configuration that this older release cannot read. Review the rollback documentation and create a configuration backup before continuing.' + #13#10 + #13#10 +
+      'Continue with the downgrade?',
+      mbConfirmation, MB_YESNO) = IDYES;
+end;
+
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
   ResultCode: Integer;
@@ -70,7 +140,7 @@ begin
   if CurUninstallStep = usPostUninstall then
   begin
     ResultCode := SuppressibleMsgBox(
-      'Keep downloaded models, settings, logs, and benchmark data?' + #13#10 + #13#10 +
+      'Keep downloaded models, settings, logs, benchmark data, onboarding state, and configuration backups?' + #13#10 + #13#10 +
       'Choose Yes to preserve data for a future installation. Choose No to remove the user data directory.',
       mbConfirmation, MB_YESNO, IDYES);
     if ResultCode = IDNO then
