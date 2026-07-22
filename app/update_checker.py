@@ -32,7 +32,7 @@ _DEFAULT_INTERVAL = timedelta(hours=24)
 class UpdatePreferences(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    enabled: bool = True
+    enabled: bool = False
     channel: ReleaseChannel = "stable"
     skipped_versions: list[str] = Field(default_factory=list, max_length=50)
 
