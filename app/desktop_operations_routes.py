@@ -18,10 +18,15 @@ from app.desktop_operations_models import (
     HardwareScanControlResponse,
 )
 from app.diagnostics import redact_path
+from app.local_request_security import require_safe_browser_origin
 
 
 def _state_change_auth(settings: Settings):
-    async def require_key(authorization: str | None = Header(default=None)) -> None:
+    async def require_key(
+        request: Request,
+        authorization: str | None = Header(default=None),
+    ) -> None:
+        require_safe_browser_origin(request)
         configured = [item.strip() for item in (settings.api_key or "").split(",") if item.strip()]
         if not configured:
             return
