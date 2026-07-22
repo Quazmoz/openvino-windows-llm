@@ -188,6 +188,14 @@ class ModelManager(_CoreModelManager):
 
     def delete(self, model_id: str) -> dict:
         cfg = self.catalog[model_id]
+        load_task = self.load_tasks.get(model_id)
+        convert_task = self.convert_tasks.get(model_id)
+        if model_id in self.engines:
+            raise ValueError(f"Model '{model_id}' is loaded. Unload it before deleting.")
+        if load_task is not None and not load_task.done():
+            raise ValueError(f"Model '{model_id}' is still loading and cannot be deleted.")
+        if convert_task is not None and not convert_task.done():
+            raise ValueError(f"Model '{model_id}' is still converting and cannot be deleted.")
         result = super().delete(model_id)
         self.advisor.forget_model_size(cfg)
         return result
