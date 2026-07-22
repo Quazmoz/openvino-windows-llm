@@ -3,7 +3,13 @@ import urllib.error
 from datetime import UTC, datetime, timedelta
 
 from app.release_models import artifact_filename
-from app.update_checker import UpdateChecker, UpdatePreferences, UpdateStore, check_due
+from app.update_checker import (
+    UpdateCache,
+    UpdateChecker,
+    UpdatePreferences,
+    UpdateStore,
+    check_due,
+)
 
 
 class Response:
@@ -27,7 +33,10 @@ def manifest_payload(version: str, channel: str):
         return {
             "type": kind,
             "filename": filename,
-            "url": f"https://github.com/Quazmoz/openvino-windows-llm/releases/download/v{version}/{filename}",
+            "url": (
+                "https://github.com/Quazmoz/openvino-windows-llm/"
+                f"releases/download/v{version}/{filename}"
+            ),
             "sha256": suffix * 64,
             "size_bytes": 10,
             "signed": False,
@@ -45,8 +54,16 @@ def manifest_payload(version: str, channel: str):
         "source_commit": "a" * 40,
         "source_tree_clean": True,
         "artifacts": [item("installer", "a"), item("portable", "b")],
-        "api_compatibility": {"chat_completions": True, "responses": True, "embeddings": True},
-        "openvino": {"minimum_version": "2025.1.0", "bundled_version": "2025.1.0", "genai_version": "2025.1.0"},
+        "api_compatibility": {
+            "chat_completions": True,
+            "responses": True,
+            "embeddings": True,
+        },
+        "openvino": {
+            "minimum_version": "2025.1.0",
+            "bundled_version": "2025.1.0",
+            "genai_version": "2025.1.0",
+        },
         "data_compatibility": {
             "minimum_supported_schema": 1,
             "current_schema": 1,
@@ -54,9 +71,18 @@ def manifest_payload(version: str, channel: str):
             "model_cache_compatible": True,
             "compiled_cache_policy": "invalidate on runtime change",
         },
-        "release_notes_url": f"https://github.com/Quazmoz/openvino-windows-llm/releases/tag/v{version}",
-        "known_issues_url": f"https://github.com/Quazmoz/openvino-windows-llm/blob/v{version}/docs/KNOWN_ISSUES.md",
-        "compatibility_matrix_url": f"https://github.com/Quazmoz/openvino-windows-llm/blob/v{version}/docs/COMPATIBILITY_MATRIX.md",
+        "release_notes_url": (
+            "https://github.com/Quazmoz/openvino-windows-llm/"
+            f"releases/tag/v{version}"
+        ),
+        "known_issues_url": (
+            "https://github.com/Quazmoz/openvino-windows-llm/"
+            f"blob/v{version}/docs/KNOWN_ISSUES.md"
+        ),
+        "compatibility_matrix_url": (
+            "https://github.com/Quazmoz/openvino-windows-llm/"
+            f"blob/v{version}/docs/COMPATIBILITY_MATRIX.md"
+        ),
         "summary": "Update available",
         "highlights": ["Reliable release metadata"],
         "dependency_inventory_filename": "inventory.json",
@@ -65,15 +91,22 @@ def manifest_payload(version: str, channel: str):
 
 def release_payload(version: str, prerelease: bool):
     filename = artifact_filename(version, "manifest")
-    return [{
-        "tag_name": f"v{version}",
-        "draft": False,
-        "prerelease": prerelease,
-        "assets": [{
-            "name": filename,
-            "browser_download_url": f"https://github.com/Quazmoz/openvino-windows-llm/releases/download/v{version}/{filename}",
-        }],
-    }]
+    return [
+        {
+            "tag_name": f"v{version}",
+            "draft": False,
+            "prerelease": prerelease,
+            "assets": [
+                {
+                    "name": filename,
+                    "browser_download_url": (
+                        "https://github.com/Quazmoz/openvino-windows-llm/"
+                        f"releases/download/v{version}/{filename}"
+                    ),
+                }
+            ],
+        }
+    ]
 
 
 def opener_for(version: str, channel: str):
@@ -82,7 +115,10 @@ def opener_for(version: str, channel: str):
     def opener(request, timeout):
         calls.append((request.full_url, timeout, dict(request.header_items())))
         if "api.github.com" in request.full_url:
-            return Response(release_payload(version, channel != "stable"), headers={"ETag": '"abc"'})
+            return Response(
+                release_payload(version, channel != "stable"),
+                headers={"ETag": '"abc"'},
+            )
         return Response(manifest_payload(version, channel))
 
     return opener, calls
@@ -98,7 +134,11 @@ def test_update_check_interval_behavior():
 def test_stable_user_ignores_beta_release(tmp_path):
     store = UpdateStore(tmp_path)
     opener, _calls = opener_for("0.5.0-beta.1", "beta")
-    result = UpdateChecker(store=store, installation_mode="installed", opener=opener).check(force=True)
+    result = UpdateChecker(
+        store=store,
+        installation_mode="installed",
+        opener=opener,
+    ).check(force=True)
     assert result.status == "current"
     assert result.manifest is None
 
@@ -107,18 +147,29 @@ def test_beta_user_sees_beta_release_and_installed_artifact(tmp_path):
     store = UpdateStore(tmp_path)
     store.save_preferences(UpdatePreferences(channel="beta"))
     opener, calls = opener_for("0.5.0-beta.1", "beta")
-    result = UpdateChecker(store=store, installation_mode="installed", opener=opener).check(force=True)
+    result = UpdateChecker(
+        store=store,
+        installation_mode="installed",
+        opener=opener,
+    ).check(force=True)
     assert result.status == "available"
     assert result.selected_artifact_type == "installer"
     assert len(calls) == 2
     assert all(timeout == 4.0 for _url, timeout, _headers in calls)
-    assert all("OpenVINO-Windows-LLM/0.4.0" in headers.get("User-agent", "") for _url, _timeout, headers in calls)
+    assert all(
+        "OpenVINO-Windows-LLM/0.4.0" in headers.get("User-agent", "")
+        for _url, _timeout, headers in calls
+    )
 
 
 def test_portable_user_receives_portable_artifact(tmp_path):
     store = UpdateStore(tmp_path)
     opener, _calls = opener_for("0.5.0", "stable")
-    result = UpdateChecker(store=store, installation_mode="portable", opener=opener).check(force=True)
+    result = UpdateChecker(
+        store=store,
+        installation_mode="portable",
+        opener=opener,
+    ).check(force=True)
     assert result.status == "available"
     assert result.selected_artifact_type == "portable"
 
@@ -127,7 +178,11 @@ def test_skip_version_persists_and_suppresses_prompt(tmp_path):
     store = UpdateStore(tmp_path)
     store.save_preferences(UpdatePreferences(skipped_versions=["0.5.0"]))
     opener, _calls = opener_for("0.5.0", "stable")
-    result = UpdateChecker(store=store, installation_mode="installed", opener=opener).check(force=True)
+    result = UpdateChecker(
+        store=store,
+        installation_mode="installed",
+        opener=opener,
+    ).check(force=True)
     assert result.status == "current"
     assert store.load_preferences().skipped_versions == ["0.5.0"]
 
@@ -139,7 +194,11 @@ def test_disabled_update_checks_make_no_request(tmp_path):
     def fail(*_args, **_kwargs):
         raise AssertionError("network should not be used")
 
-    result = UpdateChecker(store=store, installation_mode="installed", opener=fail).check(force=True)
+    result = UpdateChecker(
+        store=store,
+        installation_mode="installed",
+        opener=fail,
+    ).check(force=True)
     assert result.status == "disabled"
 
 
@@ -149,7 +208,11 @@ def test_offline_update_check_fails_silently(tmp_path):
     def offline(request, timeout):
         raise urllib.error.URLError("offline")
 
-    result = UpdateChecker(store=store, installation_mode="installed", opener=offline).check(force=True)
+    result = UpdateChecker(
+        store=store,
+        installation_mode="installed",
+        opener=offline,
+    ).check(force=True)
     assert result.status == "offline"
     assert result.message == "Update check unavailable."
 
@@ -162,5 +225,33 @@ def test_malformed_manifest_is_rejected(tmp_path):
             return Response(release_payload("0.5.0", False))
         return Response({"schema_version": 999})
 
-    result = UpdateChecker(store=store, installation_mode="installed", opener=opener).check(force=True)
+    result = UpdateChecker(
+        store=store,
+        installation_mode="installed",
+        opener=opener,
+    ).check(force=True)
     assert result.status == "rejected"
+
+
+def test_malformed_cached_manifest_is_cleared_and_refetched(tmp_path):
+    store = UpdateStore(tmp_path)
+    store.save_cache(
+        UpdateCache(
+            releases_etag='"stale"',
+            last_checked_at=datetime.now(UTC),
+            latest_checked_version="9.9.9",
+            manifest={"schema_version": 999},
+        )
+    )
+    opener, calls = opener_for("0.5.0", "stable")
+
+    result = UpdateChecker(
+        store=store,
+        installation_mode="installed",
+        opener=opener,
+    ).check()
+
+    assert result.status == "available"
+    assert len(calls) == 2
+    assert "If-none-match" not in calls[0][2]
+    assert store.load_cache().latest_checked_version == "0.5.0"
