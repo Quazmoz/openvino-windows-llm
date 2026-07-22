@@ -13,6 +13,7 @@ def test_launcher_reinstalls_when_runtime_requirements_change():
     assert "$actual -ceq $saved" in launcher
     assert 'python -m pip install -r "%REQ_FILE%"' in launcher
     assert "Dependencies installed, but their version marker could not be updated" in launcher
+    assert "python -m app.server %*\nexit /b %errorlevel%" in launcher
 
 
 def test_windows_setup_records_the_installed_requirements_fingerprint():
