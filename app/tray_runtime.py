@@ -15,6 +15,7 @@ from app.tray_support import APP_TITLE, atomic_json, tray_icon
 
 logger = logging.getLogger("ov-llm.tray")
 
+
 class TrayRuntimeMixin:
     def run(self) -> int:
         if not self.lock.acquire():
@@ -65,7 +66,11 @@ class TrayRuntimeMixin:
             )
 
     def _run_headless(self) -> int:
-        deadline = time.monotonic() + self.args.headlss_seconds if self.args.headless_seconds else None
+        deadline = (
+            time.monotonic() + self.args.headless_seconds
+            if self.args.headless_seconds
+            else None
+        )
         while not self.stop_event.wait(0.5):
             self._poll_once()
             if deadline and time.monotonic() >= deadline:
