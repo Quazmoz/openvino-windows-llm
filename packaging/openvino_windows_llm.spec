@@ -6,12 +6,19 @@ from pathlib import Path
 from PyInstaller.utils.hooks import collect_all, collect_data_files, collect_submodules, copy_metadata
 
 root = Path(SPECPATH).parent
+version_info = Path(os.environ.get("OV_LLM_VERSION_INFO", ""))
+build_info = Path(os.environ.get("OV_LLM_BUILD_INFO", ""))
+if not version_info.is_file():
+    raise RuntimeError("OV_LLM_VERSION_INFO must point to generated version metadata")
+if not build_info.is_file():
+    raise RuntimeError("OV_LLM_BUILD_INFO must point to generated build metadata")
 
 datas = [
     (str(root / "web"), "web"),
     (str(root / "models.json"), "."),
     (str(root / "LICENSE"), "."),
     (str(root / "README.md"), "."),
+    (str(build_info), "."),
 ]
 third_party = Path(os.environ.get("OV_LLM_THIRD_PARTY_NOTICES", ""))
 if third_party.is_file():
@@ -90,7 +97,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    version=str(root / "packaging" / "version_info.txt"),
+    version=str(version_info),
 )
 collection = COLLECT(
     exe,
