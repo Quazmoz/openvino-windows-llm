@@ -31,9 +31,9 @@ The server downloads only this fixed project release asset:
 https://github.com/Quazmoz/openvino-windows-llm/releases/latest/download/model-library-manifest.json
 ```
 
-The response must remain on an official GitHub release host, stay below 1 MB, use the supported schema, contain at most 50 entries, and pass the SHA-256 checksum of its canonical catalog. A valid copy is cached beside the writable model catalog. If it is unavailable or invalid, the bundled manifest remains the offline fallback.
+The response must remain on an official GitHub release host, stay below 1 MB, use the supported schema, contain at most 50 entries, and pass the SHA-256 checksum of its canonical catalog. Release publication also includes this asset in the versioned SHA-256 checksum file. A valid copy is cached beside the writable model catalog. If it is unavailable or invalid, the bundled manifest remains the offline fallback.
 
-The checksum protects accidental corruption and inconsistent publication. It is not a substitute for HTTPS, GitHub account security, release signing, or Authenticode verification.
+Checksums protect against corruption and inconsistent publication. They are not substitutes for HTTPS, GitHub account security, release signing, or Authenticode verification.
 
 ## Conversion health
 
@@ -60,14 +60,14 @@ Definitions do not contain API keys, Hugging Face tokens, prompts, chats, benchm
 The browser accepts an absolute local directory containing OpenVINO IR. The server:
 
 1. validates required IR markers;
-2. rejects symbolic links;
+2. rejects symbolic links inside the source directory;
 3. checks free disk space;
 4. copies into the managed model directory through a temporary path;
-5. atomically swaps the completed copy into place;
+5. atomically moves the completed copy into place;
 6. records compatibility metadata; and
 7. registers the model definition.
 
-A loaded, loading, or converting model cannot be replaced. Existing managed directories are preserved unless overwrite is explicitly requested through the API.
+A loaded, loading, or converting model cannot be replaced. In-place replacement of a managed converted model is intentionally disabled. Unload and delete the managed copy first, or import the new directory under a different model ID.
 
 ## API
 
@@ -81,4 +81,4 @@ POST /v1/model-library/import-converted
 
 `profile` accepts `fastest`, `balanced`, `best_quality`, or `lowest_memory`. `include_all=true` adds every registered runtime model.
 
-State-changing browser requests enforce the existing same-origin safeguard and API-key policy. The refresh route does not accept an arbitrary URL.
+State-changing browser requests enforce the existing same-origin safeguard and API-key policy. The refresh route does not accept an arbitrary URL. Official definitions cannot enable `trust_remote_code` through the model-library refresh path.
