@@ -108,7 +108,7 @@ jobs:
             contract-report.json
             contract-report.md
           if-no-files-found: ignore
-          retention-days: 14
+          retention-days: 1
 
   windows-harness-syntax:
     name: Windows Harness Syntax
