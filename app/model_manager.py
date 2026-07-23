@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from dataclasses import replace
 from typing import Any
 
 from app import model_manager_core as _core
@@ -42,7 +43,6 @@ class ModelManager(_CoreModelManager):
         advisor measurements compatible with those newer wrappers and with future
         scheduler composition, instead of competing for the class-level ``_load_task``.
         """
-
         upstream_schedule_load = self.schedule_load
         observed_tasks: set[asyncio.Task[Any]] = set()
 
@@ -112,7 +112,6 @@ class ModelManager(_CoreModelManager):
         load_time_ms: float | None,
     ) -> None:
         """Record safe local evidence without allowing advisor work to fail a load."""
-
         try:
             await asyncio.to_thread(self.advisor.measure_converted_size, cfg)
         except Exception:  # noqa: BLE001 - advisory evidence must not break model loading
@@ -184,7 +183,20 @@ class ModelManager(_CoreModelManager):
         )
         cfg = self.catalog.get(model_id)
         if cfg is not None and registry.is_downloaded(cfg, BASE_DIR):
+            if weight_format and cfg.weight_format != weight_format:
+                cfg = replace(cfg, weight_format=weight_format)
+                self.catalog[model_id] = cfg
+                await asyncio.to_thread(registry.save_catalog, self.settings.models_file, self.catalog)
+                self.advisor.catalog = self.catalog
             await asyncio.to_thread(self.advisor.measure_converted_size, cfg)
+            try:
+                from app.model_library import record_conversion_metadata
+
+                await asyncio.to_thread(record_conversion_metadata, cfg, self.settings)
+            except Exception:  # noqa: BLE001 - metadata must not fail a successful conversion
+                _core.logger.exception(
+                    "Could not record conversion compatibility metadata for '%s'", model_id
+                )
 
     def delete(self, model_id: str) -> dict:
         cfg = self.catalog[model_id]
@@ -211,5 +223,4 @@ class ModelManager(_CoreModelManager):
 
 def __getattr__(name: str):
     """Preserve access to implementation details used by existing tests/extensions."""
-
     return getattr(_core, name)
