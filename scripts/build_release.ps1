@@ -158,6 +158,15 @@ Invoke-Checked "Verify packaged native components" { & $ReleasePython scripts/re
 Invoke-Checked "Scan packaged directory" { & $ReleasePython scripts/release_tools.py scan --path $BuiltRoot }
 
 $RunMockSmoke = (-not [bool]$SkipTests) -or [bool]$MockSmokeTest
+if ($RunMockSmoke -and -not $SkipInstaller) {
+    if (Test-Path (Join-Path $BuiltRoot "portable.flag")) {
+        throw "Installed-mode distribution unexpectedly contains portable.flag."
+    }
+    Invoke-Checked "Run installed-mode packaged mock smoke test" {
+        & (Join-Path $Root "scripts\smoke_test_packaged.ps1") -DistributionPath $BuiltRoot -Python $ReleasePython -ExpectedMode installed
+    }
+}
+
 $LauncherSigned = $false
 if ($Sign) {
     Sign-AndVerify $Launcher
@@ -197,7 +206,9 @@ OpenVINO Windows LLM $Version portable release
         $ExtractedDistribution = Join-Path $ExtractRoot $PortableName
         if (-not (Test-Path (Join-Path $ExtractedDistribution "portable.flag"))) { throw "Portable marker missing after extraction." }
         if ($RunMockSmoke) {
-            Invoke-Checked "Run portable packaged mock smoke test" { & (Join-Path $Root "scripts\smoke_test_packaged.ps1") -DistributionPath $ExtractedDistribution -Python $ReleasePython }
+            Invoke-Checked "Run portable packaged mock smoke test" {
+                & (Join-Path $Root "scripts\smoke_test_packaged.ps1") -DistributionPath $ExtractedDistribution -Python $ReleasePython -ExpectedMode portable
+            }
         }
     }
     finally {
@@ -255,6 +266,8 @@ $Summary = [ordered]@{
     tests_skipped = [bool]$SkipTests
     source_mock_contract_validation = -not [bool]$SkipTests
     packaged_mock_smoke_test = $RunMockSmoke
+    packaged_installed_mode_smoke_test = $RunMockSmoke -and -not [bool]$SkipInstaller
+    packaged_portable_mode_smoke_test = $RunMockSmoke -and -not [bool]$SkipPortable
     launcher_signature_verified = $LauncherSigned
     installer_signature_verified = ($SignedTypes -contains "installer")
     artifact_directory = "."
