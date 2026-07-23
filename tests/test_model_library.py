@@ -1,0 +1,143 @@
+import json
+
+import pytest
+from fastapi.testclient import TestClient
+
+from app.config import Settings
+from app.model_library import (
+    ManifestValidationError,
+    ModelDefinitionImportRequest,
+    ModelLibraryService,
+    catalog_checksum,
+    parse_manifest_bytes,
+)
+from app.model_manager import ModelManager
+from app.server import _index_html, create_app
+
+
+def _settings(tmp_path):
+    models_file = tmp_path / "config" / "models.json"
+    models_file.parent.mkdir(parents=True)
+    models_file.write_text("{}\n", encoding="utf-8")
+    return Settings(
+        host="127.0.0.1",
+        port=8000,
+        device="CPU",
+        models_file=models_file,
+        models_dir=tmp_path / "models",
+        cache_dir=tmp_path / "cache",
+        benchmark_results_file=tmp_path / "benchmarks" / "benchmarks.json",
+        default_model=None,
+        api_key=None,
+        force_mock=True,
+    )
+
+
+def _definition(model_id="custom-small"):
+    return {
+        "model_id": model_id,
+        "name": "Custom Small",
+        "description": "Imported definition",
+        "source_model": "example/custom-small",
+        "backend": "openvino-genai",
+        "weight_format": "int4",
+        "recommended_device": "CPU",
+        "max_context_len": 2048,
+        "max_output_tokens": 512,
+        "trust_remote_code": False,
+    }
+
+
+def test_manifest_checksum_rejects_tampering():
+    catalog = {
+        "custom-small": {
+            "definition": _definition(),
+            "metadata": {
+                "curated": True,
+                "profiles": ["balanced"],
+                "minimum_ram_gb": 4,
+                "minimum_disk_gb": 2,
+                "license": "MIT",
+                "gated": False,
+                "quality_score": 50,
+                "speed_score": 50,
+                "certifications": {"CPU": [], "GPU": [], "NPU": []},
+            },
+        }
+    }
+    document = {
+        "schema_version": 1,
+        "catalog": catalog,
+        "catalog_sha256": catalog_checksum(catalog),
+    }
+    parsed = parse_manifest_bytes(json.dumps(document).encode())
+    assert parsed["catalog"]["custom-small"]["definition"]["source_model"] == "example/custom-small"
+
+    document["catalog"]["custom-small"]["metadata"]["license"] = "Changed"
+    with pytest.raises(ManifestValidationError, match="checksum"):
+        parse_manifest_bytes(json.dumps(document).encode())
+
+
+def test_definition_export_import_and_curated_snapshot(tmp_path):
+    settings = _settings(tmp_path)
+    manager = ModelManager(settings)
+    service = ModelLibraryService(settings, manager)
+
+    result = service.import_definitions(
+        ModelDefinitionImportRequest(payload={"models": {"custom-small": _definition()}})
+    )
+    assert result["added"] == ["custom-small"]
+    assert "custom-small" in manager.catalog
+
+    exported = service.export_definitions()
+    assert exported["models"]["custom-small"]["weight_format"] == "int4"
+
+    snapshot = service.snapshot(profile="balanced")
+    item = next(value for value in snapshot["items"] if value["id"] == "custom-small")
+    assert item["verification"]["CPU"]["status"] == "expected_unverified"
+    assert item["recommended_quantization"]["format"] in {"int4", "int8", "fp16"}
+
+
+def test_model_library_routes_and_converted_import(tmp_path):
+    settings = _settings(tmp_path)
+    source = tmp_path / "external-model"
+    source.mkdir()
+    (source / "openvino_model.xml").write_text("<net/>", encoding="utf-8")
+    (source / "openvino_model.bin").write_bytes(b"openvino")
+
+    app = create_app(settings)
+    with TestClient(app) as client:
+        library = client.get("/v1/model-library")
+        assert library.status_code == 200, library.text
+
+        imported = client.post(
+            "/v1/model-library/import-converted",
+            json={
+                "model_id": "imported-openvino",
+                "name": "Imported OpenVINO",
+                "source_path": str(source.resolve()),
+                "backend": "openvino-genai",
+                "weight_format": "fp16",
+                "recommended_device": "CPU",
+                "max_context_len": 2048,
+                "max_output_tokens": 512,
+            },
+        )
+        assert imported.status_code == 200, imported.text
+        assert imported.json()["conversion_health"]["status"] == "compatible"
+        assert (settings.models_dir / "imported-openvino" / "openvino_model.xml").is_file()
+
+        refreshed = client.get(
+            "/v1/model-library",
+            params={"profile": "balanced", "include_all": "true"},
+        )
+        assert refreshed.status_code == 200
+        assert any(item["id"] == "imported-openvino" for item in refreshed.json()["items"])
+
+
+def test_model_library_ui_is_composed_once():
+    _index_html.cache_clear()
+    html = _index_html()
+    assert html.count('id="ovllm-model-library-extension"') == 1
+    assert "Verified Model Library" in html
+    assert "/v1/model-library/import-converted" in html
