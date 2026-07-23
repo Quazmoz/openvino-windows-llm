@@ -181,6 +181,11 @@ class ModelManager(_CoreModelManager):
             sym=sym,
             trust_remote_code=trust_remote_code,
         )
+        # The core lifecycle converts failures into a persisted error state instead
+        # of re-raising. An older IR directory can still exist after a failed
+        # requantization, so never relabel or re-certify it as the requested format.
+        if self.status_overrides.get(model_id, {}).get("status") == "error":
+            return
         cfg = self.catalog.get(model_id)
         if cfg is not None and registry.is_downloaded(cfg, BASE_DIR):
             if weight_format and cfg.weight_format != weight_format:
