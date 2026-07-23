@@ -1,5 +1,7 @@
 import asyncio
 import json
+import os
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -13,6 +15,7 @@ from app.model_library import (
     ModelLibraryService,
     conversion_health,
 )
+from app.model_library_conversion import is_reparse_point
 from app.model_manager import ModelManager
 from app.model_registry import ModelConfig, load_catalog
 
@@ -261,6 +264,42 @@ def test_converted_import_rejects_root_symlink_and_existing_id(tmp_path):
                 source_path=str(real_source.resolve()),
             )
         )
+
+
+def test_converted_import_rejects_junction_source(tmp_path):
+    """Windows junctions are reparse points and must be rejected on import.
+
+    The directory-symlink test above skips wherever creating a symlink needs
+    elevation (the default on stock Windows). Junctions are also reparse points
+    but can be created without elevation via ``mklink /J``, so this exercises
+    the reparse-point guard on a normal Windows install instead of skipping.
+    """
+    if os.name != "nt":
+        pytest.skip("Junctions are a Windows-only reparse point.")
+    settings = _settings(tmp_path)
+    manager = ModelManager(settings)
+    service = ModelLibraryService(settings, manager)
+    real_source = _converted_dir(tmp_path / "real-source")
+    junction = tmp_path / "junction-source"
+    created = subprocess.run(
+        ["cmd", "/c", "mklink", "/J", str(junction), str(real_source)],
+        capture_output=True,
+        text=True,
+    )
+    if created.returncode != 0 or not is_reparse_point(junction):
+        pytest.skip("A directory junction could not be created in this environment.")
+
+    with pytest.raises(ValueError, match="symbolic links"):
+        service.import_converted(
+            ConvertedModelImportRequest(
+                model_id="junction-model",
+                name="Junction Model",
+                source_path=str(junction.absolute()),
+            )
+        )
+    # The rejected import must not register a catalog entry or copy any files.
+    assert "junction-model" not in manager.catalog
+    assert not (settings.models_dir / "junction-model").exists()
 
 
 def test_converted_import_rolls_back_files_when_catalog_save_fails(tmp_path, monkeypatch):
