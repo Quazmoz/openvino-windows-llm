@@ -21,8 +21,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from app import errors
-from app import model_registry as registry
+from app import errors, model_registry as registry
 from app.config import BASE_DIR, Settings
 from runtime import device_check
 from runtime.openvino_engine import BaseEngine, GenParams, GenResult, StreamHandle, create_engine

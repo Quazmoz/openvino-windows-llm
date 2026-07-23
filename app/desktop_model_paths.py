@@ -5,8 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from app import model_manager_core
-from app import model_registry as registry
+from app import model_manager_core, model_registry as registry
 
 
 def install_desktop_model_path_extension() -> None:

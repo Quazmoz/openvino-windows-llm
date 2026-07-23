@@ -14,8 +14,7 @@ from urllib.parse import urlparse
 
 import httpx
 
-from app import __version__
-from app import model_registry as registry
+from app import __version__, model_registry as registry
 from app.model_library_conversion import (
     conversion_health,
     directory_size_bytes,
@@ -137,9 +136,7 @@ class ModelLibraryService:
             return set()
         values = data.get("model_ids") if isinstance(data, dict) else []
         return {
-            value
-            for value in values
-            if isinstance(value, str) and MODEL_ID_RE.fullmatch(value)
+            value for value in values if isinstance(value, str) and MODEL_ID_RE.fullmatch(value)
         }
 
     def _write_user_ids(self, values: set[str]) -> None:
@@ -210,9 +207,7 @@ class ModelLibraryService:
                 except (TypeError, ValueError):
                     declared_length = None
                 if declared_length is not None and declared_length > MAX_MANIFEST_BYTES:
-                    raise ManifestValidationError(
-                        "Model library manifest exceeds the 1 MB limit."
-                    )
+                    raise ManifestValidationError("Model library manifest exceeds the 1 MB limit.")
                 payload = bytearray()
                 async for chunk in response.aiter_bytes():
                     payload.extend(chunk)
@@ -240,9 +235,7 @@ class ModelLibraryService:
         with self._catalog_lock:
             return self._apply_official_definitions_locked(manifest)
 
-    def _apply_official_definitions_locked(
-        self, manifest: dict[str, Any]
-    ) -> dict[str, Any]:
+    def _apply_official_definitions_locked(self, manifest: dict[str, Any]) -> dict[str, Any]:
         added: list[str] = []
         updated: list[str] = []
         conflicts: list[str] = []
@@ -257,8 +250,13 @@ class ModelLibraryService:
             if existing is not None:
                 if model_definition(existing) == model_definition(cfg):
                     continue
-                if self._is_model_active(model_id) or model_id in user_ids or (
-                    existing.source_model and existing.source_model != definition["source_model"]
+                if (
+                    self._is_model_active(model_id)
+                    or model_id in user_ids
+                    or (
+                        existing.source_model
+                        and existing.source_model != definition["source_model"]
+                    )
                 ):
                     conflicts.append(model_id)
                     continue
@@ -303,9 +301,7 @@ class ModelLibraryService:
             }
         return evidence
 
-    def _verification(
-        self, metadata: dict[str, Any], local: dict[str, Any]
-    ) -> dict[str, Any]:
+    def _verification(self, metadata: dict[str, Any], local: dict[str, Any]) -> dict[str, Any]:
         output = {}
         certifications = metadata.get("certifications", {})
         if not isinstance(certifications, dict):
@@ -347,8 +343,7 @@ class ModelLibraryService:
         snapshot: dict[str, Any],
     ) -> dict[str, str]:
         available = {
-            str(value).split(".", 1)[0].upper()
-            for value in snapshot.get("available_devices", [])
+            str(value).split(".", 1)[0].upper() for value in snapshot.get("available_devices", [])
         }
         ram = safe_float(snapshot.get("memory", {}).get("total_gb"))
         params = safe_float(estimate.get("parameter_count_b"))
@@ -378,9 +373,7 @@ class ModelLibraryService:
             "reason": "INT8 is a balanced default when no stronger local evidence is available.",
         }
 
-    def _entry(
-        self, model_id: str, manifest_entry: dict[str, Any] | None
-    ) -> dict[str, Any] | None:
+    def _entry(self, model_id: str, manifest_entry: dict[str, Any] | None) -> dict[str, Any] | None:
         cfg = self.manager.catalog.get(model_id)
         if cfg is None:
             return None
@@ -401,9 +394,7 @@ class ModelLibraryService:
             )
         )
         metadata = (
-            dict((manifest_entry or {}).get("metadata") or {})
-            if manifest_identity_matches
-            else {}
+            dict((manifest_entry or {}).get("metadata") or {}) if manifest_identity_matches else {}
         )
         local = self._local_evidence(model_id)
         verification = self._verification(metadata, local)
@@ -505,7 +496,11 @@ class ModelLibraryService:
                     "local" if local_measurement else "official" if latest_official else None
                 ),
                 "measurement_device": (
-                    local_device if local_measurement else official_device if latest_official else None
+                    local_device
+                    if local_measurement
+                    else official_device
+                    if latest_official
+                    else None
                 ),
             },
             "profiles": profiles,
@@ -631,9 +626,7 @@ class ModelLibraryService:
         with self._catalog_lock:
             return self._import_definitions_locked(request)
 
-    def _import_definitions_locked(
-        self, request: ModelDefinitionImportRequest
-    ) -> dict[str, Any]:
+    def _import_definitions_locked(self, request: ModelDefinitionImportRequest) -> dict[str, Any]:
         payload = request.payload
         raw_models = payload.get("models") if isinstance(payload.get("models"), dict) else payload
         if (
@@ -654,7 +647,9 @@ class ModelLibraryService:
             definition.setdefault("model_id", key)
             parsed = ModelRegisterRequest.model_validate(definition)
             if parsed.model_id in seen_ids:
-                raise ValueError(f"Definition import contains duplicate model id '{parsed.model_id}'.")
+                raise ValueError(
+                    f"Definition import contains duplicate model id '{parsed.model_id}'."
+                )
             seen_ids.add(parsed.model_id)
             existing = staged_catalog.get(parsed.model_id)
             target = Path(self.settings.models_dir) / parsed.model_id
@@ -664,9 +659,7 @@ class ModelLibraryService:
                     unchanged.append(parsed.model_id)
                     continue
                 if self._is_model_active(parsed.model_id):
-                    raise ValueError(
-                        f"Model '{parsed.model_id}' is active and cannot be replaced."
-                    )
+                    raise ValueError(f"Model '{parsed.model_id}' is active and cannot be replaced.")
                 if not request.overwrite:
                     raise ValueError(
                         f"Model '{parsed.model_id}' already exists with a different definition."
@@ -704,9 +697,7 @@ class ModelLibraryService:
         if not source_input.is_absolute():
             raise ValueError("Converted model source_path must be absolute.")
         if is_reparse_point(source_input):
-            raise ValueError(
-                "Imported model directories may not be symbolic links or junctions."
-            )
+            raise ValueError("Imported model directories may not be symbolic links or junctions.")
         source = source_input.resolve()
         if not source.is_dir() or not registry.is_openvino_model_dir(source):
             raise ValueError("source_path is not a converted OpenVINO model directory.")

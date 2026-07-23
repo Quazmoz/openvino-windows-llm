@@ -14,15 +14,12 @@ import time
 from dataclasses import replace
 from typing import Any
 
-from app import model_manager_core as _core
-from app import model_registry as registry
+from app import model_manager_core as _core, model_registry as registry
 from app.config import BASE_DIR, Settings
 from app.hardware_advisor import HardwareAdvisor, parse_auto_model
 from app.model_manager_core import *  # noqa: F401,F403 - preserve the public module contract
 from app.model_manager_core import (
     ModelManager as _CoreModelManager,
-)
-from app.model_manager_core import (
     NoModelsLoaded,
     UnknownModel,
 )

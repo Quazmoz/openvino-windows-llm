@@ -5,8 +5,7 @@ from __future__ import annotations
 from app import ui_extension_vision as _vision
 from app.advisor_ui import ADVISOR_EXTENSION_JS
 from app.release_ui import RELEASE_EXTENSION_JS
-from app.ui_extension_vision import VISION_EXTENSION_JS
-from app.ui_extension_vision import inject_multimodal_ui as _inject_vision_ui
+from app.ui_extension_vision import VISION_EXTENSION_JS, inject_multimodal_ui as _inject_vision_ui
 
 __all__ = ["VISION_EXTENSION_JS", "inject_multimodal_ui"]
 

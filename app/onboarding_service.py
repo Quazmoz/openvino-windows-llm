@@ -15,8 +15,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from app import __version__
-from app import model_registry as registry
+from app import __version__, model_registry as registry
 from app.config import BASE_DIR, Settings
 from app.onboarding_hardware import build_system_scan, classify_npu_readiness
 from app.onboarding_models import (

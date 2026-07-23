@@ -16,14 +16,12 @@ from app.diagnostics_privacy import (
     diagnostics_confirmation_summary,
     json_bytes,
     local_hardware_snapshot,
+    redact_path as redact_path,
     safe_archive_name,
     safe_disk_payload,
     sanitize_text,
     sanitize_value,
     windows_edition,
-)
-from app.diagnostics_privacy import (
-    redact_path as redact_path,
 )
 from app.diagnostics_sections import DiagnosticsSectionsMixin
 from app.paths import RuntimePaths

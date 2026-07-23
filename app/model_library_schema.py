@@ -158,9 +158,7 @@ def _normalize_certifications(raw: Any) -> dict[str, list[dict[str, Any]]]:
                     "status": "verified",
                     "certified_at": certified_at,
                     "openvino_version": openvino_version,
-                    "openvino_genai_version": str(
-                        record.get("openvino_genai_version") or ""
-                    )[:64],
+                    "openvino_genai_version": str(record.get("openvino_genai_version") or "")[:64],
                     "driver_version": driver_version,
                     "load_time_ms": load_time_ms,
                     "tokens_sec": tokens_sec,
@@ -204,7 +202,9 @@ def validate_manifest_document(document: Any) -> dict[str, Any]:
         try:
             definition = ModelRegisterRequest.model_validate(definition_raw)
         except Exception as exc:
-            raise ManifestValidationError(f"Manifest definition for '{model_id}' is invalid.") from exc
+            raise ManifestValidationError(
+                f"Manifest definition for '{model_id}' is invalid."
+            ) from exc
         definition_data = definition.model_dump()
         definition_data["trust_remote_code"] = False
         metadata = raw.get("metadata") if isinstance(raw.get("metadata"), dict) else {}

@@ -1,5 +1,4 @@
 from concurrent.futures import ThreadPoolExecutor
-from pathlib import Path
 from threading import Barrier
 
 from app import model_library_service as service_module

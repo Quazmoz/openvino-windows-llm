@@ -15,7 +15,6 @@ from app.model_library import (
 from app.model_manager import ModelManager
 from app.server import _index_html, create_app
 
-
 ROOT = Path(__file__).resolve().parents[1]
 
 

@@ -5,7 +5,6 @@ from app.model_library import ModelDefinitionImportRequest, ModelLibraryService
 from app.model_manager import ModelManager
 from app.model_registry import ModelConfig, save_catalog
 
-
 ROOT = Path(__file__).resolve().parents[1]
 
 

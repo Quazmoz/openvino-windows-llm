@@ -27,8 +27,6 @@ from scripts.release_scan import (  # noqa: E402
     verify_checksums,
     verify_native_distribution,
     verify_release_requirements,
-)
-from scripts.release_scan import (  # noqa: E402
     write_checksums as _write_checksums,
 )
 

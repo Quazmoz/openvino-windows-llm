@@ -120,11 +120,7 @@ def test_definition_import_refuses_active_model_even_with_alias_key(tmp_path):
         service.import_definitions(
             ModelDefinitionImportRequest(
                 payload={
-                    "models": {
-                        "misleading-key": _definition(
-                            "active-model", weight_format="int4"
-                        )
-                    }
+                    "models": {"misleading-key": _definition("active-model", weight_format="int4")}
                 },
                 overwrite=True,
             )
@@ -138,9 +134,7 @@ def test_definition_import_rolls_back_when_user_index_write_fails(tmp_path, monk
     manager = ModelManager(settings)
     service = ModelLibraryService(settings, manager)
     service.import_definitions(
-        ModelDefinitionImportRequest(
-            payload={"models": {"existing": _definition("existing")}}
-        )
+        ModelDefinitionImportRequest(payload={"models": {"existing": _definition("existing")}})
     )
     original_file = settings.models_file.read_text(encoding="utf-8")
     original_user_file = service.user_file.read_text(encoding="utf-8")
@@ -169,9 +163,7 @@ def test_successful_conversion_catalog_failure_keeps_original_precision(tmp_path
     manager = ModelManager(settings)
     service = ModelLibraryService(settings, manager)
     service.import_definitions(
-        ModelDefinitionImportRequest(
-            payload={"models": {"custom-small": _definition()}}
-        )
+        ModelDefinitionImportRequest(payload={"models": {"custom-small": _definition()}})
     )
     cfg = manager.catalog["custom-small"]
     _converted_dir(Path(cfg.model_path))
@@ -181,9 +173,7 @@ def test_successful_conversion_catalog_failure_keeps_original_precision(tmp_path
 
     import app.model_manager as manager_module
 
-    monkeypatch.setattr(
-        manager_module._CoreModelManager, "_convert_task", successful_conversion
-    )
+    monkeypatch.setattr(manager_module._CoreModelManager, "_convert_task", successful_conversion)
 
     def fail_save(*_args, **_kwargs):
         raise OSError("catalog write failed")
@@ -209,9 +199,7 @@ def test_conversion_without_ir_is_reported_as_error(tmp_path, monkeypatch):
     manager = ModelManager(settings)
     service = ModelLibraryService(settings, manager)
     service.import_definitions(
-        ModelDefinitionImportRequest(
-            payload={"models": {"custom-small": _definition()}}
-        )
+        ModelDefinitionImportRequest(payload={"models": {"custom-small": _definition()}})
     )
 
     async def successful_but_empty(self, model_id, *_args, **_kwargs):
@@ -219,9 +207,7 @@ def test_conversion_without_ir_is_reported_as_error(tmp_path, monkeypatch):
 
     import app.model_manager as manager_module
 
-    monkeypatch.setattr(
-        manager_module._CoreModelManager, "_convert_task", successful_but_empty
-    )
+    monkeypatch.setattr(manager_module._CoreModelManager, "_convert_task", successful_but_empty)
     asyncio.run(manager._convert_task("custom-small", "CPU", False))
 
     assert manager.status_overrides["custom-small"]["status"] == "error"
@@ -233,9 +219,7 @@ def test_advisor_size_failure_does_not_fail_successful_conversion(tmp_path, monk
     manager = ModelManager(settings)
     service = ModelLibraryService(settings, manager)
     service.import_definitions(
-        ModelDefinitionImportRequest(
-            payload={"models": {"custom-small": _definition()}}
-        )
+        ModelDefinitionImportRequest(payload={"models": {"custom-small": _definition()}})
     )
     cfg = manager.catalog["custom-small"]
     _converted_dir(Path(cfg.model_path))
@@ -245,9 +229,7 @@ def test_advisor_size_failure_does_not_fail_successful_conversion(tmp_path, monk
 
     import app.model_manager as manager_module
 
-    monkeypatch.setattr(
-        manager_module._CoreModelManager, "_convert_task", successful_conversion
-    )
+    monkeypatch.setattr(manager_module._CoreModelManager, "_convert_task", successful_conversion)
 
     def fail_measurement(*_args, **_kwargs):
         raise OSError("size failed")

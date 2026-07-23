@@ -27,9 +27,7 @@ def _load_targets(manager: Any) -> dict[str, str]:
 def install_model_load_target_routing() -> None:
     """Patch ``ModelManager`` so the newest explicit load target always wins."""
 
-    from app import errors
-    from app import model_manager as manager_module
-    from app import model_registry as registry
+    from app import errors, model_manager as manager_module, model_registry as registry
     from app.config import BASE_DIR
     from runtime import device_check
 

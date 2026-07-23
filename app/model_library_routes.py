@@ -82,7 +82,9 @@ def register_model_library_routes(app: FastAPI) -> None:
     @router.get("")
     async def model_library(
         request: Request,
-        profile: str = Query(default="balanced", pattern=r"^(fastest|balanced|best_quality|lowest_memory)$"),
+        profile: str = Query(
+            default="balanced", pattern=r"^(fastest|balanced|best_quality|lowest_memory)$"
+        ),
         query: str = Query(default="", max_length=160),
         include_all: bool = Query(default=False),
     ):
@@ -130,7 +132,11 @@ def register_model_library_routes(app: FastAPI) -> None:
     @router.post("/import-definitions")
     async def import_model_definitions(request: Request, body: ModelDefinitionImportRequest):
         manager = request.app.state.manager
-        raw = body.payload.get("models") if isinstance(body.payload.get("models"), dict) else body.payload
+        raw = (
+            body.payload.get("models")
+            if isinstance(body.payload.get("models"), dict)
+            else body.payload
+        )
         candidate_ids = set(raw) if isinstance(raw, dict) else set()
         active = [
             model_id
@@ -164,7 +170,10 @@ def register_model_library_routes(app: FastAPI) -> None:
             )
         if model_id in manager.engines:
             raise HTTPException(status_code=409, detail="Unload the model before replacing it.")
-        for tasks, label in ((manager.load_tasks, "loading"), (manager.convert_tasks, "converting")):
+        for tasks, label in (
+            (manager.load_tasks, "loading"),
+            (manager.convert_tasks, "converting"),
+        ):
             task = tasks.get(model_id)
             if task is not None and not task.done():
                 raise HTTPException(status_code=409, detail=f"Model is still {label}.")

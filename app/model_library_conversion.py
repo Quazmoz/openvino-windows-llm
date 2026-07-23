@@ -9,8 +9,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from app import __version__
-from app import model_registry as registry
+from app import __version__, model_registry as registry
 from app.model_library_schema import major_minor, package_version, utc_now
 from app.paths import packaged_resource_root
 
@@ -83,9 +82,7 @@ def conversion_health(cfg: registry.ModelConfig) -> dict[str, Any]:
             "The OpenVINO IR exists but its compatibility marker is not a JSON object."
         )
     if marker.get("schema_version") != CONVERSION_SCHEMA_VERSION:
-        return _invalid_metadata(
-            "The conversion compatibility marker uses an unsupported schema."
-        )
+        return _invalid_metadata("The conversion compatibility marker uses an unsupported schema.")
     required_fields = (
         "model_id",
         "source_model",
