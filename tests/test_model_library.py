@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -13,6 +14,9 @@ from app.model_library import (
 )
 from app.model_manager import ModelManager
 from app.server import _index_html, create_app
+
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def _settings(tmp_path):
@@ -141,3 +145,20 @@ def test_model_library_ui_is_composed_once():
     assert html.count('id="ovllm-model-library-extension"') == 1
     assert "Verified Model Library" in html
     assert "/v1/model-library/import-converted" in html
+
+
+def test_bundled_manifest_and_release_wiring():
+    manifest = parse_manifest_bytes((ROOT / "model_library_manifest.json").read_bytes())
+    assert len(manifest["catalog"]) == 9
+    assert all(
+        not records
+        for entry in manifest["catalog"].values()
+        for records in entry["metadata"]["certifications"].values()
+    )
+
+    spec = (ROOT / "packaging" / "openvino_windows_llm.spec").read_text(encoding="utf-8")
+    publish = (ROOT / "scripts" / "publish_release.ps1").read_text(encoding="utf-8")
+    assert 'root / "model_library_manifest.json"' in spec
+    assert "validate_model_library_manifest.py" in publish
+    assert "release_tools.py checksums --output-dir" in publish
+    assert '"model_library_manifest.json"' in publish
