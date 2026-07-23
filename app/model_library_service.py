@@ -225,14 +225,14 @@ class ModelLibraryService:
         self.cache_file.parent.mkdir(parents=True, exist_ok=True)
         temp = self.cache_file.with_suffix(".json.tmp")
         temp.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
-        original_catalog = dict(self.manager.catalog)
         try:
             merge = await asyncio.to_thread(self.apply_official_definitions, manifest)
             temp.replace(self.cache_file)
         except Exception:
+            # The locked catalog mutation rolls itself back if it fails. If only the
+            # cache replacement fails, keep the valid catalog update rather than
+            # restoring a stale snapshot that could erase an unrelated registration.
             temp.unlink(missing_ok=True)
-            if self.manager.catalog != original_catalog:
-                self._restore_catalog(original_catalog)
             raise
         return {"source": source_url, "manifest": manifest, **merge}
 
