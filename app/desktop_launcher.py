@@ -115,12 +115,17 @@ class InstanceLock:
     def acquire(self) -> bool:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         handle = open(self.path, "a+b")  # noqa: SIM115
-        handle.seek(0)
-        if handle.read(1) == b"":
-            handle.seek(0)
-            handle.write(b"0")
-            handle.flush()
         try:
+            # Ensure the file has a byte to lock. When another instance already
+            # holds the lock, this read/write touches the byte-range the other
+            # process has locked and raises OSError on Windows; treat that (and
+            # the lock call below) as "already held" instead of letting an
+            # unhandled PermissionError crash the launcher on a second launch.
+            handle.seek(0)
+            if handle.read(1) == b"":
+                handle.seek(0)
+                handle.write(b"0")
+                handle.flush()
             if os.name == "nt":
                 import msvcrt
 
