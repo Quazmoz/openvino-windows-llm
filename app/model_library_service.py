@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import secrets
 import shutil
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -49,9 +50,27 @@ _ALLOWED_RELEASE_HOSTS = {
 
 
 def definition_to_config(
-    definition: dict[str, Any], model_path: Path
+    definition: dict[str, Any],
+    model_path: Path,
+    *,
+    existing: registry.ModelConfig | None = None,
 ) -> registry.ModelConfig:
     request = ModelRegisterRequest.model_validate(definition)
+    if existing is not None:
+        if existing.id != request.model_id:
+            raise ValueError("An existing model definition cannot change its model ID.")
+        return replace(
+            existing,
+            name=request.name,
+            description=request.description or "",
+            backend=request.backend,
+            source_model=request.source_model,
+            weight_format=request.weight_format,
+            recommended_device=request.recommended_device,
+            max_context_len=request.max_context_len,
+            max_output_tokens=request.max_output_tokens,
+            trust_remote_code=request.trust_remote_code,
+        )
     return registry.ModelConfig(
         id=request.model_id,
         name=request.name,
@@ -221,7 +240,7 @@ class ModelLibraryService:
             definition["trust_remote_code"] = False
             existing = staged_catalog.get(model_id)
             target = Path(self.settings.models_dir) / model_id
-            cfg = definition_to_config(definition, target)
+            cfg = definition_to_config(definition, target, existing=existing)
             if existing is not None:
                 if model_definition(existing) == model_definition(cfg):
                     continue
@@ -590,7 +609,7 @@ class ModelLibraryService:
             seen_ids.add(parsed.model_id)
             existing = staged_catalog.get(parsed.model_id)
             target = Path(self.settings.models_dir) / parsed.model_id
-            candidate = definition_to_config(parsed.model_dump(), target)
+            candidate = definition_to_config(parsed.model_dump(), target, existing=existing)
             if existing is not None:
                 if model_definition(existing) == model_definition(candidate):
                     unchanged.append(parsed.model_id)
