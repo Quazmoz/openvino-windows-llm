@@ -16,6 +16,7 @@ if not build_info.is_file():
 datas = [
     (str(root / "web"), "web"),
     (str(root / "models.json"), "."),
+    (str(root / "model_library_manifest.json"), "."),
     (str(root / "LICENSE"), "."),
     (str(root / "README.md"), "."),
     (str(build_info), "."),
