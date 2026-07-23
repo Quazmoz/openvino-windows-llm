@@ -99,6 +99,16 @@ class TrayPollingMixin:
         if icon is None:
             return
         snapshot = self._snapshot()
+        # The tooltip, glyph, and every menu label/enabled flag are a pure
+        # function of the snapshot plus the startup-registration state. Skip the
+        # native rebuild when nothing the user can see has changed: it avoids
+        # re-registering the icon and rebuilding the menu handle every poll,
+        # which is both wasteful and the source of on-screen menu glitches.
+        signature = (snapshot, self._startup_enabled())
+        with self.render_lock:
+            if signature == self.last_render_signature:
+                return
+            self.last_render_signature = signature
         try:
             icon.title = tooltip(snapshot)
             icon.icon = tray_icon(snapshot.phase)

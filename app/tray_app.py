@@ -42,6 +42,8 @@ class TrayApplication(
         self.stop_event = threading.Event()
         self.snapshot = TraySnapshot(phase=TrayPhase.STOPPED, server_status="Stopped")
         self.snapshot_lock = threading.Lock()
+        self.render_lock = threading.Lock()
+        self.last_render_signature: tuple[Any, ...] | None = None
         self.icon = None
         self.poll_thread: threading.Thread | None = None
         self.last_status_payload: dict[str, Any] | None = None

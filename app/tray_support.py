@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any
@@ -12,6 +13,56 @@ from app.tray_state import TrayPhase
 
 APP_TITLE = "OpenVINO Windows LLM"
 POLL_SECONDS = 3.0
+
+
+def guarded_tray_icon(pystray):
+    """Return a ``pystray.Icon`` subclass that never rebuilds its menu on screen.
+
+    On Windows the notification-area menu is a native ``HMENU`` that pystray
+    builds once in ``_update_menu`` and shows with a blocking ``TrackPopupMenuEx``
+    call on the UI thread. The tray's status poller lives on a separate thread and
+    calls ``update_menu`` a few times a minute to refresh dynamic labels and
+    enabled state. If that rebuild lands while the user has the menu open,
+    ``DestroyMenu`` frees the handle Windows is actively drawing, which makes
+    hovering, sub-menus, and item highlighting glitch.
+
+    This subclass defers any rebuild requested while the menu is displayed until
+    it closes, and serializes rebuilds under a lock so two threads can never
+    destroy the same handle. On non-Windows backends ``_on_notify`` is never
+    dispatched, so the guard is inert and behaviour matches stock pystray.
+    """
+
+    class GuardedIcon(pystray.Icon):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self._menu_lock = threading.RLock()
+            self._menu_on_screen = False
+            self._menu_rebuild_pending = False
+
+        def _on_notify(self, wparam, lparam):
+            with self._menu_lock:
+                self._menu_on_screen = True
+            try:
+                # Blocks on Win32 for the entire time the popup menu is shown.
+                super()._on_notify(wparam, lparam)
+            finally:
+                with self._menu_lock:
+                    self._menu_on_screen = False
+                    pending = self._menu_rebuild_pending
+                    self._menu_rebuild_pending = False
+                if pending:
+                    self.update_menu()
+
+        def _update_menu(self):
+            with self._menu_lock:
+                if self._menu_on_screen:
+                    # Rebuilding now would DestroyMenu the handle currently on
+                    # screen; apply the refresh once the menu closes instead.
+                    self._menu_rebuild_pending = True
+                    return
+                super()._update_menu()
+
+    return GuardedIcon
 
 
 def configure_logging(logs_dir: Path) -> Path:

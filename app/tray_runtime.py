@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 from app.desktop_launcher import _read_metadata, verify_instance
 from app.desktop_shell import open_browser, show_dialog
 from app.tray_state import TrayPhase, TraySnapshot, tooltip
-from app.tray_support import APP_TITLE, atomic_json, tray_icon
+from app.tray_support import APP_TITLE, atomic_json, guarded_tray_icon, tray_icon
 
 logger = logging.getLogger("ov-llm.tray")
 
@@ -88,7 +88,7 @@ class TrayRuntimeMixin:
             return 6
 
         menu = self._build_menu(pystray)
-        self.icon = pystray.Icon(
+        self.icon = guarded_tray_icon(pystray)(
             "OpenVINOWindowsLLM",
             tray_icon(self.snapshot.phase),
             tooltip(self.snapshot),
