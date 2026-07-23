@@ -14,6 +14,8 @@ from app.chat_queue_ui import install_chat_queue_extension
 from app.desktop_operations_ui import install_desktop_operations_ui_extension
 from app.doctor_ui import install_system_doctor_extension
 from app.header_overflow_ui import install_header_overflow_extension
+from app.model_library_routes import install_model_library_routes_extension
+from app.model_library_ui import install_model_library_ui_extension
 from app.onboarding_ui import install_onboarding_ui_extension
 from app.paths import resolve_runtime_paths
 from app.progress_reliability import install_progress_ui_extension
@@ -26,6 +28,7 @@ from runtime.npu_compat import install_openvino_genai_compat
 # their imported engine and browser-injection functions. Desktop-only surfaces probe
 # for their APIs and remain dormant in ordinary development-server mode.
 install_openvino_genai_compat()
+install_model_library_routes_extension()
 install_chat_context_extension()
 install_chat_queue_extension()
 install_chat_guard_extension()
@@ -35,6 +38,7 @@ install_system_doctor_extension()
 install_header_overflow_extension()
 install_progress_ui_extension()
 install_onboarding_ui_extension()
+install_model_library_ui_extension()
 install_desktop_operations_ui_extension()
 
 logger = logging.getLogger("ov-llm.config")
