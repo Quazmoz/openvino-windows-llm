@@ -2,7 +2,8 @@
 param(
     [Parameter(Mandatory = $true)][string]$DistributionPath,
     [string]$Python = "python",
-    [int]$HeadlessSeconds = 120
+    [int]$HeadlessSeconds = 120,
+    [ValidateSet("installed", "portable")][string]$ExpectedMode = "portable"
 )
 
 $ErrorActionPreference = "Stop"
@@ -11,15 +12,25 @@ $Root = (Resolve-Path $DistributionPath).Path
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $Exe = Join-Path $Root "OpenVINOWindowsLLM.exe"
 if (-not (Test-Path $Exe)) { throw "Executable not found: $Exe" }
+$PortableMarker = Join-Path $Root "portable.flag"
+$IsPortable = $ExpectedMode -eq "portable"
+if ($IsPortable -and -not (Test-Path $PortableMarker)) {
+    throw "Portable-mode smoke test requires portable.flag in the distribution root."
+}
+if (-not $IsPortable -and (Test-Path $PortableMarker)) {
+    throw "Installed-mode smoke test refuses a distribution containing portable.flag."
+}
 $Data = Join-Path ([IO.Path]::GetTempPath()) ("OV LLM Packaged Smoke " + [guid]::NewGuid().ToString("N"))
 New-Item $Data -ItemType Directory -Force | Out-Null
 $Process = $null
 
 try {
-    $Process = Start-Process -FilePath $Exe -ArgumentList @(
+    $Arguments = @(
         "--mock", "--headless", "--headless-seconds", "$HeadlessSeconds",
-        "--portable", "--data-dir", ('"' + $Data + '"'), "--no-browser"
-    ) -WorkingDirectory $Root -PassThru -WindowStyle Hidden
+        "--data-dir", ('"' + $Data + '"'), "--no-browser"
+    )
+    if ($IsPortable) { $Arguments += "--portable" }
+    $Process = Start-Process -FilePath $Exe -ArgumentList $Arguments -WorkingDirectory $Root -PassThru -WindowStyle Hidden
 
     $MetadataPath = Join-Path $Data "desktop-instance.json"
     $Deadline = [DateTime]::UtcNow.AddSeconds(90)
@@ -43,6 +54,9 @@ try {
     if ($Instance.instance_nonce -ne $Metadata.nonce) { throw "Packaged desktop identity did not match tray metadata." }
     $Release = Invoke-RestMethod "$Origin/desktop/release/status" -TimeoutSec 10
     if (-not $Release.build.application_version) { throw "Packaged release metadata is missing." }
+    if ($Release.installation_mode -ne $ExpectedMode) {
+        throw "Packaged runtime reported installation mode '$($Release.installation_mode)' instead of '$ExpectedMode'."
+    }
     $Ui = Invoke-WebRequest -UseBasicParsing -Uri "$Origin/" -TimeoutSec 20
     if ($Ui.Content -notmatch "About & Updates") { throw "Packaged About and Updates UI is missing." }
 
@@ -64,7 +78,7 @@ try {
         ConvertTo-Json | Set-Content -Path (Join-Path $Data "tray-command.json") -Encoding utf8
     if (-not $Process.WaitForExit(20000)) { throw "Packaged tray did not shut down after the owned quit command." }
     if ($Process.ExitCode -ne 0) { throw "Packaged tray exited with code $($Process.ExitCode)." }
-    Write-Host "Packaged tray-owned mock smoke test passed."
+    Write-Host "Packaged $ExpectedMode-mode tray-owned mock smoke test passed."
 }
 finally {
     if ($Process -and -not $Process.HasExited) {
