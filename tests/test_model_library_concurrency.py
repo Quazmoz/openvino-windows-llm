@@ -2,10 +2,10 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from threading import Barrier
 
+from app import model_library_service as service_module
 from app.config import Settings
 from app.model_library import ConvertedModelImportRequest, ModelLibraryService
 from app.model_manager import ModelManager
-from app import model_library_service as service_module
 
 
 def _settings(tmp_path):
