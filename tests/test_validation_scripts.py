@@ -66,3 +66,9 @@ def test_windows_harness_forces_real_local_validation():
     assert "OV_LLM_API_KEY" in script
     assert '"--api-key"' not in script
     assert "certification/results" in script
+    # Discovery helpers must not pass multi-line Python via `python -c "<code>"`:
+    # Windows PowerShell 5.1 strips the embedded double quotes, corrupting the
+    # JSON dictionary keys and aborting the whole run before any device is
+    # certified. The snippet is written to a temp file and executed instead.
+    assert "-c $Code" not in script
+    assert "& $Python $scriptFile" in script

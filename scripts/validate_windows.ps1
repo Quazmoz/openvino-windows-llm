@@ -77,9 +77,27 @@ function Safe-Text([string]$Text, [string]$Secret) {
 }
 
 function Python-Json([string]$Python, [string]$Code) {
-    $output = & $Python -c $Code 2>&1
-    if ($LASTEXITCODE -ne 0) { throw ($output -join [Environment]::NewLine) }
-    return ($output -join [Environment]::NewLine) | ConvertFrom-Json
+    # Execute the snippet from a temporary file instead of `python -c "<code>"`.
+    # Windows PowerShell 5.1 strips embedded double quotes when forwarding a
+    # multi-line -c argument to a native process, which corrupts JSON dictionary
+    # keys (e.g. {"openvino": ...} becomes {openvino: ...}) and makes discovery
+    # fail with a NameError. A script file is passed through verbatim on every
+    # PowerShell edition. stderr is captured to a file (not merged with 2>&1) so
+    # a benign warning cannot trip $ErrorActionPreference = "Stop".
+    $scriptFile = Join-Path ([IO.Path]::GetTempPath()) ("ovllm-discovery-" + [Guid]::NewGuid().ToString("N") + ".py")
+    $errFile = "$scriptFile.err"
+    Set-Content -LiteralPath $scriptFile -Value $Code -Encoding UTF8
+    try {
+        $output = & $Python $scriptFile 2>$errFile
+        if ($LASTEXITCODE -ne 0) {
+            $details = Get-Content -LiteralPath $errFile -Raw -ErrorAction SilentlyContinue
+            throw "Python helper exited with code $LASTEXITCODE. $details"
+        }
+        return ($output -join [Environment]::NewLine) | ConvertFrom-Json
+    }
+    finally {
+        Remove-Item -LiteralPath $scriptFile, $errFile -Force -ErrorAction SilentlyContinue
+    }
 }
 
 if (-not (Test-Windows)) { throw "This harness must run on Windows." }
