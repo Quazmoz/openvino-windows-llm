@@ -5,7 +5,6 @@ from app.model_library import ModelLibraryService
 from app.model_manager import ModelManager
 from app.model_registry import ModelConfig
 
-
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -90,10 +89,17 @@ def _prepare_service(tmp_path, monkeypatch, cfg: ModelConfig) -> ModelLibrarySer
     monkeypatch.setattr(
         manager.advisor,
         "estimate_model",
-        lambda _cfg: {
+        lambda _cfg, *, device=None: {
             "parameter_count_b": 1.0,
-            "runtime_memory_gb": 3.0,
+            "precision": "fp16",
+            "download_size_gb": 2.1,
             "converted_size_gb": 2.0,
+            "converted_size_source": "estimated",
+            "runtime_memory_gb": 3.0,
+            "kv_cache_gb": 0.1,
+            "first_load_seconds": 12.0,
+            "first_load_source": "estimated",
+            "target_device": device or "CPU",
         },
     )
     monkeypatch.setattr(service, "_local_evidence", lambda _model_id: {})
