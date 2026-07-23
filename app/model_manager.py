@@ -187,21 +187,56 @@ class ModelManager(_CoreModelManager):
         if self.status_overrides.get(model_id, {}).get("status") == "error":
             return
         cfg = self.catalog.get(model_id)
-        if cfg is not None and registry.is_downloaded(cfg, BASE_DIR):
-            if weight_format and cfg.weight_format != weight_format:
-                cfg = replace(cfg, weight_format=weight_format)
-                self.catalog[model_id] = cfg
-                await asyncio.to_thread(registry.save_catalog, self.settings.models_file, self.catalog)
-                self.advisor.catalog = self.catalog
-            await asyncio.to_thread(self.advisor.measure_converted_size, cfg)
-            try:
-                from app.model_library import record_conversion_metadata
+        if cfg is None:
+            return
+        if not registry.is_downloaded(cfg, BASE_DIR):
+            message = (
+                "Conversion finished without the required OpenVINO IR files. "
+                "Review the conversion log and retry."
+            )
+            self._set_status(model_id, "error", error=message)
+            self._set_progress(model_id, "error", message)
+            self.emit_event("error", f"Conversion output was incomplete for {cfg.name}")
+            _core.logger.error("Conversion produced no usable OpenVINO IR for '%s'", model_id)
+            return
 
-                await asyncio.to_thread(record_conversion_metadata, cfg, self.settings)
-            except Exception:  # noqa: BLE001 - metadata must not fail a successful conversion
-                _core.logger.exception(
-                    "Could not record conversion compatibility metadata for '%s'", model_id
+        if weight_format and cfg.weight_format != weight_format:
+            updated_cfg = replace(cfg, weight_format=weight_format)
+            staged_catalog = dict(self.catalog)
+            staged_catalog[model_id] = updated_cfg
+            try:
+                await asyncio.to_thread(
+                    registry.save_catalog, self.settings.models_file, staged_catalog
                 )
+            except Exception as exc:  # noqa: BLE001 - surface persistence failure safely
+                message = (
+                    "Converted model files were created, but the model catalog could not be "
+                    "updated. Restart after repairing the writable data directory."
+                )
+                self._set_status(model_id, "error", error=message)
+                self._set_progress(model_id, "error", message)
+                self.emit_event("error", f"Catalog update failed for {cfg.name}")
+                _core.logger.exception(
+                    "Could not persist converted precision for '%s': %s", model_id, exc
+                )
+                return
+            self.catalog = staged_catalog
+            self.advisor.catalog = self.catalog
+            cfg = updated_cfg
+
+        try:
+            await asyncio.to_thread(self.advisor.measure_converted_size, cfg)
+        except Exception:  # noqa: BLE001 - advisory evidence must not fail conversion
+            _core.logger.exception("Could not measure converted size for '%s'", model_id)
+
+        try:
+            from app.model_library import record_conversion_metadata
+
+            await asyncio.to_thread(record_conversion_metadata, cfg, self.settings)
+        except Exception:  # noqa: BLE001 - metadata must not fail a successful conversion
+            _core.logger.exception(
+                "Could not record conversion compatibility metadata for '%s'", model_id
+            )
 
     def delete(self, model_id: str) -> dict:
         cfg = self.catalog[model_id]
