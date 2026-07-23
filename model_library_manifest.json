@@ -1,0 +1,242 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-07-23T00:00:00Z",
+  "source": "bundled-offline-fallback",
+  "catalog": {
+    "smollm2-135m-fp16": {
+      "definition": {
+        "name": "SmolLM2 135M Instruct FP16",
+        "description": "Ultra-lightweight maintained model for setup validation and low-memory systems.",
+        "source_model": "HuggingFaceTB/SmolLM2-135M-Instruct",
+        "backend": "openvino-genai",
+        "weight_format": "fp16",
+        "recommended_device": "CPU",
+        "max_context_len": 2048,
+        "max_output_tokens": 512,
+        "trust_remote_code": false
+      },
+      "metadata": {
+        "curated": true,
+        "profiles": ["fastest", "lowest_memory"],
+        "minimum_ram_gb": 2,
+        "minimum_disk_gb": 0.5,
+        "license": "Apache-2.0",
+        "gated": false,
+        "quality_score": 30,
+        "speed_score": 100,
+        "max_tested_context": 0,
+        "maintainer_note": "Use for installation checks and very constrained hardware, not quality-sensitive work.",
+        "certifications": {"CPU": [], "GPU": [], "NPU": []}
+      }
+    },
+    "smollm2-360m-fp16": {
+      "definition": {
+        "name": "SmolLM2 360M Instruct FP16",
+        "description": "Fast, compact chat model for responsive local experiments.",
+        "source_model": "HuggingFaceTB/SmolLM2-360M-Instruct",
+        "backend": "openvino-genai",
+        "weight_format": "fp16",
+        "recommended_device": "NPU",
+        "max_context_len": 2048,
+        "max_output_tokens": 512,
+        "trust_remote_code": false
+      },
+      "metadata": {
+        "curated": true,
+        "profiles": ["fastest", "lowest_memory"],
+        "minimum_ram_gb": 3,
+        "minimum_disk_gb": 1,
+        "license": "Apache-2.0",
+        "gated": false,
+        "quality_score": 42,
+        "speed_score": 96,
+        "max_tested_context": 0,
+        "maintainer_note": "Preferred fastest chat option after basic hardware validation.",
+        "certifications": {"CPU": [], "GPU": [], "NPU": []}
+      }
+    },
+    "qwen2.5-0.5b-fp16": {
+      "definition": {
+        "name": "Qwen2.5 0.5B Instruct FP16",
+        "description": "Compact Qwen instruct model balancing speed, instruction following, and footprint.",
+        "source_model": "Qwen/Qwen2.5-0.5B-Instruct",
+        "backend": "openvino-genai",
+        "weight_format": "fp16",
+        "recommended_device": "NPU",
+        "max_context_len": 2048,
+        "max_output_tokens": 512,
+        "trust_remote_code": false
+      },
+      "metadata": {
+        "curated": true,
+        "profiles": ["fastest", "balanced", "lowest_memory"],
+        "minimum_ram_gb": 3,
+        "minimum_disk_gb": 1.5,
+        "license": "Apache-2.0",
+        "gated": false,
+        "quality_score": 55,
+        "speed_score": 90,
+        "max_tested_context": 0,
+        "maintainer_note": "Good first useful model for modern Intel PCs.",
+        "certifications": {"CPU": [], "GPU": [], "NPU": []}
+      }
+    },
+    "tinyllama-1.1b-chat-fp16": {
+      "definition": {
+        "name": "TinyLlama 1.1B Chat FP16",
+        "description": "Small compatibility model retained primarily for repeatable OpenVINO device validation.",
+        "source_model": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+        "backend": "openvino-genai",
+        "weight_format": "fp16",
+        "recommended_device": "NPU",
+        "max_context_len": 2048,
+        "max_output_tokens": 512,
+        "trust_remote_code": false
+      },
+      "metadata": {
+        "curated": true,
+        "profiles": ["fastest"],
+        "minimum_ram_gb": 4,
+        "minimum_disk_gb": 2.8,
+        "license": "Apache-2.0",
+        "gated": false,
+        "quality_score": 45,
+        "speed_score": 82,
+        "max_tested_context": 0,
+        "maintainer_note": "Use as a stable device-validation model rather than the default quality recommendation.",
+        "certifications": {"CPU": [], "GPU": [], "NPU": []}
+      }
+    },
+    "qwen2.5-1.5b-fp16": {
+      "definition": {
+        "name": "Qwen2.5 1.5B Instruct FP16",
+        "description": "Maintained balanced recommendation for useful local chat on modest Intel hardware.",
+        "source_model": "Qwen/Qwen2.5-1.5B-Instruct",
+        "backend": "openvino-genai",
+        "weight_format": "fp16",
+        "recommended_device": "NPU",
+        "max_context_len": 2048,
+        "max_output_tokens": 512,
+        "trust_remote_code": false
+      },
+      "metadata": {
+        "curated": true,
+        "profiles": ["balanced", "fastest"],
+        "minimum_ram_gb": 6,
+        "minimum_disk_gb": 4,
+        "license": "Apache-2.0",
+        "gated": false,
+        "quality_score": 70,
+        "speed_score": 72,
+        "max_tested_context": 0,
+        "maintainer_note": "Default balanced candidate when local preflight approves it.",
+        "certifications": {"CPU": [], "GPU": [], "NPU": []}
+      }
+    },
+    "smollm2-1.7b-fp16": {
+      "definition": {
+        "name": "SmolLM2 1.7B Instruct FP16",
+        "description": "Compact higher-quality SmolLM2 option for balanced local workloads.",
+        "source_model": "HuggingFaceTB/SmolLM2-1.7B-Instruct",
+        "backend": "openvino-genai",
+        "weight_format": "fp16",
+        "recommended_device": "NPU",
+        "max_context_len": 2048,
+        "max_output_tokens": 512,
+        "trust_remote_code": false
+      },
+      "metadata": {
+        "curated": true,
+        "profiles": ["balanced"],
+        "minimum_ram_gb": 7,
+        "minimum_disk_gb": 4.5,
+        "license": "Apache-2.0",
+        "gated": false,
+        "quality_score": 72,
+        "speed_score": 68,
+        "max_tested_context": 0,
+        "maintainer_note": "Alternative balanced model for comparison with Qwen 1.5B.",
+        "certifications": {"CPU": [], "GPU": [], "NPU": []}
+      }
+    },
+    "qwen2.5-3b-fp16": {
+      "definition": {
+        "name": "Qwen2.5 3B Instruct FP16",
+        "description": "Opinionated quality recommendation for capable systems that pass memory preflight.",
+        "source_model": "Qwen/Qwen2.5-3B-Instruct",
+        "backend": "openvino-genai",
+        "weight_format": "fp16",
+        "recommended_device": "NPU",
+        "max_context_len": 4096,
+        "max_output_tokens": 1024,
+        "trust_remote_code": false
+      },
+      "metadata": {
+        "curated": true,
+        "profiles": ["best_quality", "balanced"],
+        "minimum_ram_gb": 10,
+        "minimum_disk_gb": 8,
+        "license": "Apache-2.0",
+        "gated": false,
+        "quality_score": 86,
+        "speed_score": 48,
+        "max_tested_context": 0,
+        "maintainer_note": "Preferred quality candidate before moving to larger, less predictable models.",
+        "certifications": {"CPU": [], "GPU": [], "NPU": []}
+      }
+    },
+    "phi-4-mini-fp16": {
+      "definition": {
+        "name": "Phi-4 Mini Instruct FP16",
+        "description": "Compact reasoning-oriented candidate for higher-quality local tasks.",
+        "source_model": "microsoft/phi-4-mini-instruct",
+        "backend": "openvino-genai",
+        "weight_format": "fp16",
+        "recommended_device": "NPU",
+        "max_context_len": 4096,
+        "max_output_tokens": 1024,
+        "trust_remote_code": false
+      },
+      "metadata": {
+        "curated": true,
+        "profiles": ["best_quality"],
+        "minimum_ram_gb": 12,
+        "minimum_disk_gb": 10,
+        "license": "MIT",
+        "gated": false,
+        "quality_score": 90,
+        "speed_score": 40,
+        "max_tested_context": 0,
+        "maintainer_note": "Use only after local conversion and device validation succeed.",
+        "certifications": {"CPU": [], "GPU": [], "NPU": []}
+      }
+    },
+    "bge-small-en-v1.5": {
+      "definition": {
+        "name": "BGE Small En v1.5",
+        "description": "Maintained compact English embedding model for local retrieval workflows.",
+        "source_model": "BAAI/bge-small-en-v1.5",
+        "backend": "openvino-embeddings",
+        "weight_format": "fp16",
+        "recommended_device": "CPU",
+        "max_context_len": 512,
+        "max_output_tokens": 0,
+        "trust_remote_code": false
+      },
+      "metadata": {
+        "curated": true,
+        "profiles": ["lowest_memory"],
+        "minimum_ram_gb": 2,
+        "minimum_disk_gb": 1,
+        "license": "MIT",
+        "gated": false,
+        "quality_score": 70,
+        "speed_score": 90,
+        "max_tested_context": 0,
+        "maintainer_note": "Embedding-only model. It does not appear in chat-generation recommendations.",
+        "certifications": {"CPU": [], "GPU": [], "NPU": []}
+      }
+    }
+  },
+  "catalog_sha256": "9371e701b4c6e5880ee453c5ec91e8c71bb6e43cc33d07566ac399ba2808231b"
+}
