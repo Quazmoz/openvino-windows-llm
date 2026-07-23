@@ -1,6 +1,6 @@
 # Windows installer guide
 
-The Inno Setup configuration targets Windows 11 x64-compatible systems and installs the tray-enabled desktop build per-user.
+The Inno Setup configuration targets Windows x64-compatible systems on build 19041 or newer and installs the tray-enabled desktop build per-user.
 
 ## Installation behavior
 
