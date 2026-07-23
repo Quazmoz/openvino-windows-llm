@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import secrets
 import shutil
+import threading
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -108,6 +110,11 @@ class ModelLibraryService:
         self.cache_file = Path(settings.models_file).parent / "model-library-manifest.json"
         self.user_file = Path(settings.models_file).parent / "model-library-user.json"
         self.bundled_file = packaged_resource_root() / "model_library_manifest.json"
+        catalog_lock = getattr(manager, "_catalog_lock", None)
+        if catalog_lock is None:
+            catalog_lock = threading.RLock()
+            manager._catalog_lock = catalog_lock
+        self._catalog_lock = catalog_lock
 
     def _read_manifest(self) -> tuple[dict[str, Any], str]:
         for path, source in ((self.cache_file, "official-cache"), (self.bundled_file, "bundled")):
@@ -220,7 +227,7 @@ class ModelLibraryService:
         temp.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
         original_catalog = dict(self.manager.catalog)
         try:
-            merge = self.apply_official_definitions(manifest)
+            merge = await asyncio.to_thread(self.apply_official_definitions, manifest)
             temp.replace(self.cache_file)
         except Exception:
             temp.unlink(missing_ok=True)
@@ -230,6 +237,12 @@ class ModelLibraryService:
         return {"source": source_url, "manifest": manifest, **merge}
 
     def apply_official_definitions(self, manifest: dict[str, Any]) -> dict[str, Any]:
+        with self._catalog_lock:
+            return self._apply_official_definitions_locked(manifest)
+
+    def _apply_official_definitions_locked(
+        self, manifest: dict[str, Any]
+    ) -> dict[str, Any]:
         added: list[str] = []
         updated: list[str] = []
         conflicts: list[str] = []
@@ -615,6 +628,12 @@ class ModelLibraryService:
         }
 
     def import_definitions(self, request: ModelDefinitionImportRequest) -> dict[str, Any]:
+        with self._catalog_lock:
+            return self._import_definitions_locked(request)
+
+    def _import_definitions_locked(
+        self, request: ModelDefinitionImportRequest
+    ) -> dict[str, Any]:
         payload = request.payload
         raw_models = payload.get("models") if isinstance(payload.get("models"), dict) else payload
         if (
@@ -707,9 +726,11 @@ class ModelLibraryService:
             raise ValueError("Not enough free disk space to import this converted model safely.")
 
         temp = models_root / f".{request.model_id}.import-{secrets.token_hex(6)}"
-        previous_user_ids = self._read_user_ids()
-        user_file_existed = self.user_file.exists()
-        original_catalog = dict(self.manager.catalog)
+        previous_user_ids: set[str] = set()
+        user_file_existed = False
+        original_catalog: dict[str, registry.ModelConfig] = {}
+        state_captured = False
+        target_installed = False
         try:
             # Preserve links instead of following them, then reject the copied tree.
             # This closes the race where a link is inserted after source validation.
@@ -717,33 +738,49 @@ class ModelLibraryService:
             directory_size_bytes(temp)
             if not registry.is_openvino_model_dir(temp):
                 raise ValueError("Copied model failed OpenVINO IR validation.")
-            temp.replace(target)
-            definition = {
-                "model_id": request.model_id,
-                "name": request.name,
-                "description": request.description,
-                "source_model": request.source_model or f"local-openvino:{source.name}",
-                "backend": request.backend,
-                "weight_format": request.weight_format,
-                "recommended_device": request.recommended_device,
-                "max_context_len": request.max_context_len,
-                "max_output_tokens": request.max_output_tokens,
-                "trust_remote_code": False,
-            }
-            cfg = definition_to_config(definition, target)
-            record_conversion_metadata(cfg, self.settings)
-            user_ids = set(previous_user_ids)
-            user_ids.add(request.model_id)
-            self._write_user_ids(user_ids)
-            staged_catalog = dict(self.manager.catalog)
-            staged_catalog[request.model_id] = cfg
-            registry.save_catalog(self.settings.models_file, staged_catalog)
-            self.manager.reload_catalog()
+            with self._catalog_lock:
+                # Another request may have completed while this model was being copied.
+                if request.model_id in self.manager.catalog:
+                    raise ValueError(f"Model ID '{request.model_id}' is already registered.")
+                if target.exists():
+                    raise ValueError(
+                        f"Managed model directory already exists for '{request.model_id}'."
+                    )
+                previous_user_ids = self._read_user_ids()
+                user_file_existed = self.user_file.exists()
+                original_catalog = dict(self.manager.catalog)
+                state_captured = True
+                temp.replace(target)
+                target_installed = True
+                definition = {
+                    "model_id": request.model_id,
+                    "name": request.name,
+                    "description": request.description,
+                    "source_model": request.source_model or f"local-openvino:{source.name}",
+                    "backend": request.backend,
+                    "weight_format": request.weight_format,
+                    "recommended_device": request.recommended_device,
+                    "max_context_len": request.max_context_len,
+                    "max_output_tokens": request.max_output_tokens,
+                    "trust_remote_code": False,
+                }
+                cfg = definition_to_config(definition, target)
+                record_conversion_metadata(cfg, self.settings)
+                user_ids = set(previous_user_ids)
+                user_ids.add(request.model_id)
+                self._write_user_ids(user_ids)
+                staged_catalog = dict(self.manager.catalog)
+                staged_catalog[request.model_id] = cfg
+                registry.save_catalog(self.settings.models_file, staged_catalog)
+                self.manager.reload_catalog()
         except Exception:
             shutil.rmtree(temp, ignore_errors=True)
-            shutil.rmtree(target, ignore_errors=True)
-            self._restore_user_ids(previous_user_ids, user_file_existed)
-            self._restore_catalog(original_catalog)
+            if target_installed:
+                shutil.rmtree(target, ignore_errors=True)
+            if state_captured:
+                with self._catalog_lock:
+                    self._restore_user_ids(previous_user_ids, user_file_existed)
+                    self._restore_catalog(original_catalog)
             raise
         return {
             "model_id": request.model_id,
