@@ -26,6 +26,8 @@ Start with Windows is enabled later from the tray. It creates one HKCU Run value
 
 Use `-SkipInstaller` to create only the portable ZIP when Inno Setup is unavailable. Artifacts are versioned, checksummed, and accurately marked signed or unsigned.
 
+Before compiling the installer, the release pipeline runs the packaged executable without `portable.flag`, verifies that it reports `installed` mode, and exercises the full mock API, UI, lifecycle, benchmark, and owned-shutdown contract. The extracted portable ZIP is then tested separately in `portable` mode. Actual installer installation, upgrade, downgrade, and uninstall behavior still require validation on a clean Windows machine before release.
+
 ## Upgrade and uninstall
 
 Installer upgrades replace application files only. Mutable data remains under `%LOCALAPPDATA%\OpenVINOWindowsLLM`.
