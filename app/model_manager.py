@@ -130,7 +130,19 @@ class ModelManager(_CoreModelManager):
 
     def register_model(self, req: Any) -> registry.ModelConfig:
         with self._catalog_lock:
-            return super().register_model(req)
+            original_catalog = dict(self.catalog)
+            try:
+                return super().register_model(req)
+            except Exception:
+                self.catalog = original_catalog
+                advisor = getattr(self, "advisor", None)
+                if advisor is not None:
+                    advisor.catalog = self.catalog
+                try:
+                    registry.save_catalog(self.settings.models_file, original_catalog)
+                except Exception:  # noqa: BLE001 - preserve the original registration error
+                    pass
+                raise
 
     def resolve_engine(self, model_id: str):
         text = str(model_id or "").strip()
