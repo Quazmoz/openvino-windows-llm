@@ -8,6 +8,7 @@ construction logic.
 from __future__ import annotations
 
 import asyncio
+import copy
 import functools
 import secrets
 from typing import Any
@@ -25,6 +26,18 @@ from app.model_library import (
 )
 
 
+class _RouteModelLibraryService(ModelLibraryService):
+    """Apply route-level policy to remotely maintained definitions."""
+
+    def apply_official_definitions(self, manifest: dict[str, Any]) -> dict[str, Any]:
+        safe_manifest = copy.deepcopy(manifest)
+        for entry in safe_manifest.get("catalog", {}).values():
+            definition = entry.get("definition") if isinstance(entry, dict) else None
+            if isinstance(definition, dict):
+                definition["trust_remote_code"] = False
+        return super().apply_official_definitions(safe_manifest)
+
+
 def _service(request: Request) -> ModelLibraryService:
     state = request.app.state
     service = getattr(state, "model_library_service", None)
@@ -33,7 +46,7 @@ def _service(request: Request) -> ModelLibraryService:
         settings = getattr(state, "settings", None)
         if manager is None or settings is None:
             raise HTTPException(status_code=503, detail="Model library is not initialized.")
-        service = ModelLibraryService(settings, manager)
+        service = _RouteModelLibraryService(settings, manager)
         state.model_library_service = service
     return service
 
@@ -141,6 +154,14 @@ def register_model_library_routes(app: FastAPI) -> None:
     async def import_converted_model(request: Request, body: ConvertedModelImportRequest):
         manager = request.app.state.manager
         model_id = body.model_id
+        if body.overwrite:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Converted-model replacement is intentionally disabled. Import with a new "
+                    "model ID, or unload and delete the managed copy first."
+                ),
+            )
         if model_id in manager.engines:
             raise HTTPException(status_code=409, detail="Unload the model before replacing it.")
         for tasks, label in ((manager.load_tasks, "loading"), (manager.convert_tasks, "converting")):
