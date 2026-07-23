@@ -379,28 +379,54 @@ class ModelLibraryService:
             else {"memory": {}, "disk": {}, "available_devices": []}
         )
         estimate = advisor.estimate_model(cfg) if advisor else {}
-        metadata = dict((manifest_entry or {}).get("metadata") or {})
+        manifest_definition = (manifest_entry or {}).get("definition")
+        manifest_identity_matches = bool(
+            not isinstance(manifest_definition, dict)
+            or all(
+                str(getattr(cfg, field) or "") == str(manifest_definition.get(field) or "")
+                for field in ("source_model", "backend", "weight_format")
+            )
+        )
+        metadata = (
+            dict((manifest_entry or {}).get("metadata") or {})
+            if manifest_identity_matches
+            else {}
+        )
         local = self._local_evidence(model_id)
         verification = self._verification(metadata, local)
+        recommendation = self._quantization(cfg, estimate, snapshot)
         preferred_device = str(cfg.recommended_device or "CPU").split(":", 1)[0].upper()
-        measured = next(
+        target_device = str(recommendation.get("device") or preferred_device).upper()
+        local_device = next(
             (
-                local[device]
-                for device in (preferred_device, "NPU", "GPU", "CPU")
+                device
+                for device in (target_device, preferred_device, "NPU", "GPU", "CPU")
                 if device in local
             ),
-            {},
+            None,
         )
+        measured = local.get(local_device, {}) if local_device else {}
         certifications = metadata.get("certifications", {})
         if not isinstance(certifications, dict):
             certifications = {}
-        official_records = [
-            record
-            for records in certifications.values()
-            if isinstance(records, list)
-            for record in records
-            if isinstance(record, dict)
-        ]
+        official_device = next(
+            (
+                device
+                for device in (target_device, preferred_device, "NPU", "GPU", "CPU")
+                if isinstance(certifications.get(device), list)
+                and any(isinstance(record, dict) for record in certifications[device])
+            ),
+            None,
+        )
+        official_records = (
+            [
+                record
+                for record in certifications.get(official_device, [])
+                if isinstance(record, dict)
+            ]
+            if official_device
+            else []
+        )
         latest_official = max(
             official_records,
             key=lambda record: str(record.get("certified_at") or ""),
@@ -465,13 +491,17 @@ class ModelLibraryService:
                 "measurement_source": (
                     "local" if local_measurement else "official" if latest_official else None
                 ),
+                "measurement_device": (
+                    local_device if local_measurement else official_device if latest_official else None
+                ),
             },
             "profiles": profiles,
             "quality_score": safe_float(metadata.get("quality_score")),
             "speed_score": safe_float(metadata.get("speed_score")),
             "maintainer_note": metadata.get("maintainer_note") or "",
-            "recommended_quantization": self._quantization(cfg, estimate, snapshot),
+            "recommended_quantization": recommendation,
             "curated": bool(metadata.get("curated", False)),
+            "manifest_definition_match": manifest_identity_matches,
         }
 
     def snapshot(
