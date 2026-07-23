@@ -37,6 +37,10 @@ foreach ($Name in $Expected) {
 }
 & $Python scripts/release_tools.py verify-checksums --path (Join-Path $ArtifactDirectory "OpenVINO-Windows-LLM-$Version-checksums.txt")
 if ($LASTEXITCODE -ne 0) { throw "Checksum verification failed." }
+$LibraryManifest = Join-Path $Root "model_library_manifest.json"
+if (-not (Test-Path $LibraryManifest)) { throw "Missing model library manifest: $LibraryManifest" }
+& $Python scripts/validate_model_library_manifest.py $LibraryManifest
+if ($LASTEXITCODE -ne 0) { throw "Model library manifest validation failed." }
 
 & git rev-parse --verify --quiet "refs/tags/$Tag" | Out-Null
 if ($LASTEXITCODE -eq 0) { throw "Tag $Tag already exists." }
@@ -44,7 +48,7 @@ if ($LASTEXITCODE -eq 0) { throw "Tag $Tag already exists." }
 if ($LASTEXITCODE -eq 0) { throw "GitHub release $Tag already exists." }
 
 $Notes = Join-Path $ArtifactDirectory "OpenVINO-Windows-LLM-$Version-release-notes.md"
-$Upload = $Expected | ForEach-Object { Join-Path $ArtifactDirectory $_ }
+$Upload = @($Expected | ForEach-Object { Join-Path $ArtifactDirectory $_ }) + @($LibraryManifest)
 if ($DryRun) {
     Write-Host "Dry run passed. Would create annotated tag $Tag and upload:"
     $Upload | ForEach-Object { Write-Host "  $_" }
@@ -64,7 +68,7 @@ if ($LASTEXITCODE -ne 0) { throw "GitHub release creation or upload failed." }
 $AssetJson = & gh release view $Tag --repo Quazmoz/openvino-windows-llm --json assets
 if ($LASTEXITCODE -ne 0) { throw "Published release could not be re-read for artifact verification." }
 $PublishedNames = @((($AssetJson | ConvertFrom-Json).assets) | ForEach-Object { $_.name })
-foreach ($Name in $Expected) {
+foreach ($Name in @($Expected) + @("model_library_manifest.json")) {
     if ($PublishedNames -notcontains $Name) { throw "Published release is missing artifact: $Name" }
 }
 Write-Host "Published and verified GitHub release $Tag."
