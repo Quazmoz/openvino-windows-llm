@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import stat
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +15,12 @@ from app.model_library_schema import major_minor, package_version, utc_now
 from app.paths import packaged_resource_root
 
 CONVERSION_SCHEMA_VERSION = 1
+
+
+def _runtime_package_version(name: str) -> str | None:
+    public_module = sys.modules.get("app.model_library")
+    resolver = getattr(public_module, "_package_version", package_version)
+    return resolver(name)
 
 
 def conversion_marker_path(cfg: registry.ModelConfig) -> Path:
@@ -31,8 +38,8 @@ def record_conversion_metadata(cfg: registry.ModelConfig, settings: Any) -> None
         "backend": cfg.backend,
         "weight_format": cfg.weight_format,
         "application_version": __version__,
-        "openvino_version": package_version("openvino"),
-        "openvino_genai_version": package_version("openvino-genai"),
+        "openvino_version": _runtime_package_version("openvino"),
+        "openvino_genai_version": _runtime_package_version("openvino-genai"),
         "recorded_at": utc_now(),
     }
     temp = conversion_marker_path(cfg).with_suffix(".json.tmp")
@@ -119,7 +126,7 @@ def conversion_health(cfg: registry.ModelConfig) -> dict[str, Any]:
         ("OpenVINO GenAI", "openvino_genai_version", "openvino-genai"),
     ):
         recorded_version = str(marker.get(marker_field) or "")
-        current_version = package_version(package_name)
+        current_version = _runtime_package_version(package_name)
         recorded_runtime = major_minor(recorded_version)
         current_runtime = major_minor(current_version)
         if recorded_runtime and current_runtime and recorded_runtime != current_runtime:
