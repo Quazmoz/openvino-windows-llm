@@ -249,6 +249,13 @@ $ReleaseNotes = Join-Path $Artifacts "OpenVINO-Windows-LLM-$Version-release-note
 Copy-Item $ReleaseNotesSource $ReleaseNotes -Force
 $Produced += $ReleaseNotes
 
+$ModelLibrarySource = Join-Path $Root "model_library_manifest.json"
+if (-not (Test-Path $ModelLibrarySource)) { throw "Curated model library manifest is missing at $ModelLibrarySource." }
+Invoke-Checked "Validate model library manifest" { & $ReleasePython scripts/validate_model_library_manifest.py $ModelLibrarySource }
+$ModelLibraryAsset = Join-Path $Artifacts "model-library-manifest.json"
+Copy-Item $ModelLibrarySource $ModelLibraryAsset -Force
+$Produced += $ModelLibraryAsset
+
 $PublishedAt = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
 Invoke-Checked "Generate and validate release manifest" {
     & $ReleasePython scripts/release_tools.py manifest --output-dir $Artifacts --version $Version --channel $Channel --published-at $PublishedAt --commit $GitCommit --clean ($TreeClean.ToString().ToLowerInvariant()) --signed-types ($SignedTypes -join ',') --inventory-filename ([IO.Path]::GetFileName($InventoryJson))

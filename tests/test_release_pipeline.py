@@ -179,3 +179,24 @@ def test_tray_owned_smoke_regressions_are_guarded():
 def test_release_requirements_are_exactly_pinned():
     root = Path(__file__).resolve().parents[1]
     verify_release_requirements(root / "requirements" / "release.txt")
+
+
+def test_build_script_stages_model_library_manifest():
+    """The release build must copy and validate the model library manifest."""
+    root = Path(__file__).resolve().parents[1]
+    script = (root / "scripts" / "build_release.ps1").read_text(encoding="utf-8")
+    assert "model-library-manifest.json" in script, (
+        "build_release.ps1 must stage model-library-manifest.json as a release asset"
+    )
+    assert "validate_model_library_manifest.py" in script, (
+        "build_release.ps1 must validate the model library manifest before staging"
+    )
+
+
+def test_source_model_library_manifest_exists():
+    """The curated model library manifest must exist at the repository root."""
+    root = Path(__file__).resolve().parents[1]
+    manifest = root / "model_library_manifest.json"
+    assert manifest.is_file(), (
+        "model_library_manifest.json must exist at repository root for release staging"
+    )
