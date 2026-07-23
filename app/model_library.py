@@ -15,6 +15,7 @@ import os
 import re
 import secrets
 import shutil
+import stat
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -106,6 +107,24 @@ def _safe_int(value: Any, default: int = 0) -> int:
         return default
 
 
+def _optional_nonnegative_float(value: Any) -> float | None:
+    if value is None or value == "" or isinstance(value, bool):
+        return None
+    try:
+        return max(float(value), 0.0)
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
+def _optional_nonnegative_int(value: Any) -> int | None:
+    if value is None or value == "" or isinstance(value, bool):
+        return None
+    try:
+        return max(int(value), 0)
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
 def _package_version(name: str) -> str | None:
     try:
         return importlib.metadata.version(name)
@@ -145,15 +164,18 @@ def _normalize_certifications(raw: Any) -> dict[str, list[dict[str, Any]]]:
                         record.get("openvino_genai_version") or ""
                     )[:64],
                     "driver_version": driver_version,
-                    "load_time_ms": max(_safe_float(record.get("load_time_ms")), 0.0),
-                    "tokens_sec": max(_safe_float(record.get("tokens_sec")), 0.0),
-                    "time_to_first_token_ms": max(
-                        _safe_float(record.get("time_to_first_token_ms")), 0.0
+                    "load_time_ms": _optional_nonnegative_float(record.get("load_time_ms")),
+                    "tokens_sec": _optional_nonnegative_float(record.get("tokens_sec")),
+                    "time_to_first_token_ms": _optional_nonnegative_float(
+                        record.get("time_to_first_token_ms")
                     ),
-                    "max_tested_context": max(_safe_int(record.get("max_tested_context")), 0),
+                    "max_tested_context": _optional_nonnegative_int(
+                        record.get("max_tested_context")
+                    ),
                     "evidence_url": str(record.get("evidence_url") or "")[:500],
                 }
             )
+        output[device].sort(key=lambda item: item["certified_at"])
     return output
 
 
@@ -190,6 +212,10 @@ def validate_manifest_document(document: Any) -> dict[str, Any]:
             for value in metadata.get("profiles", [])
             if isinstance(value, str) and value in _ALLOWED_PROFILES
         ]
+        max_tested_context = min(
+            max(_safe_int(metadata.get("max_tested_context")), 0),
+            definition.max_context_len,
+        )
         normalized[model_id] = {
             "definition": definition.model_dump(),
             "metadata": {
@@ -201,7 +227,7 @@ def validate_manifest_document(document: Any) -> dict[str, Any]:
                 "gated": bool(metadata.get("gated", False)),
                 "quality_score": min(max(_safe_float(metadata.get("quality_score")), 0.0), 100.0),
                 "speed_score": min(max(_safe_float(metadata.get("speed_score")), 0.0), 100.0),
-                "max_tested_context": max(_safe_int(metadata.get("max_tested_context")), 0),
+                "max_tested_context": max_tested_context,
                 "maintainer_note": str(metadata.get("maintainer_note") or "")[:500],
                 "certifications": _normalize_certifications(metadata.get("certifications")),
             },
@@ -281,6 +307,14 @@ def record_conversion_metadata(cfg: registry.ModelConfig, settings: Any) -> None
     temp.replace(_conversion_marker_path(cfg))
 
 
+def _invalid_conversion_metadata(details: str) -> dict[str, Any]:
+    return {
+        "status": "invalid_metadata",
+        "label": "Conversion metadata damaged",
+        "details": details,
+    }
+
+
 def conversion_health(cfg: registry.ModelConfig) -> dict[str, Any]:
     model_dir = cfg.abs_path(packaged_resource_root())
     if not model_dir.exists():
@@ -301,54 +335,111 @@ def conversion_health(cfg: registry.ModelConfig) -> dict[str, Any]:
     try:
         marker = json.loads(marker_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        return {
-            "status": "invalid_metadata",
-            "label": "Conversion metadata damaged",
-            "details": "The OpenVINO IR exists but its compatibility marker is unreadable.",
-        }
-    mismatches = []
-    for field in ("model_id", "source_model", "backend", "weight_format"):
-        expected = getattr(cfg, field if field != "model_id" else "id")
-        actual = marker.get(field)
-        if expected and actual and str(expected) != str(actual):
-            mismatches.append(field)
+        return _invalid_conversion_metadata(
+            "The OpenVINO IR exists but its compatibility marker is unreadable."
+        )
+    if not isinstance(marker, dict):
+        return _invalid_conversion_metadata(
+            "The OpenVINO IR exists but its compatibility marker is not a JSON object."
+        )
+    if marker.get("schema_version") != CONVERSION_SCHEMA_VERSION:
+        return _invalid_conversion_metadata(
+            "The conversion compatibility marker uses an unsupported schema."
+        )
+    required_fields = (
+        "model_id",
+        "source_model",
+        "backend",
+        "weight_format",
+        "application_version",
+        "openvino_version",
+        "openvino_genai_version",
+        "recorded_at",
+    )
+    missing = [field for field in required_fields if field not in marker]
+    if missing:
+        return _invalid_conversion_metadata(
+            f"The conversion compatibility marker is missing: {', '.join(missing)}."
+        )
+
+    expected_fields = {
+        "model_id": cfg.id,
+        "source_model": cfg.source_model,
+        "backend": cfg.backend,
+        "weight_format": cfg.weight_format,
+    }
+    mismatches = [
+        field
+        for field, expected in expected_fields.items()
+        if str(marker.get(field)) != str(expected)
+    ]
     if mismatches:
         return {
             "status": "incompatible_definition",
             "label": "Definition changed",
             "details": f"Conversion metadata differs for: {', '.join(mismatches)}.",
         }
-    recorded_runtime = _major_minor(str(marker.get("openvino_version") or ""))
-    current_runtime = _major_minor(_package_version("openvino"))
-    if recorded_runtime and current_runtime and recorded_runtime != current_runtime:
+
+    runtime_changes = []
+    for label, marker_field, package_name in (
+        ("OpenVINO", "openvino_version", "openvino"),
+        ("OpenVINO GenAI", "openvino_genai_version", "openvino-genai"),
+    ):
+        recorded_version = str(marker.get(marker_field) or "")
+        current_version = _package_version(package_name)
+        recorded_runtime = _major_minor(recorded_version)
+        current_runtime = _major_minor(current_version)
+        if recorded_runtime and current_runtime and recorded_runtime != current_runtime:
+            runtime_changes.append(
+                f"{label} {recorded_version or 'unknown'} to {current_version or 'unknown'}"
+            )
+    if runtime_changes:
         return {
             "status": "stale_runtime",
             "label": "Runtime changed",
             "details": (
-                f"Converted with OpenVINO {marker.get('openvino_version')}; "
-                f"current runtime is {_package_version('openvino')}. Validate or reconvert before relying on it."
+                "Conversion runtime changed ("
+                + "; ".join(runtime_changes)
+                + "). Validate or reconvert before relying on it."
             ),
         }
     return {
         "status": "compatible",
         "label": "Conversion metadata matches",
-        "details": f"Recorded with OpenVINO {marker.get('openvino_version') or 'unknown'}.",
+        "details": (
+            f"Recorded with OpenVINO {marker.get('openvino_version') or 'unknown'} and "
+            f"OpenVINO GenAI {marker.get('openvino_genai_version') or 'unknown'}."
+        ),
     }
+
+
+def _is_reparse_point(path: Path) -> bool:
+    try:
+        attributes = path.lstat().st_file_attributes
+    except (AttributeError, OSError):
+        return path.is_symlink()
+    return bool(attributes & stat.FILE_ATTRIBUTE_REPARSE_POINT)
 
 
 def _directory_size_bytes(path: Path) -> int:
     total = 0
     for root, dirs, files in os.walk(path, followlinks=False):
         root_path = Path(root)
-        if root_path.is_symlink():
-            raise ValueError("Imported model directories may not contain symbolic links.")
+        if _is_reparse_point(root_path):
+            raise ValueError(
+                "Imported model directories may not contain symbolic links or junctions."
+            )
         for name in dirs:
-            if (root_path / name).is_symlink():
-                raise ValueError("Imported model directories may not contain symbolic links.")
+            if _is_reparse_point(root_path / name):
+                raise ValueError(
+                    "Imported model directories may not contain symbolic links or junctions."
+                )
         for name in files:
             candidate = root_path / name
-            if candidate.is_symlink():
-                raise ValueError("Imported model directories may not contain symbolic links.")
+            if _is_reparse_point(candidate):
+                raise ValueError(
+                    "Imported model directories may not contain symbolic links or junctions."
+                )
             total += candidate.stat().st_size
     return total
 
@@ -397,45 +488,77 @@ class ModelLibraryService:
         temp.replace(self.user_file)
 
     async def refresh_official(self) -> dict[str, Any]:
+        source_url = OFFICIAL_MANIFEST_URL
         async with httpx.AsyncClient(timeout=12.0, follow_redirects=True) as client:
-            response = await client.get(
+            async with client.stream(
+                "GET",
                 OFFICIAL_MANIFEST_URL,
                 headers={
                     "Accept": "application/json",
                     "User-Agent": f"OpenVINO-Windows-LLM/{__version__}",
                 },
-            )
-            response.raise_for_status()
-            host = (urlparse(str(response.url)).hostname or "").lower()
-            if host not in _ALLOWED_RELEASE_HOSTS:
-                raise ManifestValidationError("Official manifest redirected to an untrusted host.")
-            manifest = parse_manifest_bytes(response.content)
+            ) as response:
+                response.raise_for_status()
+                source_url = str(response.url)
+                host = (urlparse(source_url).hostname or "").lower()
+                if host not in _ALLOWED_RELEASE_HOSTS:
+                    raise ManifestValidationError(
+                        "Official manifest redirected to an untrusted host."
+                    )
+                content_length = response.headers.get("Content-Length")
+                try:
+                    declared_length = int(content_length) if content_length else None
+                except (TypeError, ValueError):
+                    declared_length = None
+                if declared_length is not None and declared_length > MAX_MANIFEST_BYTES:
+                    raise ManifestValidationError(
+                        "Model library manifest exceeds the 1 MB limit."
+                    )
+                payload = bytearray()
+                async for chunk in response.aiter_bytes():
+                    payload.extend(chunk)
+                    if len(payload) > MAX_MANIFEST_BYTES:
+                        raise ManifestValidationError(
+                            "Model library manifest exceeds the 1 MB limit."
+                        )
+                manifest = parse_manifest_bytes(bytes(payload))
+
         self.cache_file.parent.mkdir(parents=True, exist_ok=True)
         temp = self.cache_file.with_suffix(".json.tmp")
         temp.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
-        temp.replace(self.cache_file)
-        merge = self.apply_official_definitions(manifest)
-        return {"source": str(response.url), "manifest": manifest, **merge}
+        try:
+            merge = self.apply_official_definitions(manifest)
+            temp.replace(self.cache_file)
+        except Exception:
+            temp.unlink(missing_ok=True)
+            raise
+        return {"source": source_url, "manifest": manifest, **merge}
 
     def apply_official_definitions(self, manifest: dict[str, Any]) -> dict[str, Any]:
         added: list[str] = []
         updated: list[str] = []
         conflicts: list[str] = []
+        user_ids = self._read_user_ids()
+        staged_catalog = dict(self.manager.catalog)
         for model_id, entry in manifest.get("catalog", {}).items():
             definition = entry["definition"]
-            existing = self.manager.catalog.get(model_id)
-            if existing and existing.source_model and existing.source_model != definition["source_model"]:
-                conflicts.append(model_id)
-                continue
+            existing = staged_catalog.get(model_id)
             target = Path(self.settings.models_dir) / model_id
             cfg = _definition_to_config(definition, target)
-            if existing is None:
-                added.append(model_id)
-            elif model_definition(existing) != model_definition(cfg):
+            if existing is not None:
+                if model_definition(existing) == model_definition(cfg):
+                    continue
+                if model_id in user_ids or (
+                    existing.source_model and existing.source_model != definition["source_model"]
+                ):
+                    conflicts.append(model_id)
+                    continue
                 updated.append(model_id)
-            self.manager.catalog[model_id] = cfg
+            else:
+                added.append(model_id)
+            staged_catalog[model_id] = cfg
         if added or updated:
-            registry.save_catalog(self.settings.models_file, self.manager.catalog)
+            registry.save_catalog(self.settings.models_file, staged_catalog)
             self.manager.reload_catalog()
         return {"added": added, "updated": updated, "conflicts": conflicts}
 
@@ -472,7 +595,10 @@ class ModelLibraryService:
         for device in _ALLOWED_DEVICES:
             official = list(certifications.get(device) or [])
             if official:
-                latest = official[-1]
+                latest = max(
+                    official,
+                    key=lambda record: str(record.get("certified_at") or ""),
+                )
                 output[device] = {"status": "verified", "label": f"Verified on {device}", **latest}
             elif device in local:
                 output[device] = {
@@ -564,6 +690,18 @@ class ModelLibraryService:
             key=lambda record: str(record.get("certified_at") or ""),
             default={},
         )
+        local_measurement = any(
+            measured.get(field) is not None
+            for field in ("load_time_ms", "tokens_sec", "time_to_first_token_ms")
+        )
+
+        def metric(field: str) -> Any:
+            value = measured.get(field)
+            return value if value is not None else latest_official.get(field)
+
+        maximum_tested_context = latest_official.get("max_tested_context")
+        if maximum_tested_context is None:
+            maximum_tested_context = metadata.get("max_tested_context") or None
         min_ram = _safe_float(metadata.get("minimum_ram_gb"))
         min_disk = _safe_float(metadata.get("minimum_disk_gb"))
         available_ram = _safe_float(snapshot.get("memory", {}).get("available_gb"))
@@ -593,15 +731,24 @@ class ModelLibraryService:
             "gated": bool(metadata.get("gated")),
             "verification": verification,
             "metrics": {
-                "time_to_first_load_ms": measured.get("load_time_ms"),
-                "tokens_sec": measured.get("tokens_sec"),
-                "time_to_first_token_ms": measured.get("time_to_first_token_ms"),
-                "maximum_tested_context": metadata.get("max_tested_context") or None,
-                "tested_openvino_version": latest_official.get("openvino_version")
-                or measured.get("openvino_version"),
-                "tested_driver_version": latest_official.get("driver_version")
-                or measured.get("driver_version"),
+                "time_to_first_load_ms": metric("load_time_ms"),
+                "tokens_sec": metric("tokens_sec"),
+                "time_to_first_token_ms": metric("time_to_first_token_ms"),
+                "maximum_tested_context": maximum_tested_context,
+                "tested_openvino_version": (
+                    measured.get("openvino_version")
+                    if local_measurement
+                    else latest_official.get("openvino_version")
+                ),
+                "tested_driver_version": (
+                    measured.get("driver_version")
+                    if local_measurement
+                    else latest_official.get("driver_version")
+                ),
                 "last_certification_date": latest_official.get("certified_at") or None,
+                "measurement_source": (
+                    "local" if local_measurement else "official" if latest_official else None
+                ),
             },
             "profiles": profiles,
             "quality_score": _safe_float(metadata.get("quality_score")),
@@ -656,15 +803,19 @@ class ModelLibraryService:
                     -_safe_float(item["metrics"].get("tokens_sec")),
                     -item["speed_score"],
                     _safe_float(item["estimate"].get("runtime_memory_gb"), 9999),
+                    item["id"],
                 )
             )
         elif profile == "best_quality":
-            items.sort(key=lambda item: (-item["quality_score"], -item["max_context_len"]))
+            items.sort(
+                key=lambda item: (-item["quality_score"], -item["max_context_len"], item["id"])
+            )
         elif profile == "lowest_memory":
             items.sort(
                 key=lambda item: (
                     _safe_float(item["estimate"].get("runtime_memory_gb"), 9999),
                     -item["quality_score"],
+                    item["id"],
                 )
             )
         else:
@@ -672,6 +823,7 @@ class ModelLibraryService:
                 key=lambda item: (
                     -(item["quality_score"] * 0.55 + item["speed_score"] * 0.45),
                     _safe_float(item["estimate"].get("runtime_memory_gb"), 9999),
+                    item["id"],
                 )
             )
         return {
@@ -722,13 +874,18 @@ class ModelLibraryService:
         added: list[str] = []
         updated: list[str] = []
         unchanged: list[str] = []
+        seen_ids: set[str] = set()
+        staged_catalog = dict(self.manager.catalog)
         for key, raw in raw_models.items():
             if not isinstance(raw, dict):
                 raise ValueError(f"Definition '{key}' must be an object.")
             definition = dict(raw)
             definition.setdefault("model_id", key)
             parsed = ModelRegisterRequest.model_validate(definition)
-            existing = self.manager.catalog.get(parsed.model_id)
+            if parsed.model_id in seen_ids:
+                raise ValueError(f"Definition import contains duplicate model id '{parsed.model_id}'.")
+            seen_ids.add(parsed.model_id)
+            existing = staged_catalog.get(parsed.model_id)
             target = Path(self.settings.models_dir) / parsed.model_id
             candidate = _definition_to_config(parsed.model_dump(), target)
             if existing is not None:
@@ -742,9 +899,9 @@ class ModelLibraryService:
                 updated.append(parsed.model_id)
             else:
                 added.append(parsed.model_id)
-            self.manager.catalog[parsed.model_id] = candidate
+            staged_catalog[parsed.model_id] = candidate
         if added or updated:
-            registry.save_catalog(self.settings.models_file, self.manager.catalog)
+            registry.save_catalog(self.settings.models_file, staged_catalog)
             self.manager.reload_catalog()
         user_ids = self._read_user_ids()
         user_ids.update(added)
@@ -754,62 +911,75 @@ class ModelLibraryService:
         return {"added": added, "updated": updated, "unchanged": unchanged}
 
     def import_converted(self, request: ConvertedModelImportRequest) -> dict[str, Any]:
-        source = Path(request.source_path).expanduser()
-        if not source.is_absolute():
+        if request.overwrite:
+            raise ValueError(
+                "Converted-model replacement is intentionally disabled. Import with a new model ID."
+            )
+        source_input = Path(request.source_path).expanduser()
+        if not source_input.is_absolute():
             raise ValueError("Converted model source_path must be absolute.")
-        source = source.resolve()
+        if _is_reparse_point(source_input):
+            raise ValueError(
+                "Imported model directories may not be symbolic links or junctions."
+            )
+        source = source_input.resolve()
         if not source.is_dir() or not registry.is_openvino_model_dir(source):
             raise ValueError("source_path is not a converted OpenVINO model directory.")
-        if source.is_symlink():
-            raise ValueError("Imported model directories may not be symbolic links.")
         size_bytes = _directory_size_bytes(source)
-        models_root = Path(self.settings.models_dir).resolve()
+        models_root = Path(self.settings.models_dir)
         models_root.mkdir(parents=True, exist_ok=True)
+        models_root = models_root.resolve()
         target = (models_root / request.model_id).resolve()
         if target.parent != models_root:
             raise ValueError("Imported model target escaped the managed model directory.")
-        if source != target:
-            free_bytes = shutil.disk_usage(models_root).free
-            if free_bytes < size_bytes + 256 * 1024 * 1024:
-                raise ValueError("Not enough free disk space to import this converted model safely.")
-            if target.exists() and not request.overwrite:
-                raise ValueError(f"Managed model directory already exists for '{request.model_id}'.")
-            temp = models_root / f".{request.model_id}.import-{secrets.token_hex(6)}"
-            backup = models_root / f".{request.model_id}.backup-{secrets.token_hex(6)}"
+        if request.model_id in self.manager.catalog:
+            raise ValueError(f"Model ID '{request.model_id}' is already registered.")
+        if target.exists() or source == target:
+            raise ValueError(f"Managed model directory already exists for '{request.model_id}'.")
+        free_bytes = shutil.disk_usage(models_root).free
+        if free_bytes < size_bytes + 256 * 1024 * 1024:
+            raise ValueError("Not enough free disk space to import this converted model safely.")
+
+        temp = models_root / f".{request.model_id}.import-{secrets.token_hex(6)}"
+        previous_user_ids = self._read_user_ids()
+        user_file_existed = self.user_file.exists()
+        try:
+            shutil.copytree(source, temp, symlinks=False)
+            if not registry.is_openvino_model_dir(temp):
+                raise ValueError("Copied model failed OpenVINO IR validation.")
+            temp.replace(target)
+            definition = {
+                "model_id": request.model_id,
+                "name": request.name,
+                "description": request.description,
+                "source_model": request.source_model or f"local-openvino:{source.name}",
+                "backend": request.backend,
+                "weight_format": request.weight_format,
+                "recommended_device": request.recommended_device,
+                "max_context_len": request.max_context_len,
+                "max_output_tokens": request.max_output_tokens,
+                "trust_remote_code": False,
+            }
+            cfg = _definition_to_config(definition, target)
+            record_conversion_metadata(cfg, self.settings)
+            user_ids = set(previous_user_ids)
+            user_ids.add(request.model_id)
+            self._write_user_ids(user_ids)
+            staged_catalog = dict(self.manager.catalog)
+            staged_catalog[request.model_id] = cfg
+            registry.save_catalog(self.settings.models_file, staged_catalog)
+            self.manager.reload_catalog()
+        except Exception:
+            shutil.rmtree(temp, ignore_errors=True)
+            shutil.rmtree(target, ignore_errors=True)
             try:
-                shutil.copytree(source, temp, symlinks=False)
-                if not registry.is_openvino_model_dir(temp):
-                    raise ValueError("Copied model failed OpenVINO IR validation.")
-                if target.exists():
-                    target.replace(backup)
-                temp.replace(target)
-                if backup.exists():
-                    shutil.rmtree(backup)
-            except Exception:
-                shutil.rmtree(temp, ignore_errors=True)
-                if backup.exists() and not target.exists():
-                    backup.replace(target)
-                raise
-        definition = {
-            "model_id": request.model_id,
-            "name": request.name,
-            "description": request.description,
-            "source_model": request.source_model or f"local-openvino:{source.name}",
-            "backend": request.backend,
-            "weight_format": request.weight_format,
-            "recommended_device": request.recommended_device,
-            "max_context_len": request.max_context_len,
-            "max_output_tokens": request.max_output_tokens,
-            "trust_remote_code": False,
-        }
-        cfg = _definition_to_config(definition, target)
-        self.manager.catalog[request.model_id] = cfg
-        registry.save_catalog(self.settings.models_file, self.manager.catalog)
-        record_conversion_metadata(cfg, self.settings)
-        self.manager.reload_catalog()
-        user_ids = self._read_user_ids()
-        user_ids.add(request.model_id)
-        self._write_user_ids(user_ids)
+                if user_file_existed:
+                    self._write_user_ids(previous_user_ids)
+                else:
+                    self.user_file.unlink(missing_ok=True)
+            except OSError:
+                pass
+            raise
         return {
             "model_id": request.model_id,
             "target_path": str(target),
