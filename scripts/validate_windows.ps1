@@ -165,6 +165,13 @@ print(json.dumps(versions))
         packages = $packages
     }
 
+    # The documented `powershell.exe -File .\scripts\validate_windows.ps1 -Devices
+    # CPU,GPU,NPU,AUTO` form passes the whole comma list as one literal string, unlike an
+    # in-session `.\validate_windows.ps1 -Devices CPU,GPU,NPU,AUTO` call which PowerShell
+    # splits into an array. Normalise both so every requested device is certified
+    # individually instead of once as a bogus "CPU,GPU,NPU,AUTO" target.
+    $Devices = @($Devices | ForEach-Object { $_ -split "[,;]" } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+
     $results = @()
     $embeddingPending = [bool]$IncludeEmbeddings
     foreach ($rawDevice in $Devices) {
