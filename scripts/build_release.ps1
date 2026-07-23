@@ -258,7 +258,7 @@ $Produced += $ModelLibraryAsset
 
 $PublishedAt = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
 Invoke-Checked "Generate and validate release manifest" {
-    & $ReleasePython scripts/release_tools.py manifest --output-dir $Artifacts --version $Version --channel $Channel --published-at $PublishedAt --commit $GitCommit --clean ($TreeClean.ToString().ToLowerInvariant()) --signed-types ($SignedTypes -join ',') --inventory-filename ([IO.Path]::GetFileName($InventoryJson))
+    & $ReleasePython scripts/release_tools.py manifest --output-dir $Artifacts --version $Version --channel $Channel --published-at $PublishedAt --commit $GitCommit --clean ($TreeClean.ToString().ToLowerInvariant()) "--signed-types=$($SignedTypes -join ',')" --inventory-filename ([IO.Path]::GetFileName($InventoryJson))
 }
 $Manifest = Join-Path $Artifacts "OpenVINO-Windows-LLM-$Version-release-manifest.json"
 $Produced += $Manifest
