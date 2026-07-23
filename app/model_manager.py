@@ -9,6 +9,7 @@ after successful real-hardware loads.
 from __future__ import annotations
 
 import asyncio
+import threading
 import time
 from dataclasses import replace
 from typing import Any
@@ -32,6 +33,7 @@ class ModelManager(_CoreModelManager):
 
     def __init__(self, settings: Settings) -> None:
         super().__init__(settings)
+        self._catalog_lock = threading.RLock()
         self.advisor = HardwareAdvisor(settings, self.catalog, force_mock=self.force_mock)
         self._install_advisor_load_hook()
 
@@ -126,6 +128,10 @@ class ModelManager(_CoreModelManager):
         except Exception:  # noqa: BLE001 - advisory evidence must not break model loading
             _core.logger.exception("Could not schedule advisor benchmark for '%s'", model_id)
 
+    def register_model(self, req: Any) -> registry.ModelConfig:
+        with self._catalog_lock:
+            return super().register_model(req)
+
     def resolve_engine(self, model_id: str):
         text = str(model_id or "").strip()
         if text.lower().startswith("auto"):
@@ -201,12 +207,9 @@ class ModelManager(_CoreModelManager):
             return
 
         if weight_format and cfg.weight_format != weight_format:
-            updated_cfg = replace(cfg, weight_format=weight_format)
-            staged_catalog = dict(self.catalog)
-            staged_catalog[model_id] = updated_cfg
             try:
-                await asyncio.to_thread(
-                    registry.save_catalog, self.settings.models_file, staged_catalog
+                cfg = await asyncio.to_thread(
+                    self._persist_converted_weight_format, model_id, weight_format
                 )
             except Exception as exc:  # noqa: BLE001 - surface persistence failure safely
                 message = (
@@ -220,9 +223,6 @@ class ModelManager(_CoreModelManager):
                     "Could not persist converted precision for '%s': %s", model_id, exc
                 )
                 return
-            self.catalog = staged_catalog
-            self.advisor.catalog = self.catalog
-            cfg = updated_cfg
 
         try:
             await asyncio.to_thread(self.advisor.measure_converted_size, cfg)
@@ -237,6 +237,19 @@ class ModelManager(_CoreModelManager):
             _core.logger.exception(
                 "Could not record conversion compatibility metadata for '%s'", model_id
             )
+
+    def _persist_converted_weight_format(
+        self, model_id: str, weight_format: str
+    ) -> registry.ModelConfig:
+        with self._catalog_lock:
+            current = self.catalog[model_id]
+            updated = replace(current, weight_format=weight_format)
+            staged_catalog = dict(self.catalog)
+            staged_catalog[model_id] = updated
+            registry.save_catalog(self.settings.models_file, staged_catalog)
+            self.catalog = staged_catalog
+            self.advisor.catalog = self.catalog
+            return updated
 
     def delete(self, model_id: str) -> dict:
         cfg = self.catalog[model_id]
@@ -253,8 +266,9 @@ class ModelManager(_CoreModelManager):
         return result
 
     def reload_catalog(self) -> None:
-        super().reload_catalog()
-        self.advisor.catalog = self.catalog
+        with self._catalog_lock:
+            super().reload_catalog()
+            self.advisor.catalog = self.catalog
 
     async def shutdown(self) -> None:
         await self.advisor.shutdown()
