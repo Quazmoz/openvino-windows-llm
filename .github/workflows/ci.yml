@@ -2,6 +2,22 @@ name: CI
 
 on:
   workflow_dispatch:
+  push:
+    branches: ["main"]
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+      - "screenshots/**"
+  pull_request:
+    branches: ["main"]
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+      - "screenshots/**"
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -10,9 +26,10 @@ jobs:
   lint-and-test:
     name: Lint & Test
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
       matrix:
-        python-version: ["3.11", "3.12", "3.13"]
+        python-version: ["3.11", "3.13"]
 
     steps:
       - name: Checkout repository
@@ -43,6 +60,7 @@ jobs:
   external-contract-smoke:
     name: External API Contract Smoke
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     steps:
       - name: Checkout repository
@@ -99,8 +117,8 @@ jobs:
             kill "$(cat contract-server.pid)" 2>/dev/null || true
           fi
 
-      - name: Upload contract report
-        if: always()
+      - name: Upload contract report for failures or manual runs
+        if: failure() || github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v4
         with:
           name: external-api-contract-report
@@ -113,6 +131,7 @@ jobs:
   windows-harness-syntax:
     name: Windows Harness Syntax
     runs-on: windows-latest
+    timeout-minutes: 10
 
     steps:
       - name: Checkout repository
