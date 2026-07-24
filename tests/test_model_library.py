@@ -182,5 +182,6 @@ def test_bundled_manifest_and_release_wiring():
     publish = (ROOT / "scripts" / "publish_release.ps1").read_text(encoding="utf-8")
     assert 'root / "model_library_manifest.json"' in spec
     assert "validate_model_library_manifest.py" in publish
-    assert "release_tools.py checksums --output-dir" in publish
+    assert "verify_release_provenance.py" in publish
+    assert "release_tools.py checksums --output-dir" not in publish
     assert '"model_library_manifest.json"' in publish

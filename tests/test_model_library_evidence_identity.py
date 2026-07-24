@@ -164,3 +164,39 @@ def test_browser_displays_measurement_device():
 
     assert "metrics.measurement_device" in source
     assert "measurementSource" in source
+
+
+def test_verified_gpu_outranks_unverified_preferred_npu():
+    device, reason = ModelLibraryService._evidence_device(
+        "NPU",
+        {"CPU", "GPU", "NPU"},
+        {},
+        {
+            "CPU": {"status": "verified"},
+            "GPU": {"status": "verified"},
+            "NPU": {"status": "expected_unverified"},
+        },
+    )
+    assert device == "GPU"
+    assert "bundled certification" in reason
+
+
+def test_local_npu_outranks_bundled_gpu():
+    device, reason = ModelLibraryService._evidence_device(
+        "GPU",
+        {"CPU", "GPU", "NPU"},
+        {"NPU": {"status": "locally_verified"}},
+        {"GPU": {"status": "verified"}},
+    )
+    assert device == "NPU"
+    assert "local benchmark" in reason
+
+
+def test_auto_is_not_direct_device_evidence():
+    device, _ = ModelLibraryService._evidence_device(
+        "AUTO",
+        {"CPU", "AUTO"},
+        {"AUTO": {"status": "locally_verified"}},
+        {},
+    )
+    assert device == "CPU"

@@ -235,11 +235,11 @@
     "qwen2.5-3b-fp16": {
       "definition": {
         "name": "Qwen2.5 3B Instruct FP16",
-        "description": "Opinionated quality recommendation for capable systems that pass memory preflight.",
+        "description": "Quality recommendation with retained CPU and GPU certification. Candidate for manual NPU testing.",
         "source_model": "Qwen/Qwen2.5-3B-Instruct",
         "backend": "openvino-genai",
         "weight_format": "fp16",
-        "recommended_device": "NPU",
+        "recommended_device": "GPU",
         "max_context_len": 4096,
         "max_output_tokens": 1024,
         "trust_remote_code": false
@@ -254,7 +254,7 @@
         "quality_score": 86,
         "speed_score": 48,
         "max_tested_context": 3072,
-        "maintainer_note": "Preferred quality candidate before moving to larger, less predictable models.",
+        "maintainer_note": "GPU is verified on the retained machine. NPU remains available for manual testing but was not verified in that run.",
         "certifications": {
           "CPU": [
             {
@@ -341,5 +341,5 @@
       }
     }
   },
-  "catalog_sha256": "5308aeca824afb30767fd72fe6cf1fca4ce44e4bdef76ba9dabb97b1598bc507"
+  "catalog_sha256": "de7ceb211b5d6b15f236be6c298b5633ef53caa01d67902ec86711a341889460"
 }

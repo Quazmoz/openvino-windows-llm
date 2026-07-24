@@ -18,6 +18,8 @@ if ($LASTEXITCODE -ne 0) { throw "Invalid version or channel." }
 & $Python scripts/release_tools.py verify-version-consistency --root $Root --version $Version
 if ($LASTEXITCODE -ne 0) { throw "Version consistency check failed." }
 if (-not [string]::IsNullOrWhiteSpace((git status --porcelain))) { throw "Publishing requires a clean working tree." }
+$HeadCommit = (& git rev-parse HEAD).Trim()
+if ($LASTEXITCODE -ne 0 -or $HeadCommit -notmatch '^[0-9a-f]{40}$') { throw "Could not resolve the source commit." }
 
 $Tag = "v$Version"
 $Expected = @(
@@ -32,23 +34,12 @@ $Expected = @(
     "OpenVINO-Windows-LLM-$Version-release-summary.json",
     "model-library-manifest.json"
 )
-# The repository source manifest is model_library_manifest.json; it is published under the
-# model-library-manifest.json asset name the shipped app fetches from releases/latest/download.
 $LibraryManifestSource = Join-Path $Root "model_library_manifest.json"
-$LibraryManifest = Join-Path $ArtifactDirectory "model-library-manifest.json"
 if (-not (Test-Path $LibraryManifestSource)) { throw "Missing model library manifest: $LibraryManifestSource" }
 & $Python scripts/validate_model_library_manifest.py $LibraryManifestSource
 if ($LASTEXITCODE -ne 0) { throw "Model library manifest validation failed." }
-Copy-Item $LibraryManifestSource $LibraryManifest -Force
-
-$Existing = Get-ChildItem $ArtifactDirectory -File | Select-Object -ExpandProperty Name
-foreach ($Name in $Expected) {
-    if ($Existing -notcontains $Name) { throw "Missing release artifact: $Name" }
-}
-& $Python scripts/release_tools.py checksums --output-dir $ArtifactDirectory --version $Version
-if ($LASTEXITCODE -ne 0) { throw "Checksum generation failed." }
-& $Python scripts/release_tools.py verify-checksums --path (Join-Path $ArtifactDirectory "OpenVINO-Windows-LLM-$Version-checksums.txt")
-if ($LASTEXITCODE -ne 0) { throw "Checksum verification failed." }
+& $Python scripts/verify_release_provenance.py --artifact-directory $ArtifactDirectory --version $Version --channel $Channel --expected-commit $HeadCommit --source-model-manifest $LibraryManifestSource
+if ($LASTEXITCODE -ne 0) { throw "Release provenance validation failed. Rebuild from the current clean commit." }
 & $Python scripts/verify_release_signing.py --artifact-directory $ArtifactDirectory --version $Version
 if ($LASTEXITCODE -ne 0) { throw "Release signature claims were not independently verified." }
 
@@ -65,8 +56,9 @@ if ($DryRun) {
     exit 0
 }
 
-git tag -a $Tag -m "OpenVINO Windows LLM $Version"
+git tag -a $Tag $HeadCommit -m "OpenVINO Windows LLM $Version"
 if ($LASTEXITCODE -ne 0) { throw "Annotated tag creation failed." }
+if ((git rev-list -n 1 $Tag).Trim() -ne $HeadCommit) { throw "Created tag does not target the recorded source commit." }
 git push origin $Tag
 if ($LASTEXITCODE -ne 0) { throw "Tag push failed." }
 

@@ -14,6 +14,10 @@ The project keeps OpenVINO as the inference runtime. It does not require Docker,
 
 **Current stable version: `0.6.1`.** This patch adds deterministic context-boundary and compiled-cache certification, fixes Windows conversion cancellation, and expands retained CPU/GPU evidence to Qwen 2.5 3B FP16 and TinyLlama 1.1B INT4.
 
+**Current development version: `0.6.2`.** Release preparation binds artifacts to their source
+commit, ranks exact-model evidence for device recommendations, and bounds Windows conversion
+cancellation. No 0.6.2 release has been published.
+
 Downloads (GitHub release `v0.6.1`):
 
 - [Windows installer (.exe)](https://github.com/Quazmoz/openvino-windows-llm/releases/download/v0.6.1/OpenVINO-Windows-LLM-0.6.1-windows-x64-installer.exe)

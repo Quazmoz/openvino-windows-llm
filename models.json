@@ -45,12 +45,12 @@
   },
   "qwen2.5-3b-fp16": {
     "name": "Qwen2.5 3B Instruct FP16",
-    "description": "Higher-quality Qwen instruct model for NPU-capable Intel systems.",
+    "description": "Higher-quality Qwen instruct model with retained CPU and GPU certification. Candidate for manual NPU testing.",
     "backend": "openvino-genai",
     "model_path": "models/openvino/qwen2.5-3b-instruct-fp16",
     "source_model": "Qwen/Qwen2.5-3B-Instruct",
     "weight_format": "fp16",
-    "recommended_device": "NPU",
+    "recommended_device": "GPU",
     "max_context_len": 4096,
     "max_output_tokens": 1024
   },
@@ -78,7 +78,7 @@
   },
   "qwen2.5-0.5b-fp16": {
     "name": "Qwen2.5 0.5B Instruct FP16",
-    "description": "Ultra-compact Qwen instruct model, perfect for fast NPU/CPU prototyping.",
+    "description": "Ultra-compact Qwen instruct model for CPU testing and candidate NPU testing.",
     "backend": "openvino-genai",
     "model_path": "models/openvino/qwen2.5-0.5b-instruct-fp16",
     "source_model": "Qwen/Qwen2.5-0.5B-Instruct",
@@ -122,7 +122,7 @@
   },
   "smollm2-360m-fp16": {
     "name": "SmolLM2 360M Instruct FP16",
-    "description": "Highly efficient small model (360M parameters) balancing speed and conversational performance on NPUs.",
+    "description": "Efficient small model (360M parameters) for compatibility testing; NPU behavior depends on platform and driver.",
     "backend": "openvino-genai",
     "model_path": "models/openvino/smollm2-360m-instruct-fp16",
     "source_model": "HuggingFaceTB/SmolLM2-360M-Instruct",
@@ -133,7 +133,7 @@
   },
   "smollm2-1.7b-fp16": {
     "name": "SmolLM2 1.7B Instruct FP16",
-    "description": "Powerful small model from the SmolLM2 series, optimized as FP16 for Intel NPUs.",
+    "description": "Small SmolLM2 FP16 model and candidate for NPU testing; compatibility depends on platform and driver.",
     "backend": "openvino-genai",
     "model_path": "models/openvino/smollm2-1.7b-instruct-fp16",
     "source_model": "HuggingFaceTB/SmolLM2-1.7B-Instruct",

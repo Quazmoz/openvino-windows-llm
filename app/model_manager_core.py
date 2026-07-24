@@ -29,6 +29,9 @@ from runtime.openvino_engine import BaseEngine, GenParams, GenResult, StreamHand
 
 logger = logging.getLogger("ov-llm.manager")
 
+TASKKILL_TIMEOUT_SECONDS = 5.0
+CONVERTER_EXIT_TIMEOUT_SECONDS = 5.0
+
 _PROGRESS_PERCENT_RE = re.compile(r"(?<!\d)(100(?:\.0+)?|[1-9]?\d(?:\.\d+)?)\s*%")
 _PROGRESS_SECRET_RE = re.compile(
     r"(hf_[A-Za-z0-9_=-]{8,}|Bearer\s+[A-Za-z0-9._~+/=-]+|token\s*[:=]\s*[A-Za-z0-9._~+/=-]+)",
@@ -621,6 +624,8 @@ class ModelManager:
             except asyncio.CancelledError:
                 if proc and proc.returncode is None:
                     await self._terminate_conversion_process(proc)
+                self._set_status(model_id, "cancelled")
+                self._set_progress(model_id, "cancelled", f"Conversion cancelled for {cfg.name}.")
                 raise
             except Exception as exc:  # noqa: BLE001 - surfaced to the UI as a statement/status
                 message = errors.format_model_convert_error(exc)
@@ -637,21 +642,30 @@ class ModelManager:
         if proc.returncode is not None:
             return
         if os.name == "nt":
-            killer = await asyncio.create_subprocess_exec(
-                "taskkill",
-                "/PID",
-                str(proc.pid),
-                "/T",
-                "/F",
-                stdout=asyncio.subprocess.DEVNULL,
-                stderr=asyncio.subprocess.DEVNULL,
-            )
-            with contextlib.suppress(Exception):
-                await killer.wait()
+            try:
+                killer = await asyncio.create_subprocess_exec(
+                    "taskkill",
+                    "/PID",
+                    str(proc.pid),
+                    "/T",
+                    "/F",
+                    stdout=asyncio.subprocess.DEVNULL,
+                    stderr=asyncio.subprocess.DEVNULL,
+                )
+                exit_code = await asyncio.wait_for(killer.wait(), timeout=TASKKILL_TIMEOUT_SECONDS)
+                if exit_code != 0 and proc.returncode is None:
+                    proc.kill()
+            except (TimeoutError, OSError):
+                if proc.returncode is None:
+                    proc.kill()
         else:
             proc.kill()
-        with contextlib.suppress(Exception):
-            await proc.wait()
+        try:
+            await asyncio.wait_for(proc.wait(), timeout=CONVERTER_EXIT_TIMEOUT_SECONDS)
+        except TimeoutError:
+            logger.warning("Converter process did not exit within the cancellation timeout.")
+        except Exception:
+            logger.warning("Converter process cleanup failed after cancellation.")
 
     def schedule_convert(
         self,

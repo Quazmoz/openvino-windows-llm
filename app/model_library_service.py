@@ -331,7 +331,13 @@ class ModelLibraryService:
                 if isinstance(records, list)
                 else []
             )
-            if official:
+            if device in local:
+                output[device] = {
+                    "status": "locally_verified",
+                    "label": f"Local benchmark: {device}",
+                    **local[device],
+                }
+            elif official:
                 latest = max(
                     official,
                     key=lambda record: str(record.get("certified_at") or ""),
@@ -341,18 +347,37 @@ class ModelLibraryService:
                     "label": f"Bundled certification: {device}",
                     **latest,
                 }
-            elif device in local:
-                output[device] = {
-                    "status": "locally_verified",
-                    "label": f"Local benchmark: {device}",
-                    **local[device],
-                }
             else:
                 output[device] = {
                     "status": "expected_unverified",
-                    "label": f"Expected on {device}, unverified",
+                    "label": f"Expected compatibility: {device}",
                 }
         return output
+
+    @staticmethod
+    def _evidence_device(
+        preferred: str,
+        available: set[str],
+        local: dict[str, Any],
+        verification: dict[str, Any],
+    ) -> tuple[str, str]:
+        direct = available & {"CPU", "GPU", "NPU"}
+        for device in (preferred, "NPU", "GPU", "CPU"):
+            if device in direct and device in local:
+                return device, f"{device} is recommended from a successful local benchmark."
+        for device in (preferred, "GPU", "CPU", "NPU"):
+            if device in direct and verification.get(device, {}).get("status") == "verified":
+                return device, f"{device} is recommended from bundled certification."
+        if preferred in direct:
+            return (
+                preferred,
+                f"{preferred} is an expected compatibility option without verification.",
+            )
+        if "GPU" in direct and verification.get("GPU", {}).get("status") == "verified":
+            return "GPU", "GPU is recommended from bundled certification."
+        if "CPU" in direct and verification.get("CPU", {}).get("status") == "verified":
+            return "CPU", "CPU is recommended from bundled certification."
+        return "CPU", "CPU is the safe fallback when no matching device evidence is available."
 
     def _quantization(
         self,
@@ -418,6 +443,14 @@ class ModelLibraryService:
         verification = self._verification(metadata, local)
         recommendation = self._quantization(cfg, estimate, snapshot)
         preferred_device = str(cfg.recommended_device or "CPU").split(":", 1)[0].upper()
+        available = {
+            str(value).split(".", 1)[0].upper() for value in snapshot.get("available_devices", [])
+        }
+        evidence_device, evidence_reason = self._evidence_device(
+            preferred_device, available, local, verification
+        )
+        recommendation["device"] = evidence_device
+        recommendation["reason"] = evidence_reason
         target_device = str(recommendation.get("device") or preferred_device).upper()
         local_device = next(
             (
