@@ -1,4 +1,7 @@
+import json
 from pathlib import Path
+
+import pytest
 
 from app.config import Settings
 from app.model_library import ModelLibraryService
@@ -104,6 +107,128 @@ def _prepare_service(tmp_path, monkeypatch, cfg: ModelConfig) -> ModelLibrarySer
     )
     monkeypatch.setattr(service, "_local_evidence", lambda _model_id: {})
     return service
+
+
+def _service_with_benchmark(tmp_path, monkeypatch, cfg, *, requested="CPU", actual="CPU", **row):
+    settings = _settings(tmp_path)
+    manager = ModelManager(settings)
+    manager.catalog[cfg.id] = cfg
+    service = ModelLibraryService(settings, manager)
+    fingerprint = row.pop("hardware_fingerprint", "current-hardware")
+    monkeypatch.setattr(
+        manager.advisor,
+        "hardware_snapshot",
+        lambda: {
+            "fingerprint": "current-hardware",
+            "available_devices": ["CPU", "GPU", "NPU"],
+            "devices": [],
+            "runtime": {},
+        },
+    )
+    result = {
+        "model_id": cfg.id,
+        "source_model": cfg.source_model,
+        "backend": cfg.backend,
+        "weight_format": cfg.weight_format,
+        "requested_device": requested,
+        "actual_device": actual,
+        "success": True,
+        **row,
+    }
+    settings.benchmark_results_file.parent.mkdir(parents=True)
+    settings.benchmark_results_file.write_text(
+        json.dumps(
+            {
+                "runs": [
+                    {
+                        "created_at": "2026-07-24T12:00:00Z",
+                        "hardware_fingerprint": fingerprint,
+                        "results": [result],
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    return service
+
+
+@pytest.mark.parametrize(
+    ("requested", "actual", "device", "accepted"),
+    [
+        ("NPU", "NPU", "NPU", True),
+        ("NPU", "GPU", "NPU", False),
+        ("GPU", "CPU", "GPU", False),
+        ("CPU", None, "CPU", False),
+        ("CPU", "unknown", "CPU", False),
+        ("AUTO", "GPU", "GPU", False),
+    ],
+)
+def test_local_evidence_requires_requested_and_actual_direct_device(
+    tmp_path, monkeypatch, requested, actual, device, accepted
+):
+    cfg = _config("direct-device-model")
+    service = _service_with_benchmark(
+        tmp_path, monkeypatch, cfg, requested=requested, actual=actual
+    )
+
+    assert (device in service._local_evidence(cfg.id)) is accepted
+
+
+def test_exact_local_result_outranks_bundled_evidence(tmp_path, monkeypatch):
+    cfg = _config("local-npu-model")
+    service = _service_with_benchmark(tmp_path, monkeypatch, cfg, requested="NPU", actual="NPU")
+    local = service._local_evidence(cfg.id)
+
+    device, reason = service._evidence_device(
+        "GPU", {"CPU", "GPU", "NPU"}, local, {"GPU": {"status": "verified"}}
+    )
+
+    assert device == "NPU"
+    assert "local benchmark" in reason
+
+
+def test_mismatched_local_result_does_not_outrank_bundled_gpu(tmp_path, monkeypatch):
+    cfg = _config("qwen2.5-3b-fp16")
+    service = _service_with_benchmark(tmp_path, monkeypatch, cfg, requested="NPU", actual="GPU")
+    local = service._local_evidence(cfg.id)
+
+    device, reason = service._evidence_device(
+        "GPU", {"CPU", "GPU", "NPU"}, local, {"GPU": {"status": "verified"}}
+    )
+
+    assert local == {}
+    assert device == "GPU"
+    assert "bundled certification" in reason
+
+
+def test_local_evidence_requires_exact_weight_format(tmp_path, monkeypatch):
+    cfg = _config("format-model")
+    service = _service_with_benchmark(tmp_path, monkeypatch, cfg, weight_format="int4")
+
+    assert service._local_evidence(cfg.id) == {}
+
+
+def test_local_evidence_requires_current_hardware_fingerprint(tmp_path, monkeypatch):
+    cfg = _config("fingerprint-model")
+    service = _service_with_benchmark(
+        tmp_path, monkeypatch, cfg, hardware_fingerprint="other-hardware"
+    )
+
+    assert service._local_evidence(cfg.id) == {}
+
+
+def test_historical_benchmark_without_identity_remains_readable(tmp_path, monkeypatch):
+    cfg = _config("historical-model")
+    service = _service_with_benchmark(tmp_path, monkeypatch, cfg)
+    path = service.settings.benchmark_results_file
+    data = json.loads(path.read_text(encoding="utf-8"))
+    for field in ("source_model", "backend", "weight_format", "actual_device"):
+        data["runs"][0]["results"][0].pop(field)
+    path.write_text(json.dumps(data), encoding="utf-8")
+
+    assert len(service.manager.advisor._benchmark_rows()) == 1
+    assert service._local_evidence(cfg.id) == {}
 
 
 def test_official_evidence_is_not_applied_to_different_model_identity(tmp_path, monkeypatch):

@@ -324,6 +324,7 @@ class ModelManager:
         queued = status == "queued"
         loading = status == "loading"
         converting = status in {"queued_convert", "converting"}
+        cancelled = status == "cancelled"
         error = override.get("error") if status == "error" else None
         downloaded = self.force_mock or registry.is_downloaded(cfg, BASE_DIR)
         lock = self.locks.get(model_id)
@@ -334,6 +335,7 @@ class ModelManager:
             queued=queued,
             loading=loading,
             converting=converting,
+            cancelled=cancelled,
             downloaded=downloaded,
             device=self.devices.get(model_id),
             busy=busy,
@@ -623,7 +625,12 @@ class ModelManager:
                         self.schedule_load(model_id, device)
             except asyncio.CancelledError:
                 if proc and proc.returncode is None:
-                    await self._terminate_conversion_process(proc)
+                    try:
+                        await self._terminate_conversion_process(proc)
+                    except asyncio.CancelledError:
+                        pass
+                    except Exception:
+                        logger.error("Unexpected converter cleanup failure during cancellation.")
                 self._set_status(model_id, "cancelled")
                 self._set_progress(model_id, "cancelled", f"Conversion cancelled for {cfg.name}.")
                 raise
@@ -653,19 +660,30 @@ class ModelManager:
                     stderr=asyncio.subprocess.DEVNULL,
                 )
                 exit_code = await asyncio.wait_for(killer.wait(), timeout=TASKKILL_TIMEOUT_SECONDS)
-                if exit_code != 0 and proc.returncode is None:
-                    proc.kill()
+                if exit_code != 0:
+                    self._safe_kill_process(proc)
             except (TimeoutError, OSError):
-                if proc.returncode is None:
-                    proc.kill()
+                self._safe_kill_process(proc)
         else:
-            proc.kill()
+            self._safe_kill_process(proc)
         try:
             await asyncio.wait_for(proc.wait(), timeout=CONVERTER_EXIT_TIMEOUT_SECONDS)
         except TimeoutError:
             logger.warning("Converter process did not exit within the cancellation timeout.")
-        except Exception:
+        except (ProcessLookupError, OSError):
             logger.warning("Converter process cleanup failed after cancellation.")
+
+    @staticmethod
+    def _safe_kill_process(proc: asyncio.subprocess.Process) -> bool:
+        """Best-effort kill that treats process disappearance as a normal race."""
+
+        if proc.returncode is not None:
+            return False
+        try:
+            proc.kill()
+            return True
+        except (ProcessLookupError, OSError):
+            return False
 
     def schedule_convert(
         self,

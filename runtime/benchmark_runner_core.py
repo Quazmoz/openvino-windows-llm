@@ -42,6 +42,9 @@ BENCHMARK_CAVEAT = (
 class BenchmarkResult:
     run_id: str
     model_id: str
+    source_model: str
+    backend: str
+    weight_format: str
     requested_device: str
     actual_device: str | None
     load_time_ms: float | None
@@ -185,10 +188,15 @@ async def benchmark_model_device(
     engine: BaseEngine | None = None
     load_time_ms: float | None = None
     prompt_tokens = 0
+    cfg = manager.config_for(model_id)
+    identity = {
+        "source_model": cfg.source_model if cfg else "",
+        "backend": cfg.backend if cfg else "",
+        "weight_format": cfg.weight_format if cfg else "",
+    }
     try:
         engine, load_time_s = await manager.build_temporary_engine(model_id, device)
         load_time_ms = _ms(load_time_s)
-        cfg = manager.config_for(model_id)
         max_prompt_len = cfg.max_prompt_len if cfg else 1536
         max_context_len = cfg.max_context_len if cfg else 2048
 
@@ -223,6 +231,7 @@ async def benchmark_model_device(
         return BenchmarkResult(
             run_id=run_id,
             model_id=model_id,
+            **identity,
             requested_device=device,
             actual_device=_reported_actual_device(engine, device),
             load_time_ms=load_time_ms,
@@ -240,6 +249,7 @@ async def benchmark_model_device(
         return BenchmarkResult(
             run_id=run_id,
             model_id=model_id,
+            **identity,
             requested_device=device,
             actual_device=_reported_actual_device(engine, device) if engine else None,
             load_time_ms=load_time_ms,

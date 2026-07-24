@@ -28,6 +28,7 @@ _STATUS_LABELS = {
     "converting": "Converting…",
     "ready_to_load": "Ready to load",
     "not_downloaded": "Not converted",
+    "cancelled": "Conversion cancelled",
     "error": "Load failed",
 }
 
@@ -38,6 +39,7 @@ _PROGRESS_PHASE_LABELS = {
     "loading": "Loading",
     "ready": "Ready",
     "error": "Error",
+    "cancelled": "Cancelled",
 }
 
 _PROGRESS_PHASE_ICONS = {
@@ -47,6 +49,7 @@ _PROGRESS_PHASE_ICONS = {
     "loading": "🧠",
     "ready": "✓",
     "error": "⚠",
+    "cancelled": "■",
 }
 
 
@@ -204,6 +207,7 @@ def make_catalog_entry(
     loading: bool,
     downloaded: bool,
     converting: bool = False,
+    cancelled: bool = False,
     device: str | None = None,
     busy: bool = False,
     error: str | None = None,
@@ -215,6 +219,8 @@ def make_catalog_entry(
         status = "loaded"
     elif error:
         status = "error"
+    elif cancelled:
+        status = "cancelled"
     elif converting:
         status = "converting"
     elif queued:

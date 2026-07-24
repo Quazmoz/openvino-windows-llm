@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import time
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +12,21 @@ from app.config import BASE_DIR
 from app.telemetry import dir_size_gb
 
 from .common import base_device
+
+
+def benchmark_matches_direct_device(row: Mapping[str, Any], device: str) -> bool:
+    """Return whether a benchmark proved execution on one direct device."""
+
+    expected = base_device(device)
+    requested = row.get("requested_device")
+    actual = row.get("actual_device")
+    return (
+        expected in {"CPU", "GPU", "NPU"}
+        and bool(str(requested or "").strip())
+        and bool(str(actual or "").strip())
+        and base_device(requested) == expected
+        and base_device(actual) == expected
+    )
 
 
 class EvidenceMixin:
@@ -52,11 +68,17 @@ class EvidenceMixin:
 
     def _latest_benchmark(self, model_id: str, device: str | None = None) -> dict[str, Any] | None:
         fingerprint = self.hardware_snapshot().get("fingerprint")
+        cfg = self.catalog.get(model_id)
         matches = []
         for row in self._benchmark_rows():
             if row.get("model_id") != model_id:
                 continue
-            if device and base_device(row.get("requested_device")) != base_device(device):
+            if device and not benchmark_matches_direct_device(row, device):
+                continue
+            if cfg is None or any(
+                row.get(field) != getattr(cfg, field)
+                for field in ("source_model", "backend", "weight_format")
+            ):
                 continue
             row_fingerprint = row.get("hardware_fingerprint")
             if row_fingerprint and row_fingerprint != fingerprint:
