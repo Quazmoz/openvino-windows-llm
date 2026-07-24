@@ -1,0 +1,4 @@
+# Published certification evidence is hash-verified against
+# docs/certification/<version>/SHA256SUMS.txt. Pin these files to LF on every
+# platform so Get-FileHash / sha256sum matches regardless of core.autocrlf.
+docs/certification/** text eol=lf
