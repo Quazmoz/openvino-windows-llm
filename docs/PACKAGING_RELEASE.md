@@ -1,9 +1,9 @@
 # Windows packaging and release
 
-Use the production release entry point:
+Use the production release entry point with the canonical version from `app/version.py`:
 
 ```powershell
-.\scripts\build_release.ps1 -Version 0.4.0 -Channel stable -Clean -MockSmokeTest -GenerateChecksums
+.\scripts\build_release.ps1 -Version <version> -Channel stable -Clean -MockSmokeTest -GenerateChecksums
 ```
 
 See:
