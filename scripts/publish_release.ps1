@@ -30,10 +30,12 @@ $Expected = @(
     "OpenVINO-Windows-LLM-$Version-dependency-inventory.json",
     "OpenVINO-Windows-LLM-$Version-dependency-freeze.txt",
     "OpenVINO-Windows-LLM-$Version-release-summary.json",
-    "model_library_manifest.json"
+    "model-library-manifest.json"
 )
+# The repository source manifest is model_library_manifest.json; it is published under the
+# model-library-manifest.json asset name the shipped app fetches from releases/latest/download.
 $LibraryManifestSource = Join-Path $Root "model_library_manifest.json"
-$LibraryManifest = Join-Path $ArtifactDirectory "model_library_manifest.json"
+$LibraryManifest = Join-Path $ArtifactDirectory "model-library-manifest.json"
 if (-not (Test-Path $LibraryManifestSource)) { throw "Missing model library manifest: $LibraryManifestSource" }
 & $Python scripts/validate_model_library_manifest.py $LibraryManifestSource
 if ($LASTEXITCODE -ne 0) { throw "Model library manifest validation failed." }

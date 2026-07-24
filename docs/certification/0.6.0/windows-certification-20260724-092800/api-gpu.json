@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-07-24T09:28:26.554090+00:00",
+  "profile": "full",
+  "model": "smollm2-135m-fp16",
+  "embedding_model": null,
+  "requested_device": "GPU",
+  "server": {
+    "version": "0.5.0",
+    "mock": false,
+    "openvino": true,
+    "default_device": "GPU",
+    "available_devices": [
+      "CPU",
+      "GPU",
+      "NPU"
+    ]
+  },
+  "summary": {
+    "pass": 11,
+    "warn": 1,
+    "skip": 2,
+    "fail": 0
+  },
+  "checks": [
+    {
+      "name": "Health and probes",
+      "status": "pass",
+      "duration_ms": 14.9,
+      "detail": "version=0.5.0 mock=False"
+    },
+    {
+      "name": "API-key enforcement",
+      "status": "skip",
+      "duration_ms": 0.0,
+      "detail": "No API key supplied"
+    },
+    {
+      "name": "Device discovery",
+      "status": "pass",
+      "duration_ms": 14.9,
+      "detail": "available=CPU,GPU,NPU"
+    },
+    {
+      "name": "Model catalog",
+      "status": "pass",
+      "duration_ms": 37.3,
+      "detail": "catalog=20"
+    },
+    {
+      "name": "Model load",
+      "status": "pass",
+      "duration_ms": 3384.9,
+      "detail": "loaded on GPU"
+    },
+    {
+      "name": "Open WebUI chat",
+      "status": "pass",
+      "duration_ms": 540.2,
+      "detail": "finish_reason=stop"
+    },
+    {
+      "name": "Open WebUI streaming",
+      "status": "pass",
+      "duration_ms": 283.9,
+      "detail": "events=16"
+    },
+    {
+      "name": "Stream cancellation recovery",
+      "status": "pass",
+      "duration_ms": 718.8,
+      "detail": "follow-up request succeeded"
+    },
+    {
+      "name": "Tool and structured-output requests",
+      "status": "warn",
+      "duration_ms": 470.7,
+      "detail": "Requests were accepted; model/runtime did not demonstrate both optional outputs"
+    },
+    {
+      "name": "Request metrics",
+      "status": "pass",
+      "duration_ms": 107.4,
+      "detail": "requests=5"
+    },
+    {
+      "name": "n8n Responses API",
+      "status": "pass",
+      "duration_ms": 926.7,
+      "detail": "streaming and non-streaming passed"
+    },
+    {
+      "name": "Embeddings",
+      "status": "skip",
+      "duration_ms": 0.0,
+      "detail": "Not requested"
+    },
+    {
+      "name": "Benchmark",
+      "status": "pass",
+      "duration_ms": 2803.4,
+      "detail": "benchmark succeeded"
+    },
+    {
+      "name": "Model lifecycle",
+      "status": "pass",
+      "duration_ms": 1227.5,
+      "detail": "loaded on GPU"
+    }
+  ]
+}

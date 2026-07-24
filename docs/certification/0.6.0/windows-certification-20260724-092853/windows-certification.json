@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-07-24T09:32:17.9245959Z",
+  "model": "qwen2.5-1.5b-fp16",
+  "embedding_model": null,
+  "requested_devices": [
+    "CPU",
+    "GPU",
+    "NPU",
+    "AUTO"
+  ],
+  "detected_devices": [
+    "CPU",
+    "GPU",
+    "NPU"
+  ],
+  "device_details": [
+    {
+      "device": "CPU",
+      "full_name": "Intel(R) Core(TM) Ultra 9 185H"
+    },
+    {
+      "device": "GPU",
+      "full_name": "Intel(R) Arc(TM) Graphics (iGPU)"
+    },
+    {
+      "device": "NPU",
+      "full_name": "Intel(R) AI Boost"
+    }
+  ],
+  "machine": {
+    "os": "Microsoft Windows 11 Home 10.0.26200 build 26200",
+    "architecture": "64-bit",
+    "memory_gb": 31.67,
+    "processors": [
+      "Intel(R) Core(TM) Ultra 9 185H"
+    ],
+    "video_controllers": [
+      {
+        "name": "Intel(R) Arc(TM) Graphics",
+        "driver_version": "32.0.101.8425"
+      }
+    ],
+    "python": "Python 3.13.11",
+    "packages": {
+      "openvino": "2026.2.1",
+      "openvino-genai": "2026.2.1.0",
+      "optimum-intel": "2.0.0",
+      "nncf": "3.2.0",
+      "fastapi": "0.137.1",
+      "pydantic": "2.13.4"
+    }
+  },
+  "summary": {
+    "passed": 4,
+    "skipped": 0,
+    "failed": 0
+  },
+  "device_results": [
+    {
+      "device": "CPU",
+      "status": "passed",
+      "reason": "",
+      "summary": {
+        "pass": 12,
+        "warn": 0,
+        "skip": 2,
+        "fail": 0
+      },
+      "report": "api-cpu.md"
+    },
+    {
+      "device": "GPU",
+      "status": "passed",
+      "reason": "",
+      "summary": {
+        "pass": 12,
+        "warn": 0,
+        "skip": 2,
+        "fail": 0
+      },
+      "report": "api-gpu.md"
+    },
+    {
+      "device": "NPU",
+      "status": "passed",
+      "reason": "",
+      "summary": {
+        "pass": 12,
+        "warn": 0,
+        "skip": 2,
+        "fail": 0
+      },
+      "report": "api-npu.md"
+    },
+    {
+      "device": "AUTO",
+      "status": "passed",
+      "reason": "",
+      "summary": {
+        "pass": 12,
+        "warn": 0,
+        "skip": 2,
+        "fail": 0
+      },
+      "report": "api-auto.md"
+    }
+  ]
+}

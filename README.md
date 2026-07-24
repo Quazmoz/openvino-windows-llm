@@ -10,6 +10,24 @@ The project keeps OpenVINO as the inference runtime. It does not require Docker,
 
 > **Validation status:** Mock-mode tests validate API, UI, packaging, and state contracts. Real CPU, GPU, and NPU claims require the Windows certification harness on suitable hardware with mock mode disabled. An unsigned development installer is not a signed production release.
 
+## Latest release — 0.6.0 (stable)
+
+**Current stable version: `0.6.0`.** This release qualifies the OpenVINO / OpenVINO GenAI / OpenVINO Tokenizers `2026.2.1` stack and records the first real Intel CPU, GPU, and NPU certification evidence.
+
+Downloads (GitHub release `v0.6.0`):
+
+- [Windows installer (.exe)](https://github.com/Quazmoz/openvino-windows-llm/releases/download/v0.6.0/OpenVINO-Windows-LLM-0.6.0-windows-x64-installer.exe)
+- [Portable ZIP](https://github.com/Quazmoz/openvino-windows-llm/releases/download/v0.6.0/OpenVINO-Windows-LLM-0.6.0-windows-x64-portable.zip)
+- [SHA-256 checksums](https://github.com/Quazmoz/openvino-windows-llm/releases/download/v0.6.0/OpenVINO-Windows-LLM-0.6.0-checksums.txt)
+
+References: [compatibility matrix](docs/COMPATIBILITY_MATRIX.md) · [public certification evidence](docs/certification/0.6.0/)
+
+**Validation scope.** All evidence comes from a single Intel Core Ultra 9 185H laptop (Windows 11 build 26200) running OpenVINO `2026.2.1`. TinyLlama 1.1B, SmolLM2 135M, and Qwen2.5 1.5B — all FP16 — passed the full API contract on CPU, GPU, NPU, and AUTO, and BGE-Small embeddings passed on CPU. This is not a claim of support for all Intel systems.
+
+> ⚠️ **The installer and portable ZIP are not Authenticode-signed.** Windows SmartScreen will warn on first launch. Verify your download against the published SHA-256 checksums before running.
+
+Support remains specific to your hardware, model, driver, and OpenVINO version: a PASS on the machine above does not guarantee the same result on other Intel CPUs, GPUs, NPUs, drivers, or OpenVINO releases.
+
 ## Download → Install → Choose recommended model → Chat
 
 The P0 desktop distribution is a thin Windows launcher around the existing FastAPI server and browser UI.
