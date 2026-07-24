@@ -191,6 +191,9 @@ def test_build_script_stages_model_library_manifest():
     assert "validate_model_library_manifest.py" in script, (
         "build_release.ps1 must validate the model library manifest before staging"
     )
+    assert "$Produced = @($InventoryJson, $InventoryText)" in script, (
+        "the release summary must record both dependency provenance artifacts"
+    )
 
 
 def test_source_model_library_manifest_exists():

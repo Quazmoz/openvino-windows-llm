@@ -187,7 +187,7 @@ else {
     Write-Warning "Building unsigned artifacts. Use -Sign with secure signing environment variables for a signed release."
 }
 
-$Produced = @()
+$Produced = @($InventoryJson, $InventoryText)
 $SignedTypes = @()
 if (-not $SkipPortable) {
     $PortableContainer = Join-Path $BuildRoot "portable"
