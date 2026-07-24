@@ -27,6 +27,20 @@ The `smollm2-135m-fp16` rows record a model-dependent WARN on the tool/structure
 
 The `Benchmark` column records whether the benchmark endpoint ran successfully on this machine; it is a functional check, not a throughput measurement, and is not a general speed guarantee. Only FP16 was certified; INT4/INT8 and contexts longer than the short validation prompts remain unverified.
 
+These retained `0.6.0` reports predate the deterministic context-depth check and therefore
+do not qualify any `model_library_manifest.json` certification record. Current harness
+schema 2 reports must include a passing `context_depth` result with the exact requested
+prompt-token depth, actual runtime device, and generated-token count. A manifest record
+also requires the retained report path and its SHA-256. Until all of those facts exist,
+the corresponding certification array and `max_tested_context` remain empty/zero.
+
+The first schema 2 result is `tinyllama-1.1b-chat-fp16` on CPU: requested and actual
+device `CPU`, exact prompt depth 1,536 tokens, and 3 generated tokens. See
+[`0.6.1/windows-certification-20260724-144444/windows-certification.json`](certification/0.6.1/windows-certification-20260724-144444/windows-certification.json)
+(`41590beb5ce497b37bf44189a39bc0a9fe95696c24a107b33cfeb545778f985b`).
+This context-capacity check makes no throughput claim; every other model/device
+combination remains ineligible for the bundled manifest.
+
 ## Report integrity (SHA-256)
 
 Each report below is a clickable repository-relative link with its SHA-256. The complete list, including the JSON reports and this bundle's README, is in [`certification/0.6.0/SHA256SUMS.txt`](certification/0.6.0/SHA256SUMS.txt).

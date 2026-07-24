@@ -1,0 +1,11 @@
+﻿{
+    "model_id":  "tinyllama-1.1b-chat-fp16",
+    "requested_device":  "CPU",
+    "actual_device":  "CPU",
+    "requested_context":  1536,
+    "prompt_tokens":  1536,
+    "tokens_generated":  3,
+    "passed":  true,
+    "error":  "",
+    "timestamp":  "2026-07-24T14:45:12Z"
+}

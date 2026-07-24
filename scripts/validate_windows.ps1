@@ -11,7 +11,8 @@ param(
     [string]$OutputDirectory = "certification/results",
     [int]$Port = 8765,
     [int]$LoadTimeoutSeconds = 900,
-    [int]$RequestTimeoutSeconds = 120
+    [int]$RequestTimeoutSeconds = 120,
+    [int]$ContextDepth = 0
 )
 
 Set-StrictMode -Version Latest
@@ -112,7 +113,9 @@ $oldAuto = $env:OV_LLM_AUTO_CONVERT
 try {
     $python = Get-Python $root
     $validator = Join-Path $root "scripts\validate_api_contract.py"
+    $contextValidator = Join-Path $root "scripts\certify_context_depth.py"
     if (-not (Test-Path $validator)) { throw "Missing $validator" }
+    if (-not (Test-Path $contextValidator)) { throw "Missing $contextValidator" }
 
     $outputRoot = if ([IO.Path]::IsPathRooted($OutputDirectory)) {
         $OutputDirectory
@@ -192,6 +195,7 @@ print(json.dumps(versions))
         $stderr = Join-Path $session "server-$slug.stderr.log"
         $jsonReport = Join-Path $session "api-$slug.json"
         $mdReport = Join-Path $session "api-$slug.md"
+        $contextReport = Join-Path $session "context-$slug.json"
         $baseUrl = "http://127.0.0.1:$Port"
 
         $env:OV_LLM_API_KEY = $ApiKey
@@ -235,13 +239,27 @@ print(json.dumps(versions))
             & $python @validatorArgs
             $exitCode = $LASTEXITCODE
             $api = Get-Content -Raw $jsonReport | ConvertFrom-Json
-            $status = if ($exitCode -eq 0 -and $api.summary.fail -eq 0) { "passed" } else { "failed" }
+            $context = $null
+            $contextExitCode = 1
+            if ($exitCode -eq 0 -and $api.summary.fail -eq 0) {
+                Invoke-RestMethod "$baseUrl/v1/models/unload" -Method Post -ContentType "application/json" -Body (@{ model = $Model } | ConvertTo-Json) -Headers $(if ($ApiKey) { @{ Authorization = "Bearer $ApiKey" } } else { @{} }) | Out-Null
+                & $python $contextValidator --model $Model --device $device --context $ContextDepth --output $contextReport
+                $contextExitCode = $LASTEXITCODE
+                if (Test-Path $contextReport) {
+                    $context = Get-Content -Raw $contextReport | ConvertFrom-Json
+                    $context.error = Safe-Text ([string]$context.error) $ApiKey
+                    $context | ConvertTo-Json -Depth 6 | Set-Content $contextReport -Encoding UTF8
+                }
+            }
+            $status = if ($exitCode -eq 0 -and $api.summary.fail -eq 0 -and $contextExitCode -eq 0 -and $context.passed) { "passed" } else { "failed" }
             $results += [ordered]@{
                 device = $device
                 status = $status
                 reason = ""
                 summary = $api.summary
                 report = Split-Path -Leaf $mdReport
+                context_report = if ($context) { Split-Path -Leaf $contextReport } else { $null }
+                context_depth = $context
             }
             $embeddingPending = $false
             if ($status -eq "failed" -and -not $ContinueOnFailure) {
@@ -276,7 +294,7 @@ print(json.dumps(versions))
         failed = @($results | Where-Object status -eq "failed").Count
     }
     $report = [ordered]@{
-        schema_version = 1
+        schema_version = 2
         generated_at = [DateTime]::UtcNow.ToString("o")
         model = $Model
         embedding_model = if ($IncludeEmbeddings) { $EmbeddingModel } else { $null }
@@ -297,11 +315,12 @@ print(json.dumps(versions))
         "- Model: ``$Model``",
         "- Detected devices: ``$($available -join ', ')``", "",
         "**Result:** $($summary.passed) passed, $($summary.skipped) skipped, $($summary.failed) failed.", "",
-        "| Device | Status | Passed | Warnings | Skipped | Failed |",
-        "|---|---:|---:|---:|---:|---:|"
+        "| Device | Status | API passed | Warnings | Context requested | Prompt tokens | Tokens generated | Actual device |",
+        "|---|---:|---:|---:|---:|---:|---:|---|"
     )
     foreach ($result in $results) {
-        $lines += "| $($result.device) | **$($result.status.ToUpperInvariant())** | $($result.summary.pass) | $($result.summary.warn) | $($result.summary.skip) | $($result.summary.fail) |"
+        $context = $result.context_depth
+        $lines += "| $($result.device) | **$($result.status.ToUpperInvariant())** | $($result.summary.pass) | $($result.summary.warn) | $($context.requested_context) | $($context.prompt_tokens) | $($context.tokens_generated) | $($context.actual_device) |"
     }
     $lines += @(
         "", "> Reports exclude API keys, prompts, generated text, hostnames, usernames, serial numbers, and full local paths.", ""

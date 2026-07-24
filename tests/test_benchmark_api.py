@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import asyncio
+
 from fastapi.testclient import TestClient
 
 from app.config import BASE_DIR, Settings
+from app.model_manager import ModelManager
 from app.server import create_app
-from runtime.benchmark_runner import score_benchmark_results
+from runtime.benchmark_runner import certify_context_depth, score_benchmark_results
 from runtime.openvino_engine import MockEngine
 
 MODEL_ID = "tinyllama-1.1b-chat-fp16"
@@ -91,6 +94,36 @@ def test_benchmark_validation_errors(tmp_path):
         )
         assert bad_device.status_code == 400
         assert "Supported examples" in bad_device.json()["detail"]
+
+
+def test_context_depth_certification_records_exact_depth_and_device(tmp_path):
+    settings = Settings(
+        host="127.0.0.1",
+        port=8000,
+        device="CPU",
+        models_file=BASE_DIR / "models.json",
+        models_dir=BASE_DIR / "models" / "openvino",
+        default_model=None,
+        api_key=None,
+        force_mock=True,
+        benchmark_results_file=tmp_path / "benchmarks.json",
+    )
+    result = asyncio.run(
+        certify_context_depth(
+            ModelManager(settings),
+            model_id=MODEL_ID,
+            device="CPU",
+            requested_context=64,
+        )
+    )
+
+    assert result.passed is True
+    assert result.requested_device == "CPU"
+    assert result.actual_device == "CPU"
+    assert result.requested_context == 64
+    assert result.prompt_tokens == 64
+    assert result.tokens_generated > 0
+    assert not hasattr(result, "tokens_sec")
 
 
 def test_benchmark_routes_are_api_key_protected(tmp_path):

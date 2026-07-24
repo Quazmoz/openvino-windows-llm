@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-07-23T00:00:00Z",
+  "generated_at": "2026-07-24T14:45:23Z",
   "source": "bundled-offline-fallback",
   "catalog": {
     "smollm2-135m-fp16": {
@@ -102,9 +102,26 @@
         "gated": false,
         "quality_score": 45,
         "speed_score": 82,
-        "max_tested_context": 0,
+        "max_tested_context": 1536,
         "maintainer_note": "Use as a stable device-validation model rather than the default quality recommendation.",
-        "certifications": {"CPU": [], "GPU": [], "NPU": []}
+        "certifications": {
+          "CPU": [
+            {
+              "status": "verified",
+              "certified_at": "2026-07-24T14:45:23Z",
+              "openvino_version": "2026.2.1",
+              "openvino_genai_version": "2026.2.1.0",
+              "driver_version": null,
+              "requested_device": "CPU",
+              "actual_device": "CPU",
+              "max_tested_context": 1536,
+              "report_reference": "docs/certification/0.6.1/windows-certification-20260724-144444/windows-certification.json",
+              "report_sha256": "41590beb5ce497b37bf44189a39bc0a9fe95696c24a107b33cfeb545778f985b"
+            }
+          ],
+          "GPU": [],
+          "NPU": []
+        }
       }
     },
     "qwen2.5-1.5b-fp16": {
@@ -238,5 +255,5 @@
       }
     }
   },
-  "catalog_sha256": "9371e701b4c6e5880ee453c5ec91e8c71bb6e43cc33d07566ac399ba2808231b"
+  "catalog_sha256": "1a37d81b9bb2b0cf1c6f2754b37f986707b89085b93093b61caef06aa4abea82"
 }

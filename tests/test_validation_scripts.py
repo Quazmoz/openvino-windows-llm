@@ -76,3 +76,6 @@ def test_windows_harness_forces_real_local_validation():
     # the device list as one literal string under -File mode; the harness must split it so
     # each device is certified individually rather than as a bogus combined target.
     assert '-split "[,;]"' in script
+    assert "certify_context_depth.py" in script
+    assert "context_depth = $context" in script
+    assert "schema_version = 2" in script

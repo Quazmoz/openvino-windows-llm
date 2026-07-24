@@ -57,6 +57,21 @@ class BenchmarkResult:
     score: float | None = None
 
 
+@dataclass
+class ContextDepthResult:
+    """Certification-safe facts for one deterministic context-depth trial."""
+
+    model_id: str
+    requested_device: str
+    actual_device: str | None
+    requested_context: int
+    prompt_tokens: int
+    tokens_generated: int
+    passed: bool
+    error: str | None
+    timestamp: str
+
+
 class BenchmarkStore:
     """Small JSON-backed store for benchmark runs."""
 
@@ -241,6 +256,86 @@ async def benchmark_model_device(
                 engine.close()
 
 
+async def certify_context_depth(
+    manager: ModelManager,
+    *,
+    model_id: str,
+    device: str,
+    requested_context: int,
+) -> ContextDepthResult:
+    """Generate one token after a deterministic prompt of the requested depth.
+
+    This is a functional context-capacity check, not a performance benchmark.
+    A pass requires an exact prompt token count, successful generation, and an
+    actual device consistent with the requested direct device.
+    """
+
+    timestamp = _utc_now()
+    engine: BaseEngine | None = None
+    prompt_tokens = 0
+    actual_device: str | None = None
+    try:
+        cfg = manager.config_for(model_id)
+        if cfg is None:
+            raise ValueError(f"Unknown model '{model_id}'.")
+        if requested_context < 1 or requested_context > cfg.max_prompt_len:
+            raise ValueError(
+                f"Requested context must be between 1 and {cfg.max_prompt_len} prompt tokens."
+            )
+        normalized_device = device_check.validate_device_expression(device)
+        engine, _ = await manager.build_temporary_engine(model_id, normalized_device)
+        actual_device = _reported_actual_device(engine, normalized_device)
+        loop = asyncio.get_running_loop()
+        prompt, prompt_tokens = await loop.run_in_executor(
+            None, _build_exact_context_prompt, engine, requested_context
+        )
+        if prompt_tokens != requested_context:
+            raise RuntimeError(
+                f"Tokenizer could not construct exactly {requested_context} prompt tokens; "
+                f"constructed {prompt_tokens}."
+            )
+        generation = await _stream_generation_once(
+            engine,
+            prompt,
+            GenParams(max_new_tokens=1, temperature=0.0, top_p=1.0, do_sample=False),
+        )
+        tokens_generated = int(generation["completion_tokens"])
+        if tokens_generated < 1:
+            raise RuntimeError("Generation completed without producing a token.")
+        if not _device_matches_request(normalized_device, actual_device):
+            raise RuntimeError(
+                f"Requested device {normalized_device} but runtime reported "
+                f"{actual_device or 'unknown'}."
+            )
+        return ContextDepthResult(
+            model_id=model_id,
+            requested_device=normalized_device,
+            actual_device=actual_device,
+            requested_context=requested_context,
+            prompt_tokens=prompt_tokens,
+            tokens_generated=tokens_generated,
+            passed=True,
+            error=None,
+            timestamp=timestamp,
+        )
+    except Exception as exc:  # noqa: BLE001 - certification retains a failed result
+        return ContextDepthResult(
+            model_id=model_id,
+            requested_device=device,
+            actual_device=actual_device,
+            requested_context=requested_context,
+            prompt_tokens=prompt_tokens,
+            tokens_generated=0,
+            passed=False,
+            error=str(exc),
+            timestamp=timestamp,
+        )
+    finally:
+        if engine is not None:
+            with contextlib.suppress(Exception):
+                engine.close()
+
+
 def score_benchmark_results(results: list[dict[str, Any]], *, mock: bool = False) -> dict[str, Any]:
     """Assign balanced scores and choose a practical recommendation.
 
@@ -359,6 +454,43 @@ def _build_benchmark_prompt(
     )
 
 
+def _build_exact_context_prompt(
+    engine: BaseEngine,
+    requested_context: int,
+) -> tuple[str, int]:
+    """Construct a deterministic chat prompt with an exact tokenizer count."""
+
+    def render(characters: int) -> tuple[str, int]:
+        messages = [{"role": "user", "content": "x" * characters}]
+        prompt = engine.apply_chat_template(messages, add_generation_prompt=True)
+        return prompt, engine.count_tokens(prompt)
+
+    low = 0
+    high = max(requested_context * 8, 64)
+    while render(high)[1] < requested_context:
+        high *= 2
+        if high > requested_context * 256:
+            break
+    while low <= high:
+        middle = (low + high) // 2
+        _, count = render(middle)
+        if count < requested_context:
+            low = middle + 1
+        elif count > requested_context:
+            high = middle - 1
+        else:
+            return render(middle)
+    candidates = [render(value) for value in range(max(high - 32, 0), low + 33)]
+    exact = next((candidate for candidate in candidates if candidate[1] == requested_context), None)
+    if exact is not None:
+        return exact
+    return max(
+        (candidate for candidate in candidates if candidate[1] <= requested_context),
+        key=lambda candidate: candidate[1],
+        default=render(0),
+    )
+
+
 async def _stream_generation_once(
     engine: BaseEngine,
     prompt: str,
@@ -439,6 +571,15 @@ def _reported_actual_device(engine: BaseEngine, requested_device: str) -> str | 
     if parsed.kind in {"AUTO", "MULTI", "HETERO"}:
         return None if str(engine_device) == requested_device else str(engine_device)
     return str(engine_device)
+
+
+def _device_matches_request(requested_device: str, actual_device: str | None) -> bool:
+    if not actual_device:
+        return False
+    parsed = device_check.parse_device_expression(requested_device)
+    if parsed.kind in {"AUTO", "MULTI", "HETERO"}:
+        return True
+    return actual_device.split(".", 1)[0].upper() == parsed.kind
 
 
 def _print_table(run: dict[str, Any]) -> None:

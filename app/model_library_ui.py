@@ -26,8 +26,8 @@ const trigger = document.createElement('button');
 trigger.type = 'button';
 trigger.id = 'model-library-btn';
 trigger.className = 'icon-btn';
-trigger.title = 'Open Verified Model Library';
-trigger.setAttribute('aria-label', 'Open Verified Model Library');
+trigger.title = 'Open Model Library Evidence';
+trigger.setAttribute('aria-label', 'Open Model Library Evidence');
 trigger.innerHTML = icon;
 header.insertBefore(
   trigger,
@@ -40,6 +40,11 @@ modal.id = 'model-library-modal';
 modal.setAttribute('aria-hidden', 'true');
 modal.innerHTML = `<div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="ml-title"><div class="modal-header"><div class="ml-head"><h3 id="ml-title">Verified Model Library</h3><p>Maintained recommendations, local evidence, conversion health, and safe imports</p></div><button type="button" class="close-btn" id="ml-close" aria-label="Close model library">&times;</button></div><div class="ml-body"><div class="ml-toolbar"><input class="ml-search" id="ml-search" type="search" maxlength="160" placeholder="Search maintained models"><button type="button" class="ml-btn" id="ml-refresh">Refresh official catalog</button><label class="ml-check"><input type="checkbox" id="ml-all"> Show all registered</label></div><div class="ml-profiles" id="ml-profiles"></div><div class="ml-import-panel" id="ml-import-panel"><h4>Import converted OpenVINO model</h4><div class="ml-import-grid"><input class="ml-field" id="ml-import-id" placeholder="Model ID, for example my-model-int4"><input class="ml-field" id="ml-import-name" placeholder="Display name"><input class="ml-path wide" id="ml-import-path" placeholder="Absolute Windows directory containing OpenVINO IR"><select class="ml-field" id="ml-import-backend"><option value="openvino-genai">Text generation</option><option value="openvino-vlm">Vision language</option><option value="openvino-embeddings">Embeddings</option></select><select class="ml-field" id="ml-import-format"><option value="fp16">FP16</option><option value="int8">INT8</option><option value="int4">INT4</option></select><select class="ml-field" id="ml-import-device"><option>CPU</option><option>GPU</option><option>NPU</option><option>AUTO</option></select><input class="ml-field" id="ml-import-context" type="number" min="128" max="262144" value="2048" aria-label="Maximum context length"></div><div class="ml-import-actions"><button type="button" class="ml-btn" id="ml-import-cancel">Cancel</button><button type="button" class="ml-btn primary" id="ml-import-submit">Import and manage copy</button></div></div><div class="ml-summary"><span id="ml-summary">Loading model library…</span><span id="ml-source"></span></div><div id="ml-error"></div><div class="ml-grid" id="ml-grid"><div class="ml-loading">Loading model evidence…</div></div></div><div class="ml-footer"><span class="ml-footer-note">Verified means a retained certification record exists. Local benchmarks are labeled separately. Expected compatibility is never presented as verified.</span><div class="ml-footer-actions"><button type="button" class="ml-btn" id="ml-import-defs">Import definitions</button><button type="button" class="ml-btn" id="ml-import-converted">Import converted</button><button type="button" class="ml-btn" id="ml-export">Export definitions</button><input type="file" id="ml-file" accept="application/json,.json" hidden></div></div></div>`;
 document.body.appendChild(modal);
+modal.querySelector('#ml-title').textContent = 'Model Library Evidence';
+modal.querySelector('.ml-head p').textContent =
+  'Bundled certification and your local benchmark results are separate evidence sources';
+modal.querySelector('.ml-footer-note').textContent =
+  'Bundled certification requires a retained report and checksum. Local benchmarks describe only this PC and never become bundled certification automatically. Expected compatibility is unverified.';
 
 const $ = selector => modal.querySelector(selector);
 const grid = $('#ml-grid');
@@ -152,9 +157,9 @@ function render() {
     const recommendation = item.recommended_quantization || {};
     const license = item.gated ? `${item.license} · gated` : item.license;
     const measurementSource = metrics.measurement_source === 'local'
-      ? 'This PC'
+      ? 'Local benchmark'
       : metrics.measurement_source === 'official'
-        ? 'Official'
+        ? 'Bundled certification'
         : 'Unmeasured';
     const measurement = metrics.measurement_device
       ? `${measurementSource} · ${metrics.measurement_device}`

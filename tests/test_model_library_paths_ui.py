@@ -116,5 +116,7 @@ def test_model_library_browser_guards_actions_and_token_budget():
     assert "No conversion source" in source
     assert "Reconvert" in source
     assert "metrics.measurement_source" in source
+    assert "Bundled certification and your local benchmark results" in source
+    assert "Local benchmarks describe only this PC" in source
     assert "Math.min(512, maxContext - 1)" in source
     assert "Model ID, display name, and source directory are required." in source

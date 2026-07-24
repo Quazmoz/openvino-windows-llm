@@ -149,10 +149,19 @@ def test_model_library_ui_is_composed_once():
 def test_bundled_manifest_and_release_wiring():
     manifest = parse_manifest_bytes((ROOT / "model_library_manifest.json").read_bytes())
     assert len(manifest["catalog"]) == 9
-    assert all(
-        not records
-        for entry in manifest["catalog"].values()
-        for records in entry["metadata"]["certifications"].values()
+    certified = [
+        (model_id, device, record)
+        for model_id, entry in manifest["catalog"].items()
+        for device, records in entry["metadata"]["certifications"].items()
+        for record in records
+    ]
+    assert len(certified) == 1
+    model_id, device, record = certified[0]
+    assert (model_id, device) == ("tinyllama-1.1b-chat-fp16", "CPU")
+    assert record["driver_version"] is None
+    assert record["max_tested_context"] == 1536
+    assert record["report_sha256"] == (
+        "41590beb5ce497b37bf44189a39bc0a9fe95696c24a107b33cfeb545778f985b"
     )
 
     spec = (ROOT / "packaging" / "openvino_windows_llm.spec").read_text(encoding="utf-8")

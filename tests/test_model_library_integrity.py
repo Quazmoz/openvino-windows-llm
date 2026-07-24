@@ -81,11 +81,12 @@ def test_manifest_validation_rejects_bad_definition_and_incomplete_evidence():
                             "status": "verified",
                             "certified_at": "2026-07-01T00:00:00Z",
                             "openvino_version": "2025.2.0",
-                            "driver_version": "",
-                            "load_time_ms": 1000,
-                            "tokens_sec": 10,
-                            "time_to_first_token_ms": 100,
+                            "driver_version": None,
+                            "requested_device": "CPU",
+                            "actual_device": "CPU",
                             "max_tested_context": 2048,
+                            "report_reference": "docs/certification/report.json",
+                            "report_sha256": "",
                         }
                     ]
                 },
@@ -103,6 +104,45 @@ def test_manifest_validation_rejects_bad_definition_and_incomplete_evidence():
     assert entry["metadata"]["quality_score"] == 0
     assert entry["metadata"]["speed_score"] == 0
     assert entry["metadata"]["certifications"]["CPU"] == []
+
+
+def test_cpu_certification_accepts_null_driver_with_complete_provenance():
+    catalog = {
+        "safe-model": {
+            "definition": _definition("safe-model"),
+            "metadata": {
+                "max_tested_context": 2048,
+                "certifications": {
+                    "CPU": [
+                        {
+                            "status": "verified",
+                            "certified_at": "2026-07-24T12:00:00Z",
+                            "openvino_version": "2026.2.1",
+                            "openvino_genai_version": "2026.2.1.0",
+                            "driver_version": None,
+                            "requested_device": "CPU",
+                            "actual_device": "CPU",
+                            "max_tested_context": 2048,
+                            "report_reference": "docs/certification/0.6.1/report.json",
+                            "report_sha256": "a" * 64,
+                        }
+                    ]
+                },
+            },
+        }
+    }
+    document = {
+        "schema_version": 1,
+        "catalog": catalog,
+        "catalog_sha256": library.catalog_checksum(catalog),
+    }
+
+    record = library.validate_manifest_document(document)["catalog"]["safe-model"]["metadata"][
+        "certifications"
+    ]["CPU"][0]
+    assert record["driver_version"] is None
+    assert record["report_sha256"] == "a" * 64
+    assert "tokens_sec" not in record
 
 
 def test_definition_import_refuses_active_model_even_with_alias_key(tmp_path):

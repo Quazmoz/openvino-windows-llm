@@ -134,7 +134,12 @@ def _normalize_certifications(raw: Any) -> dict[str, list[dict[str, Any]]]:
                 continue
             certified_at = str(record.get("certified_at") or "")[:32]
             openvino_version = str(record.get("openvino_version") or "")[:64]
-            driver_version = str(record.get("driver_version") or "")[:128]
+            driver_value = record.get("driver_version")
+            driver_version = str(driver_value)[:128] if driver_value not in (None, "") else None
+            requested_device = str(record.get("requested_device") or "")[:64]
+            actual_device = str(record.get("actual_device") or "")[:64]
+            report_reference = str(record.get("report_reference") or "")[:500]
+            report_sha256 = str(record.get("report_sha256") or "").lower()
             load_time_ms = optional_nonnegative_float(record.get("load_time_ms"))
             tokens_sec = optional_nonnegative_float(record.get("tokens_sec"))
             time_to_first_token_ms = optional_nonnegative_float(
@@ -144,29 +149,34 @@ def _normalize_certifications(raw: Any) -> dict[str, list[dict[str, Any]]]:
             if (
                 not certified_at
                 or not openvino_version
-                or not driver_version
-                or load_time_ms is None
-                or tokens_sec is None
-                or tokens_sec <= 0
-                or time_to_first_token_ms is None
+                or requested_device != device
+                or actual_device != device
+                or not report_reference
+                or not re.fullmatch(r"[0-9a-f]{64}", report_sha256)
                 or max_tested_context is None
                 or max_tested_context <= 0
             ):
                 continue
-            output[device].append(
-                {
-                    "status": "verified",
-                    "certified_at": certified_at,
-                    "openvino_version": openvino_version,
-                    "openvino_genai_version": str(record.get("openvino_genai_version") or "")[:64],
-                    "driver_version": driver_version,
-                    "load_time_ms": load_time_ms,
-                    "tokens_sec": tokens_sec,
-                    "time_to_first_token_ms": time_to_first_token_ms,
-                    "max_tested_context": max_tested_context,
-                    "evidence_url": str(record.get("evidence_url") or "")[:500],
-                }
-            )
+            normalized = {
+                "status": "verified",
+                "certified_at": certified_at,
+                "openvino_version": openvino_version,
+                "openvino_genai_version": str(record.get("openvino_genai_version") or "")[:64],
+                "driver_version": driver_version,
+                "requested_device": requested_device,
+                "actual_device": actual_device,
+                "max_tested_context": max_tested_context,
+                "report_reference": report_reference,
+                "report_sha256": report_sha256,
+            }
+            for field, value in (
+                ("load_time_ms", load_time_ms),
+                ("tokens_sec", tokens_sec),
+                ("time_to_first_token_ms", time_to_first_token_ms),
+            ):
+                if value is not None:
+                    normalized[field] = value
+            output[device].append(normalized)
         output[device].sort(key=lambda item: item["certified_at"])
     return output
 

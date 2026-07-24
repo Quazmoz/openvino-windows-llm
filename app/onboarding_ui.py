@@ -27,7 +27,7 @@ ONBOARDING_UI = r"""
 if (window.__ovllmDesktopOnboardingInstalled) return;
 window.__ovllmDesktopOnboardingInstalled = true;
 const API='/v1/onboarding';
-const labels=['Welcome','System scan','NPU readiness','Recommended model','Prepare model','Benchmark','Ready'];
+const labels=['Welcome','System scan','NPU readiness','Recommended model','Prepare model','Your local benchmark','Ready'];
 const preparationLabels=['Downloading model files','Converting or quantizing to OpenVINO','Validating converted files','Compiling for the selected device','Loading the model','Running a short benchmark'];
 void preparationLabels;
 let step=0,status=null,npu=null,rec=null,job=null,connection=null,timer=null;

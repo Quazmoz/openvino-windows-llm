@@ -34,6 +34,7 @@ def test_wizard_has_accessible_stages_and_real_connection_configuration():
         "Completion tokens",
         "Deterministic mock",
         "Measured on the active runtime",
+        "Your local benchmark",
         "OpenAI Python client",
         "Open WebUI",
         "n8n",

@@ -338,13 +338,13 @@ class ModelLibraryService:
                 )
                 output[device] = {
                     "status": "verified",
-                    "label": f"Verified on {device}",
+                    "label": f"Bundled certification: {device}",
                     **latest,
                 }
             elif device in local:
                 output[device] = {
                     "status": "locally_verified",
-                    "label": f"Verified on this PC ({device})",
+                    "label": f"Local benchmark: {device}",
                     **local[device],
                 }
             else:
