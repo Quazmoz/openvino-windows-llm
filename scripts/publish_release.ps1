@@ -49,6 +49,8 @@ foreach ($Name in $Expected) {
 if ($LASTEXITCODE -ne 0) { throw "Checksum generation failed." }
 & $Python scripts/release_tools.py verify-checksums --path (Join-Path $ArtifactDirectory "OpenVINO-Windows-LLM-$Version-checksums.txt")
 if ($LASTEXITCODE -ne 0) { throw "Checksum verification failed." }
+& $Python scripts/verify_release_signing.py --artifact-directory $ArtifactDirectory --version $Version
+if ($LASTEXITCODE -ne 0) { throw "Release signature claims were not independently verified." }
 
 & git rev-parse --verify --quiet "refs/tags/$Tag" | Out-Null
 if ($LASTEXITCODE -eq 0) { throw "Tag $Tag already exists." }

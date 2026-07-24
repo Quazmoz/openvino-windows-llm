@@ -61,6 +61,22 @@ $env:OV_LLM_SIGN_CERTIFICATE_PASSWORD = '<set only in the current secure environ
 
 Certificates and passwords must never enter the repository or logs. The build marks an artifact signed only after `signtool verify /pa /all` succeeds. Timestamp, signing, or verification failure blocks a signed release.
 
+Use exactly one certificate source. Supply all certificate values only through the secure
+job environment; never use command-line arguments, checked-in configuration, build metadata,
+or release notes. PFX signing requires a nonempty environment-supplied password and must not
+prompt interactively. The `/tr` and `/td SHA256` arguments request an RFC 3161 timestamp.
+
+`-Sign` requires both portable and installer outputs. After the build verifies each binary,
+the publisher independently validates the manifest/summary claims and reruns:
+
+```powershell
+signtool verify /pa /all <installer.exe>
+signtool verify /pa /all <launcher-extracted-from-portable.zip>
+```
+
+Any incomplete claim, missing SignTool, malformed archive, missing binary, or failed
+verification blocks publication. The publisher does not consume certificate material.
+
 ## Verification
 
 ```powershell
@@ -70,6 +86,30 @@ python .\scripts\release_tools.py verify-checksums --path .\OpenVINO-Windows-LLM
 
 Mock smoke validation proves packaged contracts, not real CPU, GPU, NPU, drivers, installer upgrade behavior, or Authenticode unless those paths were separately executed.
 
+## Clean-machine signed upgrade and uninstall
+
+Run this only after both SignTool checks pass in the secure build environment:
+
+1. Create a disposable, fully updated Windows 11 x64 VM with no repository checkout,
+   certificate, Python environment, prior app data, or trusted development roots.
+2. Snapshot the VM. Download the previously published unsigned release and the candidate
+   signed release through their GitHub release URLs; verify both checksum files.
+3. Install the previous release per-user, launch it, complete mock onboarding, create
+   non-secret settings/benchmark state, and stop it cleanly.
+4. Before execution, run `signtool verify /pa /all` on the candidate installer and on the
+   launcher extracted from its portable ZIP. Retain sanitized command output.
+5. Install the signed candidate over the previous version. Confirm version, startup,
+   retained mutable data, server/tray health, and packaged mock contract.
+6. Uninstall from Windows Settings. Confirm binaries, shortcuts, startup registration, and
+   uninstall registration are removed. Record whether the documented user-data retention
+   choice was honored.
+7. Revert the VM snapshot and test a fresh signed install/uninstall separately.
+8. Sanitize the report for usernames, hostnames, full profile paths, emails, tokens,
+   prompts, generated text, certificate secrets, and raw logs before publication.
+
+Do not mark upgrade/uninstall verified from a development machine, source test, mock-only
+build, or unsigned artifact.
+
 ## Publish
 
 ```powershell
@@ -78,3 +118,7 @@ Mock smoke validation proves packaged contracts, not real CPU, GPU, NPU, drivers
 ```
 
 The publisher validates the canonical version, clean tree, expected artifact names, checksums, duplicate tag, and duplicate GitHub release before creating an annotated tag and release. Beta releases are marked pre-release.
+
+Published tags and release assets are immutable. Because `v0.6.1` is already published
+unsigned, a later signed build must advance the version and must never replace or retag
+`v0.6.1` or `v0.6.0`.

@@ -37,6 +37,15 @@ def test_build_script_generates_checksums_and_unsigned_names():
     assert "release_tools.py verify-checksums" in release
     assert "unsigned artifacts" in release
     assert "OV_LLM_SIGN_CERT_SHA1" in release
+    assert '"/tr", $Timestamp, "/td", "SHA256"' in release
+    assert '"signtool", "verify", "/pa", "/all"' not in release
+    assert "& $SignTool verify /pa /all $Path" in release
+    assert "Configure either OV_LLM_SIGN_CERT_SHA1" in release
+    assert "PFX signing requires OV_LLM_SIGN_CERTIFICATE_PASSWORD" in release
+    assert "Signed releases require both" in release
+
+    publisher = (ROOT / "scripts" / "publish_release.ps1").read_text(encoding="utf-8")
+    assert "verify_release_signing.py" in publisher
 
     wrapper = (ROOT / "scripts" / "build_windows_distribution.ps1").read_text(encoding="utf-8")
     assert "build_release.ps1" in wrapper

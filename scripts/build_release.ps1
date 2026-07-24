@@ -49,16 +49,24 @@ function Resolve-SignTool() {
 function Sign-AndVerify([string]$Path) {
     $SignTool = Resolve-SignTool
     $Timestamp = if ($env:OV_LLM_SIGN_TIMESTAMP_URL) { $env:OV_LLM_SIGN_TIMESTAMP_URL } else { "http://timestamp.digicert.com" }
+    $TimestampUri = $null
+    if (-not [Uri]::TryCreate($Timestamp, [UriKind]::Absolute, [ref]$TimestampUri) -or $TimestampUri.Scheme -notin @("http", "https")) {
+        throw "OV_LLM_SIGN_TIMESTAMP_URL must be an absolute HTTP(S) RFC 3161 timestamp URL."
+    }
+    if ($env:OV_LLM_SIGN_CERT_SHA1 -and $env:OV_LLM_SIGN_CERTIFICATE) {
+        throw "Configure either OV_LLM_SIGN_CERT_SHA1 or OV_LLM_SIGN_CERTIFICATE, not both."
+    }
     $Arguments = @("sign", "/fd", "SHA256", "/tr", $Timestamp, "/td", "SHA256")
     if ($env:OV_LLM_SIGN_CERT_SHA1) {
         $Arguments += @("/sha1", $env:OV_LLM_SIGN_CERT_SHA1)
     }
     elseif ($env:OV_LLM_SIGN_CERTIFICATE) {
         if (-not (Test-Path $env:OV_LLM_SIGN_CERTIFICATE)) { throw "OV_LLM_SIGN_CERTIFICATE does not exist." }
-        $Arguments += @("/f", (Resolve-Path $env:OV_LLM_SIGN_CERTIFICATE).Path)
-        if ($env:OV_LLM_SIGN_CERTIFICATE_PASSWORD) {
-            $Arguments += @("/p", $env:OV_LLM_SIGN_CERTIFICATE_PASSWORD)
+        if ([string]::IsNullOrWhiteSpace($env:OV_LLM_SIGN_CERTIFICATE_PASSWORD)) {
+            throw "PFX signing requires OV_LLM_SIGN_CERTIFICATE_PASSWORD from the secure environment."
         }
+        $Arguments += @("/f", (Resolve-Path $env:OV_LLM_SIGN_CERTIFICATE).Path)
+        $Arguments += @("/p", $env:OV_LLM_SIGN_CERTIFICATE_PASSWORD)
     }
     else {
         throw "Signing was requested but no certificate-store thumbprint or certificate file was configured."
@@ -72,6 +80,9 @@ function Sign-AndVerify([string]$Path) {
 
 if ($Sign -and $Unsigned) { throw "Use either -Sign or -Unsigned, not both." }
 if ($SkipInstaller -and $SkipPortable) { throw "At least one of installer or portable output must be enabled." }
+if ($Sign -and ($SkipInstaller -or $SkipPortable)) {
+    throw "Signed releases require both the launcher-containing portable ZIP and installer."
+}
 
 $CanonicalVersion = (& $Python scripts/release_tools.py canonical-version).Trim()
 if ($LASTEXITCODE -ne 0) { throw "Could not read the canonical application version." }
