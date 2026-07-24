@@ -1,0 +1,15 @@
+{
+  "model_id": "tinyllama-1.1b-chat-int4",
+  "requested_device": "GPU",
+  "actual_device": "GPU",
+  "requested_context": 1536,
+  "prompt_tokens": 1536,
+  "tokens_generated": 3,
+  "configured_max_context": 2048,
+  "reserved_output_tokens": 512,
+  "beyond_requested_context": 1537,
+  "beyond_rejected": true,
+  "passed": true,
+  "error": null,
+  "timestamp": "2026-07-24T16:11:04Z"
+}

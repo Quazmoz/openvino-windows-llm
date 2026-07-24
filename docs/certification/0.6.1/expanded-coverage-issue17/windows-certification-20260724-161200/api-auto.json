@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-07-24T16:12:39.169035+00:00",
+  "profile": "full",
+  "model": "tinyllama-1.1b-chat-int4",
+  "embedding_model": null,
+  "requested_device": "AUTO",
+  "server": {
+    "version": "0.6.0",
+    "mock": false,
+    "openvino": true,
+    "default_device": "AUTO",
+    "available_devices": [
+      "CPU",
+      "GPU",
+      "NPU"
+    ]
+  },
+  "summary": {
+    "pass": 12,
+    "warn": 0,
+    "skip": 2,
+    "fail": 0
+  },
+  "checks": [
+    {
+      "name": "Health and probes",
+      "status": "pass",
+      "duration_ms": 29.8,
+      "detail": "version=0.6.0 mock=False"
+    },
+    {
+      "name": "API-key enforcement",
+      "status": "skip",
+      "duration_ms": 0.0,
+      "detail": "No API key supplied"
+    },
+    {
+      "name": "Device discovery",
+      "status": "pass",
+      "duration_ms": 2.6,
+      "detail": "available=CPU,GPU,NPU"
+    },
+    {
+      "name": "Model catalog",
+      "status": "pass",
+      "duration_ms": 51.9,
+      "detail": "catalog=21"
+    },
+    {
+      "name": "Model load",
+      "status": "pass",
+      "duration_ms": 24230.3,
+      "detail": "loaded on AUTO"
+    },
+    {
+      "name": "Open WebUI chat",
+      "status": "pass",
+      "duration_ms": 721.2,
+      "detail": "finish_reason=stop"
+    },
+    {
+      "name": "Open WebUI streaming",
+      "status": "pass",
+      "duration_ms": 680.8,
+      "detail": "events=49"
+    },
+    {
+      "name": "Stream cancellation recovery",
+      "status": "pass",
+      "duration_ms": 1275.5,
+      "detail": "follow-up request succeeded"
+    },
+    {
+      "name": "Tool and structured-output requests",
+      "status": "pass",
+      "duration_ms": 2104.2,
+      "detail": "tool call and strict JSON demonstrated"
+    },
+    {
+      "name": "Request metrics",
+      "status": "pass",
+      "duration_ms": 109.8,
+      "detail": "requests=5"
+    },
+    {
+      "name": "n8n Responses API",
+      "status": "pass",
+      "duration_ms": 1383.8,
+      "detail": "streaming and non-streaming passed"
+    },
+    {
+      "name": "Embeddings",
+      "status": "skip",
+      "duration_ms": 0.0,
+      "detail": "Not requested"
+    },
+    {
+      "name": "Benchmark",
+      "status": "pass",
+      "duration_ms": 2832.1,
+      "detail": "benchmark succeeded"
+    },
+    {
+      "name": "Model lifecycle",
+      "status": "pass",
+      "duration_ms": 1561.8,
+      "detail": "loaded on AUTO"
+    }
+  ]
+}

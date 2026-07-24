@@ -77,6 +77,30 @@ function Safe-Text([string]$Text, [string]$Secret) {
     return [regex]::Replace($Text, "[A-Za-z]:\\[^`r`n]+", "[local-path]")
 }
 
+function Get-CacheSnapshot([string]$Path) {
+    $files = @(
+        if (Test-Path -LiteralPath $Path) {
+            Get-ChildItem -LiteralPath $Path -Recurse -File -ErrorAction SilentlyContinue
+        }
+    )
+    $rows = @($files | ForEach-Object {
+        "$($_.FullName.Substring($Path.Length).TrimStart('\'))|$($_.Length)"
+    } | Sort-Object)
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try {
+        $bytes = [Text.Encoding]::UTF8.GetBytes(($rows -join "`n"))
+        $fingerprint = ([BitConverter]::ToString($sha.ComputeHash($bytes))).Replace("-", "").ToLowerInvariant()
+    }
+    finally {
+        $sha.Dispose()
+    }
+    return [ordered]@{
+        file_count = $files.Count
+        bytes = [long](($files | Measure-Object Length -Sum).Sum)
+        fingerprint = $fingerprint
+    }
+}
+
 function Python-Json([string]$Python, [string]$Code) {
     # Execute the snippet from a temporary file instead of `python -c "<code>"`.
     # Windows PowerShell 5.1 strips embedded double quotes when forwarding a
@@ -109,6 +133,7 @@ $server = $null
 $oldKey = $env:OV_LLM_API_KEY
 $oldMock = $env:OV_LLM_MOCK
 $oldAuto = $env:OV_LLM_AUTO_CONVERT
+$oldCache = $env:OV_LLM_CACHE_DIR
 
 try {
     $python = Get-Python $root
@@ -196,11 +221,13 @@ print(json.dumps(versions))
         $jsonReport = Join-Path $session "api-$slug.json"
         $mdReport = Join-Path $session "api-$slug.md"
         $contextReport = Join-Path $session "context-$slug.json"
+        $compiledCache = Join-Path $session "compiled-cache-$slug"
         $baseUrl = "http://127.0.0.1:$Port"
 
         $env:OV_LLM_API_KEY = $ApiKey
         $env:OV_LLM_MOCK = ""
         $env:OV_LLM_AUTO_CONVERT = if ($SkipConversion) { "" } else { "1" }
+        $env:OV_LLM_CACHE_DIR = $compiledCache
         $serverArgs = @(
             "-m", "app.server", "--host", "127.0.0.1", "--port", "$Port",
             "--model", $Model, "--device", $device
@@ -240,9 +267,11 @@ print(json.dumps(versions))
             $exitCode = $LASTEXITCODE
             $api = Get-Content -Raw $jsonReport | ConvertFrom-Json
             $context = $null
+            $cacheReuse = $null
             $contextExitCode = 1
             if ($exitCode -eq 0 -and $api.summary.fail -eq 0) {
                 Invoke-RestMethod "$baseUrl/v1/models/unload" -Method Post -ContentType "application/json" -Body (@{ model = $Model } | ConvertTo-Json) -Headers $(if ($ApiKey) { @{ Authorization = "Bearer $ApiKey" } } else { @{} }) | Out-Null
+                $cacheAfterFirstProcess = Get-CacheSnapshot $compiledCache
                 & $python $contextValidator --model $Model --device $device --context $ContextDepth --output $contextReport
                 $contextExitCode = $LASTEXITCODE
                 if (Test-Path $contextReport) {
@@ -250,8 +279,24 @@ print(json.dumps(versions))
                     $context.error = Safe-Text ([string]$context.error) $ApiKey
                     $context | ConvertTo-Json -Depth 6 | Set-Content $contextReport -Encoding UTF8
                 }
+                $cacheAfterFirstRestart = Get-CacheSnapshot $compiledCache
+                if ($contextExitCode -eq 0) {
+                    & $python $contextValidator --model $Model --device $device --context $ContextDepth --output $contextReport
+                    $contextExitCode = $LASTEXITCODE
+                }
+                $cacheAfterSecondRestart = Get-CacheSnapshot $compiledCache
+                $cacheReuse = [ordered]@{
+                    server_process = $cacheAfterFirstProcess
+                    first_restart = $cacheAfterFirstRestart
+                    second_restart = $cacheAfterSecondRestart
+                    reused = [bool](
+                        $cacheAfterFirstRestart.file_count -gt 0 -and
+                        $cacheAfterFirstRestart.fingerprint -eq $cacheAfterSecondRestart.fingerprint -and
+                        $contextExitCode -eq 0
+                    )
+                }
             }
-            $status = if ($exitCode -eq 0 -and $api.summary.fail -eq 0 -and $contextExitCode -eq 0 -and $context.passed) { "passed" } else { "failed" }
+            $status = if ($exitCode -eq 0 -and $api.summary.fail -eq 0 -and $contextExitCode -eq 0 -and $context.passed -and $cacheReuse.reused) { "passed" } else { "failed" }
             $results += [ordered]@{
                 device = $device
                 status = $status
@@ -260,6 +305,7 @@ print(json.dumps(versions))
                 report = Split-Path -Leaf $mdReport
                 context_report = if ($context) { Split-Path -Leaf $contextReport } else { $null }
                 context_depth = $context
+                compiled_cache_reuse = $cacheReuse
             }
             $embeddingPending = $false
             if ($status -eq "failed" -and -not $ContinueOnFailure) {
@@ -267,7 +313,7 @@ print(json.dumps(versions))
             }
         }
         catch {
-            if (-not (Test-Path $jsonReport)) {
+            if (-not @($results | Where-Object device -eq $device).Count) {
                 $results += [ordered]@{
                     device = $device
                     status = "failed"
@@ -284,6 +330,9 @@ print(json.dumps(versions))
             if (-not $KeepServerLogs) {
                 Remove-Item $stdout, $stderr -Force -ErrorAction SilentlyContinue
             }
+            if (Test-Path -LiteralPath $compiledCache) {
+                Remove-Item -LiteralPath $compiledCache -Recurse -Force -ErrorAction SilentlyContinue
+            }
         }
         if ($stopAfterDevice) { break }
     }
@@ -292,6 +341,9 @@ print(json.dumps(versions))
         passed = @($results | Where-Object status -eq "passed").Count
         skipped = @($results | Where-Object status -eq "skipped").Count
         failed = @($results | Where-Object status -eq "failed").Count
+    }
+    if ($results.Count -ne $Devices.Count) {
+        throw "Certification produced $($results.Count) device results for $($Devices.Count) requested devices."
     }
     $report = [ordered]@{
         schema_version = 2
@@ -315,12 +367,18 @@ print(json.dumps(versions))
         "- Model: ``$Model``",
         "- Detected devices: ``$($available -join ', ')``", "",
         "**Result:** $($summary.passed) passed, $($summary.skipped) skipped, $($summary.failed) failed.", "",
-        "| Device | Status | API passed | Warnings | Context requested | Prompt tokens | Tokens generated | Actual device |",
-        "|---|---:|---:|---:|---:|---:|---:|---|"
+        "| Device | Status | API passed | Warnings | Context requested | Prompt tokens | Tokens generated | Beyond rejected | Cache reused | Actual device |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---|"
     )
     foreach ($result in $results) {
         $context = $result.context_depth
-        $lines += "| $($result.device) | **$($result.status.ToUpperInvariant())** | $($result.summary.pass) | $($result.summary.warn) | $($context.requested_context) | $($context.prompt_tokens) | $($context.tokens_generated) | $($context.actual_device) |"
+        $contextRequested = if ($context) { $context.requested_context } else { "-" }
+        $promptTokens = if ($context) { $context.prompt_tokens } else { "-" }
+        $tokensGenerated = if ($context) { $context.tokens_generated } else { "-" }
+        $beyondRejected = if ($context) { $context.beyond_rejected } else { "-" }
+        $actualDevice = if ($context) { $context.actual_device } else { "-" }
+        $cacheReused = if ($result.Contains("compiled_cache_reuse") -and $result.compiled_cache_reuse) { $result.compiled_cache_reuse.reused } else { "-" }
+        $lines += "| $($result.device) | **$($result.status.ToUpperInvariant())** | $($result.summary.pass) | $($result.summary.warn) | $contextRequested | $promptTokens | $tokensGenerated | $beyondRejected | $cacheReused | $actualDevice |"
     }
     $lines += @(
         "", "> Reports exclude API keys, prompts, generated text, hostnames, usernames, serial numbers, and full local paths.", ""
@@ -334,5 +392,6 @@ finally {
     $env:OV_LLM_API_KEY = $oldKey
     $env:OV_LLM_MOCK = $oldMock
     $env:OV_LLM_AUTO_CONVERT = $oldAuto
+    $env:OV_LLM_CACHE_DIR = $oldCache
     Pop-Location
 }

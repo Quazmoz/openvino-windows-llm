@@ -41,6 +41,29 @@ device `CPU`, exact prompt depth 1,536 tokens, and 3 generated tokens. See
 This context-capacity check makes no throughput claim; every other model/device
 combination remains ineligible for the bundled manifest.
 
+## 0.6.1 expanded model-library coverage
+
+The issue #17 runs add deterministic context-boundary and compiled-cache restart checks.
+Every row below is backed by a sanitized schema 2 report. Context is exact prompt-token
+depth; generated tokens are listed separately. These checks make no throughput claim.
+
+| Model | Precision | Requested | Actual | API | Context boundary | Cache restart | Overall | Report | SHA-256 |
+|---|---|---|---|---|---|---|---|---|---|
+| qwen2.5-3b-fp16 | FP16 | CPU | CPU | 12 PASS, 2 SKIP | 3,072 + 1 generated; 3,073 rejected | PASS | PASS | [report](certification/0.6.1/expanded-coverage-issue17/windows-certification-20260724-155829/windows-certification.json) | `6e01022c06ff309d4875fca75fd709c0ca3885ad7723862df443b9aeeabcbf10` |
+| qwen2.5-3b-fp16 | FP16 | GPU | GPU | 12 PASS, 2 SKIP | 3,072 + 1 generated; 3,073 rejected | PASS | PASS | [report](certification/0.6.1/expanded-coverage-issue17/windows-certification-20260724-155417/windows-certification.json) | `27cadbef8a385b1014cfea075806a38d1b407769aa76cbdb1babff64859960db` |
+| qwen2.5-3b-fp16 | FP16 | NPU | not captured | 11 PASS, 2 SKIP, 1 FAIL | not run | not run | FAIL | [report](certification/0.6.1/expanded-coverage-issue17/windows-certification-20260724-160406/windows-certification.json) | `d707c944a51d61dad96152e4a886623b258878c33c84ece52d771e028f980007` |
+| qwen2.5-3b-fp16 | FP16 | AUTO | unknown | 12 PASS, 2 SKIP | actual device unknown | FAIL | FAIL | [report](certification/0.6.1/expanded-coverage-issue17/windows-certification-20260724-160549/windows-certification.json) | `5708b4b84b4eaf54a317f2d6f89fb3a9c88e1ef7b3fb7c2cbaf6572b5c3c3b77` |
+| tinyllama-1.1b-chat-int4 | INT4 | CPU | CPU | 12 PASS, 2 SKIP | 1,536 + 3 generated; 1,537 rejected | PASS | PASS | [report](certification/0.6.1/expanded-coverage-issue17/windows-certification-20260724-160943/windows-certification.json) | `1cccdf519c008d91e8b0278237c52285c3a0e88b8d0386f8bbf7cfe3fa63d69f` |
+| tinyllama-1.1b-chat-int4 | INT4 | GPU | GPU | 12 PASS, 2 SKIP | 1,536 + 3 generated; 1,537 rejected | PASS | PASS | [report](certification/0.6.1/expanded-coverage-issue17/windows-certification-20260724-161031/windows-certification.json) | `d46ed0d52e9b12a312b5257b2eaa74f2f6d50d395089067d6df5ca051f87ca23` |
+| tinyllama-1.1b-chat-int4 | INT4 | NPU | not captured | 3 PASS, 2 SKIP, 9 FAIL | not run | not run | FAIL | [report](certification/0.6.1/expanded-coverage-issue17/windows-certification-20260724-161117/windows-certification.json) | `ce59c1b457e217a43830fa05cb8a6113a4637d46b7b0f9ad65b8b6d80b73d499` |
+| tinyllama-1.1b-chat-int4 | INT4 | AUTO | unknown | 12 PASS, 2 SKIP | actual device unknown | FAIL | FAIL | [report](certification/0.6.1/expanded-coverage-issue17/windows-certification-20260724-161200/windows-certification.json) | `5ef79ae3895ba67e02caf527111e6b6c6664ca908ca87dbb3380179d3198b664` |
+
+Only the four direct CPU/GPU PASS combinations populate the bundled manifest. NPU remains
+empty for both models. AUTO is reported independently and never infers a direct-device
+claim. The conversion cancellation/retry evidence and package-footprint details are in the
+[bundle README](certification/0.6.1/expanded-coverage-issue17/README.md); verify all files
+against [SHA256SUMS.txt](certification/0.6.1/expanded-coverage-issue17/SHA256SUMS.txt).
+
 ## Report integrity (SHA-256)
 
 Each report below is a clickable repository-relative link with its SHA-256. The complete list, including the JSON reports and this bundle's README, is in [`certification/0.6.0/SHA256SUMS.txt`](certification/0.6.0/SHA256SUMS.txt).

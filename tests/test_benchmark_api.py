@@ -123,6 +123,10 @@ def test_context_depth_certification_records_exact_depth_and_device(tmp_path):
     assert result.requested_context == 64
     assert result.prompt_tokens == 64
     assert result.tokens_generated > 0
+    assert result.configured_max_context == 2048
+    assert result.reserved_output_tokens == 512
+    assert result.beyond_requested_context == 1537
+    assert result.beyond_rejected is True
     assert not hasattr(result, "tokens_sec")
 
 

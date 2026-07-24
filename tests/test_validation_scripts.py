@@ -79,3 +79,5 @@ def test_windows_harness_forces_real_local_validation():
     assert "certify_context_depth.py" in script
     assert "context_depth = $context" in script
     assert "schema_version = 2" in script
+    assert "compiled_cache_reuse = $cacheReuse" in script
+    assert "$cacheAfterFirstRestart.fingerprint -eq $cacheAfterSecondRestart.fingerprint" in script

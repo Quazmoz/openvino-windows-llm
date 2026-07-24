@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-07-24T15:07:54Z",
+  "model_id": "cert-tinyllama-1.1b-int4",
+  "source_model": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+  "weight_format": "int4",
+  "cancellation": {
+    "requested": true,
+    "task_cancelled": true,
+    "task_removed": true,
+    "passed": true
+  },
+  "retry": {
+    "scheduled": true,
+    "converted_ir_present": true,
+    "output_bytes": 662045524,
+    "passed": true
+  },
+  "passed": true
+}

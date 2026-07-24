@@ -38,10 +38,11 @@ def test_load_catalog_parses_entries(tmp_path):
     assert cfg.trust_remote_code is True
 
 
-def test_shipped_catalog_is_fp16_with_supported_recommended_devices():
+def test_shipped_catalog_uses_supported_formats_and_recommended_devices():
     catalog = load_catalog(BASE_DIR / "models.json")
     assert catalog
-    assert all(cfg.weight_format == "fp16" for cfg in catalog.values())
+    assert all(cfg.weight_format in {"fp16", "int4"} for cfg in catalog.values())
+    assert catalog["tinyllama-1.1b-chat-int4"].weight_format == "int4"
     assert all(parse_device_expression(cfg.recommended_device) for cfg in catalog.values())
 
 

@@ -21,6 +21,17 @@
     "max_context_len": 2048,
     "max_output_tokens": 512
   },
+  "tinyllama-1.1b-chat-int4": {
+    "name": "TinyLlama 1.1B Chat INT4",
+    "description": "Compact INT4 starter model for lower storage and memory pressure.",
+    "backend": "openvino-genai",
+    "model_path": "models/openvino/tinyllama-1.1b-chat-int4",
+    "source_model": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+    "weight_format": "int4",
+    "recommended_device": "CPU",
+    "max_context_len": 2048,
+    "max_output_tokens": 512
+  },
   "qwen2.5-1.5b-fp16": {
     "name": "Qwen2.5 1.5B Instruct FP16",
     "description": "Compact Qwen instruct model exported in the FP16 format used by Intel NPU.",

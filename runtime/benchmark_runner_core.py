@@ -67,6 +67,10 @@ class ContextDepthResult:
     requested_context: int
     prompt_tokens: int
     tokens_generated: int
+    configured_max_context: int
+    reserved_output_tokens: int
+    beyond_requested_context: int
+    beyond_rejected: bool
     passed: bool
     error: str | None
     timestamp: str
@@ -274,14 +278,22 @@ async def certify_context_depth(
     engine: BaseEngine | None = None
     prompt_tokens = 0
     actual_device: str | None = None
+    configured_max_context = 0
+    reserved_output_tokens = 0
+    beyond_requested_context = requested_context + 1
+    beyond_rejected = False
     try:
         cfg = manager.config_for(model_id)
         if cfg is None:
             raise ValueError(f"Unknown model '{model_id}'.")
-        if requested_context < 1 or requested_context > cfg.max_prompt_len:
-            raise ValueError(
-                f"Requested context must be between 1 and {cfg.max_prompt_len} prompt tokens."
-            )
+        configured_max_context = cfg.max_context_len
+        reserved_output_tokens = cfg.max_output_tokens
+        _validate_context_depth(requested_context, cfg.max_prompt_len)
+        beyond_requested_context = cfg.max_prompt_len + 1
+        try:
+            _validate_context_depth(beyond_requested_context, cfg.max_prompt_len)
+        except ValueError:
+            beyond_rejected = True
         normalized_device = device_check.validate_device_expression(device)
         engine, _ = await manager.build_temporary_engine(model_id, normalized_device)
         actual_device = _reported_actual_device(engine, normalized_device)
@@ -307,6 +319,8 @@ async def certify_context_depth(
                 f"Requested device {normalized_device} but runtime reported "
                 f"{actual_device or 'unknown'}."
             )
+        if requested_context == cfg.max_prompt_len and not beyond_rejected:
+            raise RuntimeError("The first prompt depth beyond the configured maximum was accepted.")
         return ContextDepthResult(
             model_id=model_id,
             requested_device=normalized_device,
@@ -314,6 +328,10 @@ async def certify_context_depth(
             requested_context=requested_context,
             prompt_tokens=prompt_tokens,
             tokens_generated=tokens_generated,
+            configured_max_context=configured_max_context,
+            reserved_output_tokens=reserved_output_tokens,
+            beyond_requested_context=beyond_requested_context,
+            beyond_rejected=beyond_rejected,
             passed=True,
             error=None,
             timestamp=timestamp,
@@ -326,6 +344,10 @@ async def certify_context_depth(
             requested_context=requested_context,
             prompt_tokens=prompt_tokens,
             tokens_generated=0,
+            configured_max_context=configured_max_context,
+            reserved_output_tokens=reserved_output_tokens,
+            beyond_requested_context=beyond_requested_context,
+            beyond_rejected=beyond_rejected,
             passed=False,
             error=str(exc),
             timestamp=timestamp,
@@ -489,6 +511,11 @@ def _build_exact_context_prompt(
         key=lambda candidate: candidate[1],
         default=render(0),
     )
+
+
+def _validate_context_depth(requested_context: int, max_prompt_len: int) -> None:
+    if requested_context < 1 or requested_context > max_prompt_len:
+        raise ValueError(f"Requested context must be between 1 and {max_prompt_len} prompt tokens.")
 
 
 async def _stream_generation_once(

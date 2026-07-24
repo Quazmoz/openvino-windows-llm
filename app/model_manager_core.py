@@ -620,9 +620,7 @@ class ModelManager:
                         self.schedule_load(model_id, device)
             except asyncio.CancelledError:
                 if proc and proc.returncode is None:
-                    proc.kill()
-                    with contextlib.suppress(Exception):
-                        await proc.wait()
+                    await self._terminate_conversion_process(proc)
                 raise
             except Exception as exc:  # noqa: BLE001 - surfaced to the UI as a statement/status
                 message = errors.format_model_convert_error(exc)
@@ -632,6 +630,28 @@ class ModelManager:
                 self.emit_event("error", f"Conversion failed for {cfg.name}: {message}")
         finally:
             self.convert_tasks.pop(model_id, None)
+
+    async def _terminate_conversion_process(self, proc: asyncio.subprocess.Process) -> None:
+        """Terminate the converter and its Optimum child process tree."""
+
+        if proc.returncode is not None:
+            return
+        if os.name == "nt":
+            killer = await asyncio.create_subprocess_exec(
+                "taskkill",
+                "/PID",
+                str(proc.pid),
+                "/T",
+                "/F",
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+            with contextlib.suppress(Exception):
+                await killer.wait()
+        else:
+            proc.kill()
+        with contextlib.suppress(Exception):
+            await proc.wait()
 
     def schedule_convert(
         self,

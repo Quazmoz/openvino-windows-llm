@@ -10,17 +10,17 @@ The project keeps OpenVINO as the inference runtime. It does not require Docker,
 
 > **Validation status:** Mock-mode tests validate API, UI, packaging, and state contracts. Real CPU, GPU, and NPU claims require the Windows certification harness on suitable hardware with mock mode disabled. An unsigned development installer is not a signed production release.
 
-## Latest release — 0.6.0 (stable)
+## Latest release — 0.6.1 (stable)
 
-**Current stable version: `0.6.0`.** This release qualifies the OpenVINO / OpenVINO GenAI / OpenVINO Tokenizers `2026.2.1` stack and records the first real Intel CPU, GPU, and NPU certification evidence.
+**Current stable version: `0.6.1`.** This patch adds deterministic context-boundary and compiled-cache certification, fixes Windows conversion cancellation, and expands retained CPU/GPU evidence to Qwen 2.5 3B FP16 and TinyLlama 1.1B INT4.
 
-Downloads (GitHub release `v0.6.0`):
+Downloads (GitHub release `v0.6.1`):
 
-- [Windows installer (.exe)](https://github.com/Quazmoz/openvino-windows-llm/releases/download/v0.6.0/OpenVINO-Windows-LLM-0.6.0-windows-x64-installer.exe)
-- [Portable ZIP](https://github.com/Quazmoz/openvino-windows-llm/releases/download/v0.6.0/OpenVINO-Windows-LLM-0.6.0-windows-x64-portable.zip)
-- [SHA-256 checksums](https://github.com/Quazmoz/openvino-windows-llm/releases/download/v0.6.0/OpenVINO-Windows-LLM-0.6.0-checksums.txt)
+- [Windows installer (.exe)](https://github.com/Quazmoz/openvino-windows-llm/releases/download/v0.6.1/OpenVINO-Windows-LLM-0.6.1-windows-x64-installer.exe)
+- [Portable ZIP](https://github.com/Quazmoz/openvino-windows-llm/releases/download/v0.6.1/OpenVINO-Windows-LLM-0.6.1-windows-x64-portable.zip)
+- [SHA-256 checksums](https://github.com/Quazmoz/openvino-windows-llm/releases/download/v0.6.1/OpenVINO-Windows-LLM-0.6.1-checksums.txt)
 
-References: [compatibility matrix](docs/COMPATIBILITY_MATRIX.md) · [public certification evidence](docs/certification/0.6.0/)
+References: [compatibility matrix](docs/COMPATIBILITY_MATRIX.md) · [expanded certification evidence](docs/certification/0.6.1/expanded-coverage-issue17/)
 
 **Validation scope.** All evidence comes from a single Intel Core Ultra 9 185H laptop (Windows 11 build 26200) running OpenVINO `2026.2.1`. TinyLlama 1.1B, SmolLM2 135M, and Qwen2.5 1.5B — all FP16 — passed the full API contract on CPU, GPU, NPU, and AUTO, and BGE-Small embeddings passed on CPU. This is not a claim of support for all Intel systems.
 

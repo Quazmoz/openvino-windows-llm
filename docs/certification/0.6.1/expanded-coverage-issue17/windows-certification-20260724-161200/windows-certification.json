@@ -1,0 +1,104 @@
+﻿{
+    "schema_version":  2,
+    "generated_at":  "2026-07-24T16:12:42.7212167Z",
+    "model":  "tinyllama-1.1b-chat-int4",
+    "embedding_model":  null,
+    "requested_devices":  [
+                              "AUTO"
+                          ],
+    "detected_devices":  [
+                             "CPU",
+                             "GPU",
+                             "NPU"
+                         ],
+    "device_details":  [
+                           {
+                               "device":  "CPU",
+                               "full_name":  "Intel(R) Core(TM) Ultra 9 185H"
+                           },
+                           {
+                               "device":  "GPU",
+                               "full_name":  "Intel(R) Arc(TM) Graphics (iGPU)"
+                           },
+                           {
+                               "device":  "NPU",
+                               "full_name":  "Intel(R) AI Boost"
+                           }
+                       ],
+    "machine":  {
+                    "os":  "Microsoft Windows 11 Home 10.0.26200 build 26200",
+                    "architecture":  "64-bit",
+                    "memory_gb":  31.67,
+                    "processors":  [
+                                       "Intel(R) Core(TM) Ultra 9 185H"
+                                   ],
+                    "video_controllers":  [
+                                              {
+                                                  "name":  "Intel(R) Arc(TM) Graphics",
+                                                  "driver_version":  "32.0.101.8425"
+                                              }
+                                          ],
+                    "python":  "Python 3.13.11",
+                    "packages":  {
+                                     "openvino":  "2026.2.1",
+                                     "openvino-genai":  "2026.2.1.0",
+                                     "optimum-intel":  "2.0.0",
+                                     "nncf":  "3.2.0",
+                                     "fastapi":  "0.137.1",
+                                     "pydantic":  "2.13.4"
+                                 }
+                },
+    "summary":  {
+                    "passed":  0,
+                    "skipped":  0,
+                    "failed":  1
+                },
+    "device_results":  [
+                           {
+                               "device":  "AUTO",
+                               "status":  "failed",
+                               "reason":  "",
+                               "summary":  {
+                                               "pass":  12,
+                                               "warn":  0,
+                                               "skip":  2,
+                                               "fail":  0
+                                           },
+                               "report":  "api-auto.md",
+                               "context_report":  "context-auto.json",
+                               "context_depth":  {
+                                                     "model_id":  "tinyllama-1.1b-chat-int4",
+                                                     "requested_device":  "AUTO",
+                                                     "actual_device":  null,
+                                                     "requested_context":  1536,
+                                                     "prompt_tokens":  1536,
+                                                     "tokens_generated":  0,
+                                                     "configured_max_context":  2048,
+                                                     "reserved_output_tokens":  512,
+                                                     "beyond_requested_context":  1537,
+                                                     "beyond_rejected":  true,
+                                                     "passed":  false,
+                                                     "error":  "Requested device AUTO but runtime reported unknown.",
+                                                     "timestamp":  "2026-07-24T16:12:39Z"
+                                                 },
+                               "compiled_cache_reuse":  {
+                                                            "server_process":  {
+                                                                                   "file_count":  45,
+                                                                                   "bytes":  1382530278,
+                                                                                   "fingerprint":  "17e8a05266e545710b319697e4a63a2bc68669a2fbc17e233d2b32ab880ad360"
+                                                                               },
+                                                            "first_restart":  {
+                                                                                  "file_count":  45,
+                                                                                  "bytes":  1382530278,
+                                                                                  "fingerprint":  "17e8a05266e545710b319697e4a63a2bc68669a2fbc17e233d2b32ab880ad360"
+                                                                              },
+                                                            "second_restart":  {
+                                                                                   "file_count":  45,
+                                                                                   "bytes":  1382530278,
+                                                                                   "fingerprint":  "17e8a05266e545710b319697e4a63a2bc68669a2fbc17e233d2b32ab880ad360"
+                                                                               },
+                                                            "reused":  false
+                                                        }
+                           }
+                       ]
+}

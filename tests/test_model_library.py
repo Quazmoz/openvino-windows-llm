@@ -148,21 +148,35 @@ def test_model_library_ui_is_composed_once():
 
 def test_bundled_manifest_and_release_wiring():
     manifest = parse_manifest_bytes((ROOT / "model_library_manifest.json").read_bytes())
-    assert len(manifest["catalog"]) == 9
+    assert len(manifest["catalog"]) == 10
     certified = [
         (model_id, device, record)
         for model_id, entry in manifest["catalog"].items()
         for device, records in entry["metadata"]["certifications"].items()
         for record in records
     ]
-    assert len(certified) == 1
-    model_id, device, record = certified[0]
-    assert (model_id, device) == ("tinyllama-1.1b-chat-fp16", "CPU")
-    assert record["driver_version"] is None
-    assert record["max_tested_context"] == 1536
-    assert record["report_sha256"] == (
+    assert len(certified) == 5
+    by_combination = {(model_id, device): record for model_id, device, record in certified}
+    assert set(by_combination) == {
+        ("tinyllama-1.1b-chat-fp16", "CPU"),
+        ("tinyllama-1.1b-chat-int4", "CPU"),
+        ("tinyllama-1.1b-chat-int4", "GPU"),
+        ("qwen2.5-3b-fp16", "CPU"),
+        ("qwen2.5-3b-fp16", "GPU"),
+    }
+    fp16_cpu = by_combination[("tinyllama-1.1b-chat-fp16", "CPU")]
+    assert fp16_cpu["driver_version"] is None
+    assert fp16_cpu["max_tested_context"] == 1536
+    assert fp16_cpu["report_sha256"] == (
         "41590beb5ce497b37bf44189a39bc0a9fe95696c24a107b33cfeb545778f985b"
     )
+    for (model_id, device), record in by_combination.items():
+        assert record["report_reference"].startswith("docs/certification/")
+        assert len(record["report_sha256"]) == 64
+        if device == "CPU":
+            assert record["driver_version"] is None
+        if model_id in {"tinyllama-1.1b-chat-int4", "qwen2.5-3b-fp16"}:
+            assert record["max_tested_context"] > 0
 
     spec = (ROOT / "packaging" / "openvino_windows_llm.spec").read_text(encoding="utf-8")
     publish = (ROOT / "scripts" / "publish_release.ps1").read_text(encoding="utf-8")

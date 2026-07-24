@@ -1,0 +1,104 @@
+﻿{
+    "schema_version":  2,
+    "generated_at":  "2026-07-24T15:56:24.6709726Z",
+    "model":  "qwen2.5-3b-fp16",
+    "embedding_model":  null,
+    "requested_devices":  [
+                              "GPU"
+                          ],
+    "detected_devices":  [
+                             "CPU",
+                             "GPU",
+                             "NPU"
+                         ],
+    "device_details":  [
+                           {
+                               "device":  "CPU",
+                               "full_name":  "Intel(R) Core(TM) Ultra 9 185H"
+                           },
+                           {
+                               "device":  "GPU",
+                               "full_name":  "Intel(R) Arc(TM) Graphics (iGPU)"
+                           },
+                           {
+                               "device":  "NPU",
+                               "full_name":  "Intel(R) AI Boost"
+                           }
+                       ],
+    "machine":  {
+                    "os":  "Microsoft Windows 11 Home 10.0.26200 build 26200",
+                    "architecture":  "64-bit",
+                    "memory_gb":  31.67,
+                    "processors":  [
+                                       "Intel(R) Core(TM) Ultra 9 185H"
+                                   ],
+                    "video_controllers":  [
+                                              {
+                                                  "name":  "Intel(R) Arc(TM) Graphics",
+                                                  "driver_version":  "32.0.101.8425"
+                                              }
+                                          ],
+                    "python":  "Python 3.13.11",
+                    "packages":  {
+                                     "openvino":  "2026.2.1",
+                                     "openvino-genai":  "2026.2.1.0",
+                                     "optimum-intel":  "2.0.0",
+                                     "nncf":  "3.2.0",
+                                     "fastapi":  "0.137.1",
+                                     "pydantic":  "2.13.4"
+                                 }
+                },
+    "summary":  {
+                    "passed":  1,
+                    "skipped":  0,
+                    "failed":  0
+                },
+    "device_results":  [
+                           {
+                               "device":  "GPU",
+                               "status":  "passed",
+                               "reason":  "",
+                               "summary":  {
+                                               "pass":  12,
+                                               "warn":  0,
+                                               "skip":  2,
+                                               "fail":  0
+                                           },
+                               "report":  "api-gpu.md",
+                               "context_report":  "context-gpu.json",
+                               "context_depth":  {
+                                                     "model_id":  "qwen2.5-3b-fp16",
+                                                     "requested_device":  "GPU",
+                                                     "actual_device":  "GPU",
+                                                     "requested_context":  3072,
+                                                     "prompt_tokens":  3072,
+                                                     "tokens_generated":  1,
+                                                     "configured_max_context":  4096,
+                                                     "reserved_output_tokens":  1024,
+                                                     "beyond_requested_context":  3073,
+                                                     "beyond_rejected":  true,
+                                                     "passed":  true,
+                                                     "error":  "",
+                                                     "timestamp":  "2026-07-24T15:55:27Z"
+                                                 },
+                               "compiled_cache_reuse":  {
+                                                            "server_process":  {
+                                                                                   "file_count":  53,
+                                                                                   "bytes":  6807950051,
+                                                                                   "fingerprint":  "4a594e4fc8d56a9755e2e1a926d08314614a9efbc957a7b33bd67383f83ea02e"
+                                                                               },
+                                                            "first_restart":  {
+                                                                                  "file_count":  59,
+                                                                                  "bytes":  6808856899,
+                                                                                  "fingerprint":  "081f54a772aa621e0fbbada3a1c67775bfeecbfeeac40e407ee3a2c088a67846"
+                                                                              },
+                                                            "second_restart":  {
+                                                                                   "file_count":  59,
+                                                                                   "bytes":  6808856899,
+                                                                                   "fingerprint":  "081f54a772aa621e0fbbada3a1c67775bfeecbfeeac40e407ee3a2c088a67846"
+                                                                               },
+                                                            "reused":  true
+                                                        }
+                           }
+                       ]
+}

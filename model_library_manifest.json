@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-07-24T14:45:23Z",
+  "generated_at": "2026-07-24T16:12:42Z",
   "source": "bundled-offline-fallback",
   "catalog": {
     "smollm2-135m-fp16": {
@@ -124,6 +124,62 @@
         }
       }
     },
+    "tinyllama-1.1b-chat-int4": {
+      "definition": {
+        "name": "TinyLlama 1.1B Chat INT4",
+        "description": "Practical low-footprint starter model for local chat and device validation.",
+        "source_model": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+        "backend": "openvino-genai",
+        "weight_format": "int4",
+        "recommended_device": "CPU",
+        "max_context_len": 2048,
+        "max_output_tokens": 512,
+        "trust_remote_code": false
+      },
+      "metadata": {
+        "curated": true,
+        "profiles": ["fastest", "lowest_memory"],
+        "minimum_ram_gb": 3,
+        "minimum_disk_gb": 0.7,
+        "license": "Apache-2.0",
+        "gated": false,
+        "quality_score": 45,
+        "speed_score": 88,
+        "max_tested_context": 1536,
+        "maintainer_note": "Use when the smaller INT4 footprint matters more than FP16 fidelity.",
+        "certifications": {
+          "CPU": [
+            {
+              "status": "verified",
+              "certified_at": "2026-07-24T16:10:19Z",
+              "openvino_version": "2026.2.1",
+              "openvino_genai_version": "2026.2.1.0",
+              "driver_version": null,
+              "requested_device": "CPU",
+              "actual_device": "CPU",
+              "max_tested_context": 1536,
+              "report_reference": "docs/certification/0.6.1/expanded-coverage-issue17/windows-certification-20260724-160943/windows-certification.json",
+              "report_sha256": "1cccdf519c008d91e8b0278237c52285c3a0e88b8d0386f8bbf7cfe3fa63d69f"
+            }
+          ],
+          "GPU": [
+            {
+              "status": "verified",
+              "certified_at": "2026-07-24T16:11:06Z",
+              "openvino_version": "2026.2.1",
+              "openvino_genai_version": "2026.2.1.0",
+              "driver_version": "32.0.101.8425",
+              "requested_device": "GPU",
+              "actual_device": "GPU",
+              "max_tested_context": 1536,
+              "report_reference": "docs/certification/0.6.1/expanded-coverage-issue17/windows-certification-20260724-161031/windows-certification.json",
+              "report_sha256": "d46ed0d52e9b12a312b5257b2eaa74f2f6d50d395089067d6df5ca051f87ca23"
+            }
+          ],
+          "NPU": []
+        }
+      }
+    },
     "qwen2.5-1.5b-fp16": {
       "definition": {
         "name": "Qwen2.5 1.5B Instruct FP16",
@@ -197,9 +253,39 @@
         "gated": false,
         "quality_score": 86,
         "speed_score": 48,
-        "max_tested_context": 0,
+        "max_tested_context": 3072,
         "maintainer_note": "Preferred quality candidate before moving to larger, less predictable models.",
-        "certifications": {"CPU": [], "GPU": [], "NPU": []}
+        "certifications": {
+          "CPU": [
+            {
+              "status": "verified",
+              "certified_at": "2026-07-24T16:01:56Z",
+              "openvino_version": "2026.2.1",
+              "openvino_genai_version": "2026.2.1.0",
+              "driver_version": null,
+              "requested_device": "CPU",
+              "actual_device": "CPU",
+              "max_tested_context": 3072,
+              "report_reference": "docs/certification/0.6.1/expanded-coverage-issue17/windows-certification-20260724-155829/windows-certification.json",
+              "report_sha256": "6e01022c06ff309d4875fca75fd709c0ca3885ad7723862df443b9aeeabcbf10"
+            }
+          ],
+          "GPU": [
+            {
+              "status": "verified",
+              "certified_at": "2026-07-24T15:56:24Z",
+              "openvino_version": "2026.2.1",
+              "openvino_genai_version": "2026.2.1.0",
+              "driver_version": "32.0.101.8425",
+              "requested_device": "GPU",
+              "actual_device": "GPU",
+              "max_tested_context": 3072,
+              "report_reference": "docs/certification/0.6.1/expanded-coverage-issue17/windows-certification-20260724-155417/windows-certification.json",
+              "report_sha256": "27cadbef8a385b1014cfea075806a38d1b407769aa76cbdb1babff64859960db"
+            }
+          ],
+          "NPU": []
+        }
       }
     },
     "phi-4-mini-fp16": {
@@ -255,5 +341,5 @@
       }
     }
   },
-  "catalog_sha256": "1a37d81b9bb2b0cf1c6f2754b37f986707b89085b93093b61caef06aa4abea82"
+  "catalog_sha256": "5308aeca824afb30767fd72fe6cf1fca4ce44e4bdef76ba9dabb97b1598bc507"
 }
