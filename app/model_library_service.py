@@ -152,12 +152,30 @@ class ModelLibraryService:
         )
         temp.replace(self.user_file)
 
-    def _restore_user_ids(self, values: set[str], existed: bool) -> None:
+    def _snapshot_user_file(self) -> str | None:
+        """Capture the exact user-index bytes so a failed import can be a true no-op."""
+
         try:
-            if existed:
-                self._write_user_ids(values)
-            else:
+            return self.user_file.read_text(encoding="utf-8")
+        except OSError:
+            return None
+
+    def _restore_user_file(self, snapshot: str | None) -> None:
+        """Restore the user index to its pre-mutation content, byte for byte.
+
+        Re-serializing on rollback would stamp a fresh ``updated_at`` and leave the
+        file changed even though the import failed. Writing the captured snapshot
+        keeps a rolled-back import a true no-op on disk.
+        """
+
+        try:
+            if snapshot is None:
                 self.user_file.unlink(missing_ok=True)
+                return
+            self.user_file.parent.mkdir(parents=True, exist_ok=True)
+            temp = self.user_file.with_suffix(".json.tmp")
+            temp.write_text(snapshot, encoding="utf-8")
+            temp.replace(self.user_file)
         except OSError:
             pass
 
@@ -669,7 +687,7 @@ class ModelLibraryService:
                 added.append(parsed.model_id)
             staged_catalog[parsed.model_id] = candidate
         previous_user_ids = self._read_user_ids()
-        user_file_existed = self.user_file.exists()
+        previous_user_snapshot = self._snapshot_user_file()
         user_ids = set(previous_user_ids)
         user_ids.update(added)
         user_ids.update(updated)
@@ -681,7 +699,7 @@ class ModelLibraryService:
                 self._write_user_ids(user_ids)
                 self.manager.reload_catalog()
             except Exception:
-                self._restore_user_ids(previous_user_ids, user_file_existed)
+                self._restore_user_file(previous_user_snapshot)
                 self._restore_catalog(original_catalog)
                 raise
         else:
@@ -718,7 +736,7 @@ class ModelLibraryService:
 
         temp = models_root / f".{request.model_id}.import-{secrets.token_hex(6)}"
         previous_user_ids: set[str] = set()
-        user_file_existed = False
+        previous_user_snapshot: str | None = None
         original_catalog: dict[str, registry.ModelConfig] = {}
         state_captured = False
         target_installed = False
@@ -738,7 +756,7 @@ class ModelLibraryService:
                         f"Managed model directory already exists for '{request.model_id}'."
                     )
                 previous_user_ids = self._read_user_ids()
-                user_file_existed = self.user_file.exists()
+                previous_user_snapshot = self._snapshot_user_file()
                 original_catalog = dict(self.manager.catalog)
                 state_captured = True
                 temp.replace(target)
@@ -770,7 +788,7 @@ class ModelLibraryService:
                 shutil.rmtree(target, ignore_errors=True)
             if state_captured:
                 with self._catalog_lock:
-                    self._restore_user_ids(previous_user_ids, user_file_existed)
+                    self._restore_user_file(previous_user_snapshot)
                     self._restore_catalog(original_catalog)
             raise
         return {

@@ -34,6 +34,28 @@ _DOWNLOAD_PROGRESS_RE = re.compile(
 )
 
 
+def _ensure_utf8_stdio() -> None:
+    """Force UTF-8 stdio so forwarded progress glyphs never abort a conversion.
+
+    ``optimum-cli``/``tqdm`` and the Transformers weight loader emit block-drawing
+    characters such as U+258F (``▏``). When this process's stdout falls back to a
+    legacy Windows code page (cp1252) — which it does when the server captures it
+    through a pipe without ``PYTHONIOENCODING`` set — printing those glyphs raises
+    ``UnicodeEncodeError`` and kills an otherwise-successful export. The parent
+    decodes our bytes with ``errors="replace"``, so UTF-8 output is always safe to
+    consume.
+    """
+
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        try:
+            reconfigure(encoding="utf-8", errors="replace")
+        except (ValueError, OSError):  # pragma: no cover - stream without utf-8 support
+            pass
+
+
 def build_export_command(
     source_model: str,
     output_dir: str | Path,
@@ -211,6 +233,7 @@ def export_model(
 ) -> Path:
     """Run an export and return its output directory."""
 
+    _ensure_utf8_stdio()
     if shutil.which("optimum-cli") is None:
         raise RuntimeError(
             "optimum-cli not found. Install conversion deps: "
@@ -278,6 +301,7 @@ def _resolve_from_catalog(
 
 
 def main(argv: list[str] | None = None) -> int:
+    _ensure_utf8_stdio()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
     parser = argparse.ArgumentParser(description="Export a model to OpenVINO IR.")
     parser.add_argument("--id", help="Model id from models.json (resolves source/output/weights)")

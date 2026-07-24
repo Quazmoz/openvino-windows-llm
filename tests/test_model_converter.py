@@ -30,6 +30,34 @@ def test_export_model_raises_when_cli_missing(monkeypatch, tmp_path):
         mc.export_model("org/model", tmp_path / "out")
 
 
+def test_conversion_progress_survives_cp1252_stdout(monkeypatch):
+    """Progress glyphs from tqdm/Transformers must not crash conversion on cp1252.
+
+    On a default Windows locale the captured converter stdout falls back to cp1252.
+    Transformers 5.x weight-loading bars emit block-drawing glyphs (U+2588/U+258F);
+    printing them on a cp1252 text layer raises UnicodeEncodeError and aborts an
+    otherwise-successful export. The converter forces UTF-8 stdio to prevent this.
+    """
+    import io
+    import sys
+
+    glyph_line = "Loading weights:  50%|█▏    | 1/272"
+
+    # Pre-fix failure mode: a legacy cp1252 text layer cannot encode the glyph.
+    legacy = io.TextIOWrapper(io.BytesIO(), encoding="cp1252", newline="")
+    with pytest.raises(UnicodeEncodeError):
+        legacy.write(glyph_line)
+        legacy.flush()
+
+    # With UTF-8 enforcement the identical progress line is emitted safely.
+    raw = io.BytesIO()
+    monkeypatch.setattr(sys, "stdout", io.TextIOWrapper(raw, encoding="cp1252", newline=""))
+    mc._ensure_utf8_stdio()
+    mc._ProgressLineEmitter().emit(glyph_line)
+    sys.stdout.flush()
+    assert "▏".encode() in raw.getvalue()
+
+
 def test_export_model_runs_streaming_command_and_makes_parent(monkeypatch, tmp_path, capsys):
     captured = {}
 

@@ -14,6 +14,7 @@ import collections
 import contextlib
 import gc
 import logging
+import os
 import re
 import shutil
 import sys
@@ -587,6 +588,10 @@ class ModelManager:
                         cwd=str(BASE_DIR),
                         stdout=asyncio.subprocess.PIPE,
                         stderr=asyncio.subprocess.PIPE,
+                        # Force UTF-8 stdio so tqdm/Transformers progress glyphs
+                        # (e.g. U+258F) never abort a conversion on a legacy
+                        # Windows code page. The converter also self-reconfigures.
+                        env={**os.environ, "PYTHONIOENCODING": "utf-8:replace"},
                     )
                     stdout_task = asyncio.create_task(
                         self._read_conversion_stream(model_id, cfg, proc.stdout)

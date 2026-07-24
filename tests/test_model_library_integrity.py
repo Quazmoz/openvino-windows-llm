@@ -158,6 +158,46 @@ def test_definition_import_rolls_back_when_user_index_write_fails(tmp_path, monk
     assert set(manager.catalog) == {"existing"}
 
 
+def test_failed_import_rollback_is_a_true_no_op_even_when_clock_advances(tmp_path, monkeypatch):
+    """A rolled-back import must restore the user index byte-for-byte.
+
+    Rebuilding the file would stamp a fresh ``updated_at`` and leave the index
+    changed even though nothing was imported. Advancing the clock guarantees any
+    re-serialization would differ from the captured original, so this regression
+    fails if the rollback ever regenerates instead of restoring the snapshot.
+    """
+    import app.model_library_service as service_module
+
+    settings = _settings(tmp_path)
+    manager = ModelManager(settings)
+    service = ModelLibraryService(settings, manager)
+    service.import_definitions(
+        ModelDefinitionImportRequest(payload={"models": {"existing": _definition("existing")}})
+    )
+    original_user_file = service.user_file.read_text(encoding="utf-8")
+
+    # Any regeneration after this point would use a different timestamp.
+    monkeypatch.setattr(service_module, "utc_now", lambda: "2099-01-01T00:00:00Z")
+
+    original_writer = service._write_user_ids
+
+    def fail_for_new(values):
+        if "new-model" in values:
+            raise OSError("user index write failed")
+        return original_writer(values)
+
+    monkeypatch.setattr(service, "_write_user_ids", fail_for_new)
+    with pytest.raises(OSError, match="user index write failed"):
+        service.import_definitions(
+            ModelDefinitionImportRequest(
+                payload={"models": {"new-model": _definition("new-model")}}
+            )
+        )
+
+    assert service.user_file.read_text(encoding="utf-8") == original_user_file
+    assert set(manager.catalog) == {"existing"}
+
+
 def test_successful_conversion_catalog_failure_keeps_original_precision(tmp_path, monkeypatch):
     settings = _settings(tmp_path)
     manager = ModelManager(settings)
